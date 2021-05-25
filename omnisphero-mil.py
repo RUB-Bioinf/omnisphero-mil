@@ -4,7 +4,7 @@ import os
 
 from sys import getsizeof
 
-from lib.utils import convert_size
+from util.utils import convert_size
 
 default_source_dir = "Y:\\bioinfdata\\work\\Omnisphero\\Sciebo\\HCA\\04_HTE_Batches\\BatchParamTest\\false_data\\mil-tiles\\selectedExperiment"
 default_source_dir = "Y:\\bioinfdata\\work\\Omnisphero\\Sciebo\\HCA\\04_HTE_Batches\\BatchParamTest\\mil_labels\\exerpt"

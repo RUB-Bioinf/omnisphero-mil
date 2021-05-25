@@ -10,9 +10,9 @@ from sys import platform
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
-from lib.utils import gct
-from lib.utils import get_time_diff
-from lib.utils import line_print
+from util.utils import gct
+from util.utils import get_time_diff
+from util.utils import line_print
 
 
 ####
