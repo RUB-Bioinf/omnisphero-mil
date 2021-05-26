@@ -14,10 +14,21 @@ from util.utils import gct
 from util.utils import get_time_diff
 from util.utils import line_print
 
+####
+# Constants
+
+# normalize_enum is an enum to determine normalisation as follows:
+# 0 = no normalisation
+# 1 = normalize every cell between 0 and 255 (8 bit)
+# 2 = normalize every cell individually with every color channel independent
+# 3 = normalize every cell individually with every color channel using the min / max of all three
+# 4 = normalize every cell but with bounds determined by the brightest cell in the same well
+normalize_enum_default = 1
+
 
 ####
 
-def load_bags_json_batch(batch_dirs: [str], max_workers: int):
+def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: int):
     print('Looking for multiple source dirs to load json data from.')
     print('Batch dir: ', batch_dirs)
 
@@ -30,8 +41,8 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int):
         print('Considering source directory: ' + current_dir)
 
         if os.path.isdir(current_dir):
-            X, y, errors = load_bags_json(source_dir=current_dir, max_workers=max_workers, gp_current=i,
-                                          gp_max=len(batch_dirs))
+            X, y, errors = load_bags_json(source_dir=current_dir, max_workers=max_workers,
+                                          normalize_enum=normalize_enum, gp_current=i, gp_max=len(batch_dirs))
 
             error_list.extend(errors)
             if X_full is None:
@@ -49,7 +60,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int):
 
 
 # Main Loading function
-def load_bags_json(source_dir: str, max_workers: int, gp_current: int = 1, gp_max: int = 1):
+def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_current: int = 1, gp_max: int = 1):
     files = os.listdir(source_dir)
     print('Loading from source: ' + source_dir)
 
@@ -75,7 +86,8 @@ def load_bags_json(source_dir: str, max_workers: int, gp_current: int = 1, gp_ma
         if file.endswith('.json.zip'):
             future = executor.submit(unzip_and_read_JSON,
                                      filepath,
-                                     worker_verbose
+                                     worker_verbose,
+                                     normalize_enum
                                      )
             # [X_j, y_j] = unzip_and_read_JSON(filepath,worker_verbose)
             # X.extend(X_j)
@@ -89,7 +101,8 @@ def load_bags_json(source_dir: str, max_workers: int, gp_current: int = 1, gp_ma
 
             future = executor.submit(read_JSON_file,
                                      filepath,
-                                     worker_verbose
+                                     worker_verbose,
+                                     normalize_enum
                                      )
             future_list.append(future)
             # [X_j, y_j] = read_JSON_file(filepath,worker_verbose)
@@ -154,7 +167,7 @@ def load_bags_json(source_dir: str, max_workers: int, gp_current: int = 1, gp_ma
 ####
 
 
-def unzip_and_read_JSON(filepath, worker_verbose):
+def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum):
     if worker_verbose:
         print('Unzipping and reading json: ' + filepath)
 
@@ -166,7 +179,7 @@ def unzip_and_read_JSON(filepath, worker_verbose):
     input_zip.close()
 
     data = json.loads(data)
-    X, y = parse_JSON(data, worker_verbose)
+    X, y = parse_JSON(data, worker_verbose, normalize_enum)
 
     if worker_verbose:
         print('File Shape: ' + filepath + ' -> ')
@@ -178,7 +191,7 @@ def unzip_and_read_JSON(filepath, worker_verbose):
 
 ####
 
-def read_JSON_file(filepath, worker_verbose):
+def read_JSON_file(filepath, worker_verbose, normalize_enum):
     if worker_verbose:
         print('Reading json: ' + filepath)
 
@@ -189,12 +202,12 @@ def read_JSON_file(filepath, worker_verbose):
     data = json.load(f)
     f.close()
 
-    return parse_JSON(data, worker_verbose)
+    return parse_JSON(data, worker_verbose, normalize_enum)
 
 
 ####
 
-def parse_JSON(json_data, worker_verbose):
+def parse_JSON(json_data, worker_verbose, normalize_enum):
     # Setting up arrays
     X = []
     y = None
@@ -203,12 +216,24 @@ def parse_JSON(json_data, worker_verbose):
     width = json_data['tileWidth']
     height = json_data['tileHeight']
     bit_depth = json_data['bit_depth']
+    bit_max = np.iinfo('uint' + str(bit_depth)).max
 
     # Reading label, if it exists
     if 'label' in json_data:
         label = json_data['label']
         label = int(label)
         y = [label]
+
+    if worker_verbose:
+        print('Reading JSON: ' + str(width) + 'x' + str(height), '. Bits: ' + str(bit_depth))
+
+    # Initializing "best" min / max values for every cell in the tile
+    best_well_min_r = bit_max
+    best_well_min_g = bit_max
+    best_well_min_b = bit_max
+    best_well_max_r = 0
+    best_well_max_g = 0
+    best_well_max_b = 0
 
     # Reading tiles
     json_data = json_data['tiles']
@@ -223,17 +248,95 @@ def parse_JSON(json_data, worker_verbose):
         g = np.array(current_tile['g'])
         b = np.array(current_tile['b'])
 
+        # 0 = no normalisation
+        # 1 = normalize every cell between 0 and 255 (8 bit)
+        # 2 = normalize every cell individually with every color channel independent
+        # 3 = normalize every cell individually with every color channel using the min / max of all three
+        # 4 = normalize every cell but with bounds determined by the brightest cell in the same well
+        r_min = min(r)
+        g_min = min(g)
+        b_min = min(b)
+        r_max = max(r)
+        g_max = max(g)
+        b_max = max(b)
+        rgb_min = min(r_min, g_min, b_min)
+        rgb_max = max(r_max, g_max, b_max)
+
+        # Updating 'best' min / max values
+        best_well_min_r = min(best_well_min_r, r_min)
+        best_well_min_g = min(best_well_min_g, g_min)
+        best_well_min_b = min(best_well_min_b, b_min)
+        best_well_max_r = max(best_well_max_r, r_max)
+        best_well_max_g = max(best_well_max_g, g_max)
+        best_well_max_b = max(best_well_max_b, b_max)
+
+        # 2 = normalize every cell individually with every color channel independent
+        if normalize_enum == 2:
+            r = normalize_np(r, r_min, r_max)
+            g = normalize_np(g, g_min, g_max)
+            b = normalize_np(b, b_min, b_max)
+
+        # 3 = normalize every cell individually with every color channel using the min / max of all three
+        if normalize_enum == 2:
+            r = normalize_np(r, rgb_min, rgb_max)
+            g = normalize_np(g, rgb_min, rgb_max)
+            b = normalize_np(b, rgb_min, rgb_max)
+
+        # Reshaping the color images to a 2 dimensional array
         r = np.reshape(r, (width, height))
         g = np.reshape(g, (width, height))
         b = np.reshape(b, (width, height))
 
+        # Concatenating the color images to a rgb image
         rgb = np.dstack((r, g, b))
+
+        # 1 = normalize every cell between 0 and 255 (8 bit)
+        if normalize_enum == 1:
+            rgb = normalize_np(rgb, 0, bit_max)
+
         X.append(rgb)
         del r
         del g
         del b
+        del rgb
+
+    # 4 = normalize every cell individually with every color channel using the min / max of all three
+    for i in range(len(X)):
+        current_x = X[i]
+        current_r = current_x[:, :, 0]
+        current_g = current_x[:, :, 1]
+        current_b = current_x[:, :, 2]
+
+        current_r = normalize_np(current_r, best_well_min_r, best_well_max_r)
+        current_g = normalize_np(current_g, best_well_min_g, best_well_max_g)
+        current_b = normalize_np(current_b, best_well_min_b, best_well_max_b)
+        current_rgb = np.dstack((current_r, current_g, current_b))
+
+        del current_r
+        del current_g
+        del current_b
+
+        X[i] = current_rgb
 
     return X, y
+
+
+####
+
+def normalize_np(n: np.ndarray, lower: float = 0.0, upper: float = 255.0):
+    nnv = np.vectorize(_normalize_np_worker)
+    return nnv(n, lower, upper)
+
+
+####
+
+def _normalize_np_worker(x: float, lower: float, upper: float):
+    if lower == upper:
+        return 0
+
+    lower = float(lower)
+    upper = float(upper)
+    return (x - lower) / (upper - lower)
 
 
 ####
