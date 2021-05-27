@@ -7,353 +7,12 @@ from datetime import datetime
 from sys import platform
 
 import matplotlib.pyplot as plt
-import numpy as np
-from keras.callbacks import Callback
-
-
-# #############################
-# Canary Interrupt
-# #############################
-class CanaryInterruptCallback(Callback):
-    """
-    This extends the Keras Callback.
-    Add this to your model during training to use.
-
-    Upon training starting, a 'canary_interrupt.txt' file is created and this Callback keeps track of it.
-    When you delete this file, the training is ended after the current epoch completes.
-    You can use this class to manually delete the interrupt file to shut down the training without canceling it and run subsequent functions in your script (eg. saving the weights).
-
-    The canary file is automatically deleted when the training ends.
-
-    Fields to use:
-     - active: bool. While true, this callback is active and monitors the state of the canary file.
-     - shutdown_source: readonly bool. This param is true, if the canary was triggered and the training stopped.
-
-    .. note::
-        Created by Nils Förster.
-
-        Packages Required: os
-    """
-
-    def __init__(self, path: str, starts_active: bool = True, label: str = None,
-                 out_stream=sys.stdout):
-        """
-        Constructor for this class.
-        Use this function to set up a new canary callback.
-
-        Created by Nils Förster.
-
-        :param path: The path where to save your canary file.
-        :param starts_active: If True, the callback will check for file deletion. Default: True.
-        :param label: A custom text that will be printed into the canary file. Can be None. Default: None.
-        :param out_stream: The outstream used by this Callback. Default: sys.stdout.
-
-        :type path: str
-        :type starts_active: bool
-        :type label: str
-        :type out_stream: TextIOWrapper
-
-        :returns: An instance of this object.
-        :rtype: CanaryInterruptCallback
-
-        .. note:: Read the class doc for more info on fields and usage.
-        """
-
-        super().__init__()
-        self.active: bool = starts_active
-        self.label: str = label
-        self.shutdown_source: bool = False
-        self.out_stream = out_stream
-
-        os.makedirs(path, exist_ok=True)
-        b: TextIOWrapper = 2
-
-        self.__canary_file = path + os.sep + 'canary_interrupt.txt'
-        if os.path.exists(self.__canary_file):
-            os.remove(self.__canary_file)
-
-        f = open(self.__canary_file, 'w')
-        f.write(
-            'Canary interrupt for CNN training started at ' + gct() + '.\nDelete this file to safely stop your '
-                                                                      'training.')
-        if self.label is not None:
-            f.write('\nLabel: ' + str(self.label).strip())
-        f.write('\n\nCreated by Nils Foerster.')
-        f.close()
-
-        print('Placed canary file here:' + str(self.__canary_file), file=self.out_stream)
-
-    def on_epoch_end(self, epoch, logs={}):
-        super().on_epoch_end(logs)
-        if self.active:
-            if not os.path.exists(self.__canary_file):
-                print('Canary file not found! Shutting down training!', file=self.out_stream)
-                self.shutdown_source = True
-                self.model.stop_training = True
-
-    def on_train_end(self, logs={}):
-        super().on_train_end(logs)
-        if os.path.exists(self.__canary_file):
-            os.remove(self.__canary_file)
-
-
-# #############################
-# Live Plotting
-# #############################
-class PlotTrainingLiveCallback(Callback):
-    """
-    This extends the Keras Callback.
-    Add this to your model during training to use.
-
-    This Callback automatically plots and saves specified training metrics on your device and updates the plots at the end of every epoch.
-    See the static field 'supported_formats' for a list of all available file formats programmatically.
-    Supported image formats are: eps, jpeg, jpg, pdf, pgf, png, ps, raw, rgba, svg, svgz, tif, tiff.
-
-    You can also export the plots as raw .csv files.
-    This callback also supports LaTeX compatible tikz plots.
-
-    This Callback also calculates the training time of each epoch and can plot them as well.
-    Based on that, the Callback can calculate the training ETA.
-
-
-    .. note::
-        Created by Nils Förster.
-        
-        Packages Required: time, os, socket, matplotlib
-    """
-
-    supported_formats = ['.eps', '.jpeg', '.jpg', '.pdf', '.pgf', '.png', '.ps', '.raw', '.rgba', '.svg', '.svgz',
-                         '.tif', '.tiff', '.csv', '.tex']
-    """
-    Lists all file formats supported by this Callback.
-    """
-
-    def __init__(self, out_dir: str, out_extensions: [str] = ['.png', '.pdf', '.svg', '.csv', '.tex'],
-                 label: str = None, save_timestamps: bool = True, epochs_target: int = None,
-                 metrics_names: [str] = None, plot_eta_extra: bool = True, plot_dpi: int = 400,
-                 plot_transparency: bool = True):
-        """
-        Constructor for this class.
-        Use this function to set up a new canary callback.
-
-        Created by Nils Förster.
-
-        :param out_dir: The directory to save the plots
-        :param out_extensions: A list of strings that feature all the different file extensions to export the metrics to. By default it's: ['.png', '.pdf', '.svg', '.csv', '.tex']
-        :param label: An optional label that can be None. If set, this label is printed in the title of every plot. Default: None.
-        :param save_timestamps: If true, the timestamps for every epoch is plotted. Default: True.
-        :param epochs_target: Optional argument that can be None. If set, this is the target amount of epochs to use when calulating ETA. Currently unused.
-        :param metrics_names: Optional argument. A list of strings of metrics to use (eg. ['loss']). When the model also has a validation counterpart of a given metric, this metric is plotted as well.
-        :param plot_eta_extra: If true, saves the timestamps plots in an extra directory in png file format. Default: True.
-        :param plot_dpi: The (image) DPI to uses for all plots. Default: 400.
-        :param plot_transparency: If True, all plots will feature an alpha channel (if supported). Default: True.
-
-        :type out_dir: str
-        :type out_extensions: [str] 
-        :type label: str, None
-        :type save_timestamps: bool 
-        :type epochs_target: int, None
-        :type metrics_names: [str], None
-        :type plot_eta_extra: bool
-        :type plot_dpi: int
-        :type plot_transparency: bool 
-
-        :returns: An instance of this object.
-        :rtype: PlotTrainingLiveCallback
-
-        .. note:: Read the class doc for more info on fields and usage.
-        """
-
-        super().__init__()
-        self.label = label
-        self.out_extensions = out_extensions
-        self.metrics_names = metrics_names
-        self.plot_dpi = plot_dpi
-        self.plot_transparency = plot_transparency
-        self.save_timestamps = save_timestamps
-        self.epochs_target = epochs_target
-        self.plot_eta_extra = plot_eta_extra
-        self.out_dir = out_dir
-
-        self.live_plot_dir = out_dir + 'live_plot' + os.sep
-        self.timestamp_file_name = self.live_plot_dir + 'training_timestamps.csv'
-        os.makedirs(self.live_plot_dir, exist_ok=True)
-
-        if os.path.exists(self.timestamp_file_name):
-            os.remove(self.timestamp_file_name)
-
-        self.epoch_start_timestamp = time.time()
-        self.epoch_duration_list = []
-        self.host_name = str(socket.gethostname())
-
-        self.epochCount = 0
-        self.history = {}
-
-    def on_train_begin(self, logs={}):
-        super().on_train_begin(logs)
-        self._write_timestamp_line('Training start;' + gct())
-        self._write_timestamp_line('Epoch;Timestamp')
-
-        if self.metrics_names is None:
-            self.metrics_names = self.model.metrics_names
-
-        for metric in self.metrics_names:
-            self.history[metric] = []
-            self.history['val_' + metric] = []
-
-    def on_train_end(self, logs={}):
-        super().on_train_end(logs)
-        self._write_timestamp_line('Training finished;;' + gct())
-        self._plot_training_time()
-        self._plot_training_history_live()
-
-    def on_epoch_begin(self, epoch, logs={}):
-        super().on_epoch_begin(logs)
-        self.epochCount = self.epochCount + 1
-        self.epoch_start_timestamp = time.time()
-        self._write_timestamp_line()
-
-    def on_epoch_end(self, epoch, logs={}):
-        super().on_epoch_end(logs)
-        t = int(time.time() - self.epoch_start_timestamp)
-        self.epoch_duration_list.append(t)
-
-        for metric in self.metrics_names:
-            val = 'val_' + metric
-            self.history[metric].append(logs[metric])
-            self.history[val].append(logs[val])
-
-        self._plot_training_time()
-        self._plot_training_history_live()
-
-        if self.plot_eta_extra:
-            self._plot_training_time(p_out_dir=self.out_dir, png_only=True)
-
-    def _write_timestamp_line(self, line=None):
-        if not self.save_timestamps:
-            return
-
-        try:
-            f = open(self.timestamp_file_name, 'a')
-            if line is None:
-                line = str(self.epochCount) + ';' + gct()
-
-            f.write(line + '\n')
-            f.close()
-        except Exception as e:
-            # TODO print stacktrace
-            pass
-
-    def _plot_training_time(self, p_out_dir: str = None, png_only: bool = False):
-        # Plotting epoch duration
-        if p_out_dir is None:
-            p_out_dir = self.live_plot_dir
-
-        for extension in self.out_extensions:
-            if png_only:
-                extension = '.png'
-
-            self._save_metric(data_name='training_time', extension=extension, title='Model Training Time',
-                              data1=self.epoch_duration_list, y_label='Duration (Sec.)', p_out_dir=p_out_dir)
-
-    def _save_metric(self, data_name: str, title: str, extension: str, data1: [float], data2: [float] = None,
-                     y_label: str = None, p_out_dir: str = None):
-        if p_out_dir is None:
-            p_out_dir = self.live_plot_dir
-
-        extension = extension.lower().strip()
-        if not extension.startswith('.'):
-            extension = '.' + extension
-
-        if extension == '.csv':
-            self._save_csv_metric(data_name=data_name, data_label=y_label, data1=data1, data2=data2)
-            return
-        if extension == '.tex':
-            self._save_tex_metric(data_name=data_name, title=title, data_label=y_label, data1=data1, data2=data2)
-            return
-
-        if self.label is not None:
-            title = title + ' [' + self.label + ']'
-
-        plt.title(title)
-        plt.ylabel(data_name)
-        if y_label is not None:
-            plt.ylabel(y_label)
-        plt.xlabel('Epoch')
-        plt.plot(data1)
-
-        if data2 is not None:
-            plt.plot(data2)
-            plt.legend(['Train', 'Validation'], loc='best')
-
-        plt.savefig(p_out_dir + data_name + '_live' + extension, dpi=self.plot_dpi,
-                    transparent=self.plot_transparency)
-        plt.clf()
-
-    def _save_csv_metric(self, data_name: str, data_label: str, data1, data2=None):
-        f_name = self.live_plot_dir + data_name + '_live.csv'
-        f = open(f_name, 'w')
-
-        f.write('Epoch;' + data_label)
-        if data2 is not None:
-            f.write(';Validation ' + data_label)
-        f.write(';\n')
-
-        for i in range(len(data1)):
-            f.write(str(i + 1) + ';' + str(data1[i]))
-            if data2 is not None:
-                f.write(';' + str(data2[i]))
-            f.write(';\n')
-
-    def _save_tex_metric(self, data_name: str, title: str, data_label: str, data1, data2=None) -> str:
-        data = [data1]
-        titles = ['Training']
-        colors = ['blue']
-
-        min_y = min(data1)
-        max_y = max(data1)
-
-        if data2 is not None:
-            data.append(data2)
-            titles.append('Validation')
-            colors.append('orange')
-
-            min_y = min(min_y, min(data2))
-            max_y = max(max_y, max(data2))
-
-        min_y = max(min_y - 0.1337, 0)
-        max_y = min(max_y + 0.1337, 1)
-
-        out_text = get_plt_as_tex(data_list_y=data, plot_titles=titles, plot_colors=colors, title=title,
-                                  label_y=data_label, max_x=len(data1), min_x=1, max_y=max_y, min_y=min_y)
-
-        f_name = self.live_plot_dir + data_name + '_live.tex'
-        f = open(f_name, 'w')
-        f.write(out_text)
-        f.close()
-
-        return out_text
-
-    def _plot_training_history_live(self):
-        # Plotting epoch duration
-        for metric in self.metrics_names:
-            val = 'val_' + metric
-            m = metric.capitalize()
-            title = 'Model: ' + m
-
-            for extension in self.out_extensions:
-                data1 = self.history[metric]
-                data2 = None
-                if val in self.history:
-                    data2 = self.history[val]
-
-                self._save_metric(data_name=metric, extension=extension, title=title, y_label=m, data1=data1,
-                                  data2=data2)
-
 
 # ###############################
 # OTHER UTIL FUNCTIONS
 # ###############################
+import torch
+
 
 def gct(raw: bool = False) -> [str, datetime]:
     """
@@ -568,13 +227,13 @@ def get_plt_as_tex(data_list_y: [[float]], plot_colors: [str], title: str, label
 
 
 def convert_size(size_bytes):
-   if size_bytes == 0:
-       return "0B"
-   size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
-   i = int(math.floor(math.log(size_bytes, 1024)))
-   p = math.pow(1024, i)
-   s = round(size_bytes / p, 2)
-   return "%s %s" % (s, size_name[i])
+    if size_bytes == 0:
+        return "0B"
+    size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
+    i = int(math.floor(math.log(size_bytes, 1024)))
+    p = math.pow(1024, i)
+    s = round(size_bytes / p, 2)
+    return "%s %s" % (s, size_name[i])
 
 
 def line_print(text: str, max_width: int = None, cutoff_too_large_text: bool = True, use_new_line: bool = True):
@@ -613,6 +272,27 @@ def line_print(text: str, max_width: int = None, cutoff_too_large_text: bool = T
         print(out_s, end="\r")
     else:
         print(out_s)
+
+
+###########################
+# PROJECT UTILS
+###########################
+
+def get_hardware_device(gpu_enabled: bool = True):
+    ''' Pick GPU if available, else run on CPU.
+    Returns the corresponding device.
+    '''
+    if gpu_enabled:
+        if torch.cuda.is_available():
+            print('Running on GPU.')
+            return torch.device('cuda')
+        else:
+            print('  =================')
+            print('Wanted to run on GPU but it is not available!!')
+            print('  =================')
+
+    print('Running on CPU.')
+    return torch.device('cpu')
 
 
 if __name__ == "__main__":
