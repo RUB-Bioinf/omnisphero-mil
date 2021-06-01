@@ -80,18 +80,12 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
         print('Considering source file: ' + file)
         filepath = source_dir + os.sep + file
 
-        X_j = []
-        y_j = []
-
         if file.endswith('.json.zip'):
             future = executor.submit(unzip_and_read_JSON,
                                      filepath,
                                      worker_verbose,
                                      normalize_enum
                                      )
-            # [X_j, y_j] = unzip_and_read_JSON(filepath,worker_verbose)
-            # X.extend(X_j)
-            # y.extend(y_j)
             future_list.append(future)
 
         if file.endswith('.json'):
@@ -105,9 +99,6 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
                                      normalize_enum
                                      )
             future_list.append(future)
-            # [X_j, y_j] = read_JSON_file(filepath,worker_verbose)
-            # X.extend(X_j)
-            # y.extend(y_j)
 
     start_time = gct(raw=True)
     all_finished: bool = False
@@ -146,9 +137,9 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
         if e is None:
             X_f, y_f = future.result()
             if X_f is not None:
-                X.extend(X_f)
+                X.append(X_f)
             if y_f is not None:
-                y.extend(y_f)
+                y.append(y_f)
         else:
             print('\n' + gct() + 'Error extracting future results: ' + str(e) + '\n')
             error_list.append(e)
@@ -159,8 +150,6 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
     del future_list[:]
     del future_list
 
-    X = np.asarray(X)
-    y = np.asarray(y)
     return X, y, error_list
 
 
@@ -195,9 +184,6 @@ def read_JSON_file(filepath, worker_verbose, normalize_enum):
     if worker_verbose:
         print('Reading json: ' + filepath)
 
-    X = []
-    y = []
-
     f = open(filepath)
     data = json.load(f)
     f.close()
@@ -207,7 +193,7 @@ def read_JSON_file(filepath, worker_verbose, normalize_enum):
 
 ####
 
-def parse_JSON(json_data, worker_verbose, normalize_enum):
+def parse_JSON(json_data, worker_verbose, normalize_enum) -> (np.array, int):
     # Setting up arrays
     X = []
     y = None
@@ -221,8 +207,7 @@ def parse_JSON(json_data, worker_verbose, normalize_enum):
     # Reading label, if it exists
     if 'label' in json_data:
         label = json_data['label']
-        label = int(label)
-        y = [label]
+        y = int(label)
 
     if worker_verbose:
         print('Reading JSON: ' + str(width) + 'x' + str(height), '. Bits: ' + str(bit_depth))
@@ -318,7 +303,66 @@ def parse_JSON(json_data, worker_verbose, normalize_enum):
 
         X[i] = current_rgb
 
+    X = np.asarray(X)
     return X, y
+
+
+def convert_bag_to_batch(bags, labels):
+    ''' Convert bag and label pairs into batch format
+    Inputs:
+        a list of bags and a list of bag-labels
+
+    Outputs:
+        Returns a dataset (list) containing (stacked tiled instance data, bag label)
+    '''
+    dataset = []
+    input_dim = None
+
+    for index, (bag, bag_label) in enumerate(zip(bags, labels)):
+        batch_data = np.asarray(bag, dtype='float32')
+        batch_label = np.asarray(bag_label, dtype='float32')
+        dataset.append((batch_data, batch_label))
+
+        input_dim = batch_data.shape[1:]
+
+    return dataset, input_dim
+
+
+def build_bags(tiles, labels):
+    ''' Builds bags suited for MIL problems: A bag is a collection of a variable number of instances. The instance-level labels are not known.
+    These instances are combined into a single bag, which is then given a supervised label eg. patient diagnosis label when the instances are multiple tissue instances from that same patient.
+
+    Inputs:
+        Data tiled from images with expanded dimensionality, see preprocessing.tile_wsi and .expand_dimensionality
+
+    Outputs:
+        Returns two arrays: bags, labels where each label is sorted to a bag. Number of bags == number of labels
+        bag shape is [n (tiles,x,y,z) ]
+    '''
+    result_bags = tiles
+    result_labels = []
+    count = 0
+
+    print(len(result_bags))
+    print(len(result_bags[0]))
+    print(result_bags[0][0].shape)
+
+    # check number of bags against labels
+    if len(result_bags) == len(labels):
+        pass
+
+    else:
+        raise ValueError(
+            'Number of Bags is not equal to the number of labels that can be assigned.\nCheck your input data!')
+
+    # this step seems to be necessary in Tensorflow... it is not possible to use one bag - one label
+    for j in labels:
+        number_of_instances = result_bags[count].shape[0]
+        tiled_instance_labels = np.tile(labels[count], (number_of_instances, 1))
+        result_labels.append(tiled_instance_labels)
+        count += 1
+
+    return result_bags, result_labels, labels
 
 
 ####

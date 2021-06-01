@@ -1,13 +1,11 @@
-import os
-import socket
-import sys
-import time
 import math
+import os
+import random
 from datetime import datetime
 from sys import platform
 
 import matplotlib.pyplot as plt
-
+import numpy as np
 # ###############################
 # OTHER UTIL FUNCTIONS
 # ###############################
@@ -293,6 +291,24 @@ def get_hardware_device(gpu_enabled: bool = True):
 
     print('Running on CPU.')
     return torch.device('cpu')
+
+
+# shuffle data and split into training and validation set
+def shuffle_and_split_data(dataset, train_percentage=0.7):
+    '''
+    Takes a dataset that was converted from bags to batches and shuffles and splits it into two splits (train/val)
+    '''
+    train_percentage_index = int(train_percentage * len(dataset))
+    indices = np.arange(len(dataset))
+    random.shuffle(indices)
+    train_ind, test_ind = np.asarray(indices[:train_percentage_index]), np.asarray(indices[train_percentage_index:])
+
+    training_ds = [dataset[i] for i in train_ind]
+    validation_ds = [dataset[j] for j in test_ind]
+
+    del dataset
+    return training_ds, validation_ds
+
 
 
 if __name__ == "__main__":
