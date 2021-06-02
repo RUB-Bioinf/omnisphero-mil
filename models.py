@@ -1,3 +1,4 @@
+from datetime import datetime
 from itertools import chain
 
 import torch
@@ -6,14 +7,17 @@ import os
 import numpy as np
 
 from torch.optim import Optimizer
+from torch.utils.data import DataLoader
 
+import mil_metrics
+from util import utils
 from util.utils import get_hardware_device
 
 
 ####
 
-def save_model(state, save_path):
-    print('--> Saving new best model')
+def save_model(state, save_path: str):
+    print('Saving model: ' + save_path)
     torch.save(state, save_path)
 
 
@@ -38,14 +42,35 @@ device_ordinals_local = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 device_ordinals_cluster = (0, 1, 2, 3, 3, 1, 2, 3, 0, 1, 2)
 
 
-class BaselineMIL(nn.Module):
-    def __init__(self, input_dim, device, use_bias=True, use_max=True, device_ordinals=None):
+class OmniSpheroMil(nn.Module):
+
+    def __init__(self, device, device_ordinals=None):
         super().__init__()
+        self.device = device
+        self._device_ordinals = device_ordinals
+
+    def get_device_ordinal(self, index: int) -> str:
+        if self._device_ordinals is None:
+            return 'cpu'
+
+        if self.is_cpu():
+            return 'cpu'
+
+        return 'cuda:' + str(self._device_ordinals(index))
+
+    def is_cpu(self) -> bool:
+        return self.device.type == 'cpu'
+
+    def get_device_ordinals(self) -> [int]:
+        return self._device_ordinals.copy()
+
+
+class BaselineMIL(OmniSpheroMil):
+    def __init__(self, input_dim, device, use_bias=True, use_max=True, device_ordinals=None):
+        super().__init__(device, device_ordinals)
         self.linear_nodes = 512
         self.num_classes = 1  # 3
-        self._device_ordinals = device_ordinals
         self.input_dim = input_dim
-        self.device = device
 
         self.use_bias = use_bias
         self.use_max = use_max
@@ -172,15 +197,6 @@ class BaselineMIL(nn.Module):
         y_hat_binarized = torch.ge(y_hat, 0.5).float()
         return y_hat, y_hat_binarized, attention
 
-    def get_device_ordinal(self, index: int) -> str:
-        if self._device_ordinals is None:
-            return 'cpu'
-
-        if self.device.type == 'cpu':
-            return 'cpu'
-
-        return 'cuda:' + str(self._device_ordinals(index))
-
     def _get_conv_output(self, shape):
         ''' generate a single fictional input sample and do a forward pass over
         Conv layers to compute the input shape for the Flatten -> Linear layers input size
@@ -232,7 +248,7 @@ class BaselineMIL(nn.Module):
         return acc
 
 
-def apply_optimizer(model: nn.Module, selection: str = 'adam') -> Optimizer:
+def apply_optimizer(model: OmniSpheroMil, selection: str = 'adam') -> Optimizer:
     ''' Chooses an optimizer according to the string specifed in the model CLI argument and build with specified args
     '''
     if selection == 'adam':
@@ -248,29 +264,31 @@ def apply_optimizer(model: nn.Module, selection: str = 'adam') -> Optimizer:
     return optimizer
 
 
-def fit(model, optimizer, epochs, training_data, validation_data, checkpoint_out_dir,
-        device_ordinals=None):
+def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: DataLoader, validation_data: DataLoader,
+        checkpoint_out_dir: str):
     ''' Trains a model on the previously preprocessed train and val sets.
     Also calls evaluate in the validation phase of each epoch.
     '''
     best_acc = 0
     history = []
+    history_keys = ['train_loss', 'train_acc', 'val_acc', 'val_loss']
+
     loss = None
     os.makedirs(checkpoint_out_dir, exist_ok=True)
     model_save_path_best = checkpoint_out_dir + os.sep + 'model_best.h5'
+    start_time_train = datetime.now()
 
-    gpu_enabled = True
-    if device_ordinals is None:
+    if model.is_cpu():
         print('Training on CPU.')
-        gpu_enabled = False
     else:
-        print('Training on GPU, using these ordinals: ' + str(device_ordinals))
+        print('Training on GPU, using these ordinals: ' + str(model.get_device_ordinals()))
 
     for epoch in range(1, epochs + 1):
         # TRAINING PHASE
         model.train()
         train_losses = []
         train_acc = []
+        start_time_epoch = datetime.now()
 
         for batch_id, (data, label) in enumerate(training_data):
             # torch.cuda.empty_cache()
@@ -296,13 +314,17 @@ def fit(model, optimizer, epochs, training_data, validation_data, checkpoint_out
             del data, bag_label, label
 
         # VALIDATION PHASE
+
         result, _ = evaluate(model, validation_data)  # returns a results dict for metrics
         result['train_loss'] = sum(train_losses) / len(train_losses)  # torch.stack(train_losses).mean().item()
         result['train_acc'] = sum(train_acc) / len(train_acc)
-        history.append(result)
 
-        print('Epoch [{}] : Train Loss {:.4f}, Train Acc {:.4f}, Val Loss {:.4f}, Val Acc {:.4f}'.format(epoch, result[
-            'train_loss'], result['train_acc'], result['val_loss'], result['val_acc']))
+        time_diff = utils.get_time_diff(start_time_epoch)
+        result['duration'] = (datetime.now() - start_time_epoch).total_seconds()
+
+        history.append(result)
+        print('Epoch [{}]: Train Loss {:.4f}, Train Acc {:.4f}, Val Loss {:.4f}, Val Acc {:.4f}'.format(epoch, result[
+            'train_loss'], result['train_acc'], result['val_loss'], result['val_acc']) + '. Duration: ' + time_diff)
 
         # Save best model / checkpointing stuff
         is_best = bool(result['val_acc'] >= best_acc)
@@ -314,16 +336,22 @@ def fit(model, optimizer, epochs, training_data, validation_data, checkpoint_out
             'loss': loss
         }
 
+        # Saving raw history
+        mil_metrics.write_history(history, history_keys, metrics_dir=checkpoint_out_dir)
+        mil_metrics.plot_accuracy(history, checkpoint_out_dir, include_raw=False, include_tikz=False)
+        mil_metrics.plot_losses(history, checkpoint_out_dir, include_raw=False, include_tikz=False)
+
+        # Saving model checkpoints
         model_save_path_checkpoint = checkpoint_out_dir + os.sep + 'model_checkpoint-' + str(epoch) + '.h5'
         save_model(state, model_save_path_checkpoint)
         if is_best:
             save_model(state, model_save_path_best)
 
-    return history, model_save_path_best
+    return history, history_keys, model_save_path_best
 
 
 @torch.no_grad()
-def get_predictions(model, data_loader, device_ordinal: [int] = None):
+def get_predictions(model: OmniSpheroMil, data_loader: DataLoader):
     ''' takes a trained model and validation or test dataloader
     and applies the model on the data producing predictions
 
@@ -368,7 +396,7 @@ def get_predictions(model, data_loader, device_ordinal: [int] = None):
 
 
 @torch.no_grad()
-def evaluate(model, data_loader):
+def evaluate(model: OmniSpheroMil, data_loader: DataLoader):
     ''' Evaluate model / validation operation
     Can be used for validation within fit as well as testing.
     '''

@@ -82,7 +82,7 @@ def main(source_dir: str = default_source_dir, epochs: int = 3, max_workers: int
 
     # Setting up Model
     print('Setting up model...')
-    model = BaselineMIL(input_dim=input_dim, device = device, device_ordinals=device_ordinals)
+    model = BaselineMIL(input_dim=input_dim, device=device, device_ordinals=device_ordinals)
 
     # Loader args
     loader_kwargs = {}
@@ -106,14 +106,14 @@ def main(source_dir: str = default_source_dir, epochs: int = 3, max_workers: int
     # TRAINING START
     ################
     print('Start of training for ' + str(epochs) + ' epochs.')
-    history, model_save_path_best = models.fit(model, optimizer, epochs, train_dl, validation_dl, out_dir,
-                                               device_ordinals=None)
+    history, history_keys, model_save_path_best = models.fit(model, optimizer, epochs, train_dl, validation_dl, out_dir)
     print('Finished training!')
     del train_dl
 
     print('Plotting and saving loss and acc plots...')
-    mil_metrics.plot_losses(history, metrics_dir)
-    mil_metrics.plot_accuracy(history, metrics_dir)
+    mil_metrics.write_history(history, history_keys, metrics_dir)
+    mil_metrics.plot_losses(history, metrics_dir, include_raw=True, include_tikz=True)
+    mil_metrics.plot_accuracy(history, metrics_dir, include_raw=True, include_tikz=True)
 
     ###############
     # TESTING START
