@@ -35,14 +35,16 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
     X_full = None
     y_full = None
     error_list = []
+    loaded_files_list = []
 
     for i in range(len(batch_dirs)):
         current_dir = batch_dirs[i]
         print('Considering source directory: ' + current_dir)
 
         if os.path.isdir(current_dir):
-            X, y, errors = load_bags_json(source_dir=current_dir, max_workers=max_workers,
-                                          normalize_enum=normalize_enum, gp_current=i, gp_max=len(batch_dirs))
+            X, y, errors, loaded_files_list = load_bags_json(source_dir=current_dir, max_workers=max_workers,
+                                                             normalize_enum=normalize_enum, gp_current=i + 1,
+                                                             gp_max=len(batch_dirs))
 
             error_list.extend(errors)
             if X_full is None:
@@ -56,13 +58,14 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
                 else:
                     y_full = np.concatenate((y_full, y), axis=0)
 
-    return X_full, y_full, error_list
+    return X_full, y_full, error_list, loaded_files_list
 
 
 # Main Loading function
 def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_current: int = 1, gp_max: int = 1):
     files = os.listdir(source_dir)
     print('Loading from source: ' + source_dir)
+    loaded_files_list = []
 
     terminal_columns = None
     if platform == "linux" or platform == "linux2":
@@ -81,6 +84,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
         filepath = source_dir + os.sep + file
 
         if file.endswith('.json.zip'):
+            loaded_files_list.append(filepath + os.sep + file)
             future = executor.submit(unzip_and_read_JSON,
                                      filepath,
                                      worker_verbose,
@@ -89,10 +93,11 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
             future_list.append(future)
 
         if file.endswith('.json'):
-            if os.path.exists(file + '.zip'):
+            if os.path.exists(filepath + '.zip'):
                 print('A zipped version also existed. Skipping.')
                 continue
 
+            loaded_files_list.append(filepath + os.sep + file)
             future = executor.submit(read_JSON_file,
                                      filepath,
                                      worker_verbose,
@@ -106,7 +111,6 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
 
     while not all_finished:
         finished_count = 0
-        predicted_count = 0
         error_count = 0
 
         for future in future_list:
@@ -119,7 +123,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
 
         line_print('[' + str(gp_current) + ' / ' + str(gp_max) + '] ' + str(
             max_workers) + ' Threads running. Finished: ' + str(finished_count) + '/' + str(
-            len(future_list)) + '. Already predicted: ' + str(predicted_count) + '. Errors: ' + str(
+            len(future_list)) + '. Errors: ' + str(
             error_count) + '. Running: ' + get_time_diff(
             start_time) + '. ' + gct(), max_width=terminal_columns)
         all_finished = finished_count == len(future_list)
@@ -150,7 +154,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
     del future_list[:]
     del future_list
 
-    return X, y, error_list
+    return X, y, error_list, loaded_files_list
 
 
 ####
@@ -202,7 +206,9 @@ def parse_JSON(json_data, worker_verbose, normalize_enum) -> (np.array, int):
     width = json_data['tileWidth']
     height = json_data['tileHeight']
     bit_depth = json_data['bit_depth']
-    bit_max = np.iinfo('uint' + str(bit_depth)).max
+
+    # bit_max = np.iinfo('uint' + str(bit_depth)).max
+    bit_max = pow(2, bit_depth) - 1
 
     # Reading label, if it exists
     if 'label' in json_data:
@@ -262,7 +268,7 @@ def parse_JSON(json_data, worker_verbose, normalize_enum) -> (np.array, int):
             b = normalize_np(b, b_min, b_max)
 
         # 3 = normalize every cell individually with every color channel using the min / max of all three
-        if normalize_enum == 2:
+        if normalize_enum == 3:
             r = normalize_np(r, rgb_min, rgb_max)
             g = normalize_np(g, rgb_min, rgb_max)
             b = normalize_np(b, rgb_min, rgb_max)
@@ -286,22 +292,23 @@ def parse_JSON(json_data, worker_verbose, normalize_enum) -> (np.array, int):
         del rgb
 
     # 4 = normalize every cell individually with every color channel using the min / max of all three
-    for i in range(len(X)):
-        current_x = X[i]
-        current_r = current_x[:, :, 0]
-        current_g = current_x[:, :, 1]
-        current_b = current_x[:, :, 2]
+    if normalize_enum == 4:
+        for i in range(len(X)):
+            current_x = X[i]
+            current_r = current_x[:, :, 0]
+            current_g = current_x[:, :, 1]
+            current_b = current_x[:, :, 2]
 
-        current_r = normalize_np(current_r, best_well_min_r, best_well_max_r)
-        current_g = normalize_np(current_g, best_well_min_g, best_well_max_g)
-        current_b = normalize_np(current_b, best_well_min_b, best_well_max_b)
-        current_rgb = np.dstack((current_r, current_g, current_b))
+            current_r = normalize_np(current_r, best_well_min_r, best_well_max_r)
+            current_g = normalize_np(current_g, best_well_min_g, best_well_max_g)
+            current_b = normalize_np(current_b, best_well_min_b, best_well_max_b)
+            current_rgb = np.dstack((current_r, current_g, current_b))
 
-        del current_r
-        del current_g
-        del current_b
+            del current_r
+            del current_g
+            del current_b
 
-        X[i] = current_rgb
+            X[i] = current_rgb
 
     X = np.asarray(X)
     return X, y
@@ -367,7 +374,34 @@ def build_bags(tiles, labels):
 
 ####
 
-def normalize_np(n: np.ndarray, lower: float = 0.0, upper: float = 255.0):
+def normalize_np(n: np.ndarray, lower: float = 0.0, upper: float = 255.0) -> np.ndarray:
+    """
+    Using linear normalization, every entry in a given numpy array between a lower and upper bound.
+    The shape of the array can be arbitrary.
+
+    If the lower and upper bound are equal, the reulting array will contain only zeros.
+
+    Created by Nils Förster.
+
+    :param n: An arbitrary numpy array
+    :param lower: The lower bound for normalization
+    :param upper: The upper bound for normalization
+
+    :type n: np.ndarray
+    :type lower: float
+    :type upper: float
+
+    :returns: Returns a copy of the array normalized between 0 and 1, relative to the lower and upper bound
+    :rtype: np.ndarray
+
+    Examples
+    ----------
+    Use this example to generate ten random integers between 0 and 100. Then normalize them using this function.
+
+    >>> n=np.random.randint(0,100,10)
+    >>> normalize_np(n,0,100)
+
+    """
     nnv = np.vectorize(_normalize_np_worker)
     return nnv(n, lower, upper)
 

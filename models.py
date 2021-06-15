@@ -9,15 +9,16 @@ import numpy as np
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 
+import hardware
 import mil_metrics
 from util import utils
-from util.utils import get_hardware_device
 
 
 ####
 
-def save_model(state, save_path: str):
-    print('Saving model: ' + save_path)
+def save_model(state, save_path: str, verbose: bool = False):
+    if verbose:
+        print('Saving model: ' + save_path)
     torch.save(state, save_path)
 
 
@@ -38,8 +39,8 @@ def load_checkpoint(load_path, model, optimizer):
 # MODEL
 #######
 
-device_ordinals_local = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-device_ordinals_cluster = (0, 1, 2, 3, 3, 1, 2, 3, 0, 1, 2)
+device_ordinals_local = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+device_ordinals_cluster = [0, 1, 2, 3, 3, 1, 2, 3, 0, 1, 2]
 
 
 class OmniSpheroMil(nn.Module):
@@ -56,7 +57,7 @@ class OmniSpheroMil(nn.Module):
         if self.is_cpu():
             return 'cpu'
 
-        return 'cuda:' + str(self._device_ordinals(index))
+        return 'cuda:' + str(self._device_ordinals[index])
 
     def is_cpu(self) -> bool:
         return self.device.type == 'cpu'
@@ -342,10 +343,11 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         mil_metrics.plot_losses(history, checkpoint_out_dir, include_raw=False, include_tikz=False)
 
         # Saving model checkpoints
-        model_save_path_checkpoint = checkpoint_out_dir + os.sep + 'model_checkpoint-' + str(epoch) + '.h5'
-        save_model(state, model_save_path_checkpoint)
+        model_save_path_checkpoint = checkpoint_out_dir + os.sep + 'checkpoints' + os.sep
+        os.makedirs(model_save_path_checkpoint, exist_ok=True)
+        save_model(state, model_save_path_checkpoint + 'checkpoint-' + str(epoch) + '.h5', verbose=False)
         if is_best:
-            save_model(state, model_save_path_best)
+            save_model(state, model_save_path_best, verbose=True)
 
     return history, history_keys, model_save_path_best
 
@@ -440,7 +442,7 @@ def _binary_accuracy(outputs, targets):
 
 
 def debug_all_models(gpu_enabled: bool = True):
-    device = get_hardware_device(gpu_enabled=gpu_enabled)
+    device = hardware.get_hardware_device(gpu_preferred=gpu_enabled)
     print('Selected device: ' + str(device))
 
     print('Checking the baseline model')

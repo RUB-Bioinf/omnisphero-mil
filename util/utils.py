@@ -6,10 +6,11 @@ from sys import platform
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+
 # ###############################
 # OTHER UTIL FUNCTIONS
 # ###############################
-import torch
 
 
 def gct(raw: bool = False) -> [str, datetime]:
@@ -276,23 +277,6 @@ def line_print(text: str, max_width: int = None, cutoff_too_large_text: bool = T
 # PROJECT UTILS
 ###########################
 
-def get_hardware_device(gpu_enabled: bool = True):
-    ''' Pick GPU if available, else run on CPU.
-    Returns the corresponding device.
-    '''
-    if gpu_enabled:
-        if torch.cuda.is_available():
-            print('Running on GPU.')
-            return torch.device('cuda')
-        else:
-            print('  =================')
-            print('Wanted to run on GPU but it is not available!!')
-            print('  =================')
-
-    print('Running on CPU.')
-    return torch.device('cpu')
-
-
 # shuffle data and split into training and validation set
 def shuffle_and_split_data(dataset, train_percentage=0.7):
     '''
@@ -308,7 +292,6 @@ def shuffle_and_split_data(dataset, train_percentage=0.7):
 
     del dataset
     return training_ds, validation_ds
-
 
 
 if __name__ == "__main__":
