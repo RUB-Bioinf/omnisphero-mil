@@ -19,6 +19,7 @@ from sys import getsizeof
 from sys import platform as _platform
 
 from models import BaselineMIL
+from torch_callbacks import UnreasonableLossCallback
 from util import utils
 from util.utils import shuffle_and_split_data
 
@@ -144,7 +145,7 @@ def main(source_dirs: [str], epochs: int = 3, max_workers: int = max_workers_def
     device_ordinals = models.device_ordinals_local
     if _platform == "linux" or _platform == "linux2":
         # looks like I am running on linux
-        device_ordinals = models.device_ordinals_cluster
+        device_ordinals = models.device_ordinals_ehrlich
         # device_ordinals = models.device_ordinals_local
 
     # Loading Hardware Device
@@ -154,7 +155,10 @@ def main(source_dirs: [str], epochs: int = 3, max_workers: int = max_workers_def
 
     # Setting up Model
     print('Setting up model...')
-    model = BaselineMIL(input_dim=input_dim, device=device, device_ordinals=device_ordinals)
+    model = BaselineMIL(input_dim=input_dim, device=device,
+                        device_ordinals=device_ordinals,
+                        loss_function='negative_log_bernoulli',
+                        activation_function='binary')
 
     # Loader args
     loader_kwargs = {}
@@ -175,11 +179,19 @@ def main(source_dirs: [str], epochs: int = 3, max_workers: int = max_workers_def
     test_dl = None
     # test_dl = DataLoader(test_data, batch_size=1, shuffle=True, **loader_kwargs)
 
+    # Callbacks
+    callbacks = []
+    # callbacks.append(UnreasonableLossCallback(loss_max=100.0))
+
     ################
     # TRAINING START
     ################
     print('Start of training for ' + str(epochs) + ' epochs.')
-    history, history_keys, model_save_path_best = models.fit(model, optimizer, epochs, train_dl, validation_dl, out_dir)
+    history, history_keys, model_save_path_best = models.fit(model=model, optimizer=optimizer, epochs=epochs,
+                                                             training_data=train_dl,
+                                                             validation_data=validation_dl,
+                                                             out_dir_base=out_dir,
+                                                             callbacks=callbacks)
     print('Finished training!')
     del train_dl
 
@@ -207,11 +219,14 @@ def main(source_dirs: [str], epochs: int = 3, max_workers: int = max_workers_def
 
 if __name__ == '__main__':
     print("OmniSphero MIL")
+    debug: bool = False
 
     current_max_workers = 45
-    current_sources_dir = [default_source_dirs_unix[0]]
     default_out_dir_base = default_out_dir_unix_base
+    current_sources_dir = default_source_dirs_unix
     current_gpu_enabled = True
+    if debug:
+        current_sources_dir = [current_sources_dir[0]]
 
     if sys.platform == 'win32':
         current_max_workers = 5
@@ -222,7 +237,7 @@ if __name__ == '__main__':
     current_out_dir = default_out_dir_base + os.sep + 'debug-training' + os.sep
     os.makedirs(current_out_dir, exist_ok=True)
 
-    current_epochs = 50
+    current_epochs = 1500
 
     main(source_dirs=current_sources_dir, epochs=current_epochs, out_dir=current_out_dir,
          max_workers=current_max_workers, gpu_enabled=current_gpu_enabled)

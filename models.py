@@ -1,4 +1,5 @@
 from datetime import datetime
+from datetime import timedelta
 from itertools import chain
 
 import torch
@@ -6,11 +7,15 @@ import torch.nn as nn
 import os
 import numpy as np
 
+from torch import Tensor
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
 
 import hardware
 import mil_metrics
+
+from torch_callbacks import BaseTorchCallback
 from util import utils
 
 
@@ -39,8 +44,9 @@ def load_checkpoint(load_path, model, optimizer):
 # MODEL
 #######
 
-device_ordinals_local = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-device_ordinals_cluster = [0, 1, 2, 3, 3, 1, 2, 3, 0, 1, 2]
+device_ordinals_local = [0, 0, 0, 0]
+device_ordinals_ehrlich = [1, 1, 2, 2]
+device_ordinals_cluster = [0, 1, 2, 3]
 
 
 class OmniSpheroMil(nn.Module):
@@ -67,7 +73,7 @@ class OmniSpheroMil(nn.Module):
 
 
 class BaselineMIL(OmniSpheroMil):
-    def __init__(self, input_dim, device, use_bias=True, use_max=True, device_ordinals=None):
+    def __init__(self, input_dim, device, loss_function: str,activation_function:str, use_bias=True, use_max=True, device_ordinals=None):
         super().__init__(device, device_ordinals)
         self.linear_nodes = 512
         self.num_classes = 1  # 3
@@ -75,6 +81,8 @@ class BaselineMIL(OmniSpheroMil):
 
         self.use_bias = use_bias
         self.use_max = use_max
+        self.loss_function: str = loss_function
+        self.activation_function:str=activation_function
 
         # add batch norm? increases model complexity but possibly speeds up convergence
         self.feature_extractor_0 = nn.Sequential(
@@ -173,21 +181,21 @@ class BaselineMIL(OmniSpheroMil):
             # nn.Softmax()
             nn.Sigmoid()
         )
-        self.classifier = self.classifier.to(self.get_device_ordinal(4))
+        self.classifier = self.classifier.to(self.get_device_ordinal(3))
 
     def forward(self, x):
-        ''' Forward NN pass, declaring the exact interplay of model components
-        '''
+        """ Forward NN pass, declaring the exact interplay of model components
+        """
         x = x.squeeze(
             0)  # necessary? compresses unnecessary dimensions eg. (1,batch,channel,x,y) -> (batch,channel,x,y)
         hidden = self.feature_extractor_0(x)
-        hidden = self.feature_extractor_1(hidden.to(self.get_device_ordinal(5)))
-        hidden = self.feature_extractor_2(hidden.to(self.get_device_ordinal(6)))
-        hidden = self.feature_extractor_3(hidden.to(self.get_device_ordinal(7)))  # N x linear_nodes
+        hidden = self.feature_extractor_1(hidden.to(self.get_device_ordinal(1)))
+        hidden = self.feature_extractor_2(hidden.to(self.get_device_ordinal(2)))
+        hidden = self.feature_extractor_3(hidden.to(self.get_device_ordinal(3)))  # N x linear_nodes
 
+        pooled = None
         if not self.use_max:
             pooled = torch.mean(hidden, dim=[0, 1], keepdim=True)  # N x num_classes
-
         elif self.use_max:
             pooled = torch.max(hidden)  # N x num_classes
             pooled = pooled.unsqueeze(dim=0)
@@ -199,23 +207,23 @@ class BaselineMIL(OmniSpheroMil):
         return y_hat, y_hat_binarized, attention
 
     def _get_conv_output(self, shape):
-        ''' generate a single fictional input sample and do a forward pass over
+        """ generate a single fictional input sample and do a forward pass over
         Conv layers to compute the input shape for the Flatten -> Linear layers input size
-        '''
+        """
         bs = 1
-        test_input = torch.autograd.Variable(torch.rand(bs, *shape)).to(self.get_device_ordinal(8))
+        test_input = torch.autograd.Variable(torch.rand(bs, *shape)).to(self.get_device_ordinal(0))
         output_features = self.feature_extractor_0(test_input)
-        output_features = self.feature_extractor_1(output_features.to(self.get_device_ordinal(9)))
-        output_features = self.feature_extractor_2(output_features.to(self.get_device_ordinal(10)))
+        output_features = self.feature_extractor_1(output_features.to(self.get_device_ordinal(1)))
+        output_features = self.feature_extractor_2(output_features.to(self.get_device_ordinal(2)))
         n_size = int(output_features.data.view(bs, -1).size(1))
         del test_input, output_features
         return n_size
 
     # COMPUTATION METHODS
-    def compute_loss(self, X, y):
-        ''' otherwise known as loss_fn
+    def compute_loss(self, X: Tensor, y: Tensor):
+        """ otherwise known as loss_fn
         Takes a data input of X,y (batches or bags) computes a forward pass and the resulting error.
-        '''
+        """
         y = y.float()
         # y = y.unsqueeze(dim=0)
         # y = torch.argmax(y, dim=1)
@@ -225,16 +233,22 @@ class BaselineMIL(OmniSpheroMil):
         y_prob = torch.clamp(y_hat, min=1e-5, max=1. - 1e-5)
         # y_prob = y_prob.squeeze(dim=0)
 
-        loss = -1. * (y * torch.log(y_prob) + (1. - y) * torch.log(1. - y_prob))  # negative log bernoulli loss
+        method = self.loss_function
+        loss = None
+        if method == 'negative_log_bernoulli':
+            loss = -1. * (y * torch.log(y_prob) + (1. - y) * torch.log(1. - y_prob))  # negative log bernoulli loss
+        elif method == 'binary_cross_entropy':
+            loss = F.binary_cross_entropy(y_hat_binarized, y)
+
         # loss = F.cross_entropy(y_hat, y)
         # loss = F.binary_cross_entropy(y_hat_binarized, y)
         # loss_func = nn.BCELoss()
         # loss = loss_func(y_hat, y)
         return loss, attention
 
-    def compute_accuracy(self, X, y):
-        ''' compute accuracy
-        '''
+    def compute_accuracy(self, X: Tensor, y: Tensor):
+        """ compute accuracy
+        """
         y = y.float()
         y = y.unsqueeze(dim=0)
         # y = torch.argmax(y, dim=1)
@@ -243,15 +257,19 @@ class BaselineMIL(OmniSpheroMil):
         # y_hat = torch.ge(y_hat, 0.5).float() # for binary classification only. Rounds prediction output to 0 or 1
         y_hat = y_hat.squeeze(dim=0)
 
-        # acc = 1. - y_hat_binarized.eq(y).cpu().float().mean().item() # accuracy for neg. log bernoulli loss
-        # acc = mil_metrics.multiclass_accuracy(y_hat, y)
-        acc = _binary_accuracy(y_hat, y)
+        acc = None
+        method = self.activation_function
+        if method == 'binary':
+            acc = _binary_accuracy(y_hat, y)
+        else:
+            raise Exception('Illegal accuracy method selected: "' + method + '"!')
+
         return acc
 
 
 def apply_optimizer(model: OmniSpheroMil, selection: str = 'adam') -> Optimizer:
-    ''' Chooses an optimizer according to the string specifed in the model CLI argument and build with specified args
-    '''
+    """ Chooses an optimizer according to the string specifed in the model CLI argument and build with specified args
+    """
     if selection == 'adam':
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0,
                                      amsgrad=False)
@@ -266,33 +284,53 @@ def apply_optimizer(model: OmniSpheroMil, selection: str = 'adam') -> Optimizer:
 
 
 def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: DataLoader, validation_data: DataLoader,
-        checkpoint_out_dir: str):
-    ''' Trains a model on the previously preprocessed train and val sets.
+        out_dir_base: str, callbacks: [BaseTorchCallback]):
+    """ Trains a model on the previously preprocessed train and val sets.
     Also calls evaluate in the validation phase of each epoch.
-    '''
+    """
     best_acc = 0
     history = []
     history_keys = ['train_loss', 'train_acc', 'val_acc', 'val_loss']
 
+    checkpoint_out_dir = out_dir_base + 'checkpoints' + os.sep
+    metrics_dir_live = out_dir_base + 'metrics_live' + os.sep
+    os.makedirs(checkpoint_out_dir, exist_ok=True)
+    os.makedirs(metrics_dir_live, exist_ok=True)
+
+    cancel_requested = False
     loss = None
     os.makedirs(checkpoint_out_dir, exist_ok=True)
-    model_save_path_best = checkpoint_out_dir + os.sep + 'model_best.h5'
-    start_time_train = datetime.now()
+    model_save_path_best = out_dir_base + 'model_best.h5'
+    epoch_durations = []
 
     if model.is_cpu():
         print('Training on CPU.')
     else:
         print('Training on GPU, using these ordinals: ' + str(model.get_device_ordinals()))
 
-    for epoch in range(1, epochs + 1):
+    # Notifying callbacks
+    for i in range(len(callbacks)):
+        callback: BaseTorchCallback = callbacks[i]
+        callback.on_training_start(model=model)
+
+    epoch = 0
+    while (epoch <= epochs) and not cancel_requested:
+        epoch = epoch + 1
+
         # TRAINING PHASE
         model.train()
         train_losses = []
         train_acc = []
         start_time_epoch = datetime.now()
+        epochs_remaining = epochs - epoch
 
         for batch_id, (data, label) in enumerate(training_data):
             # torch.cuda.empty_cache()
+
+            # Notifying Callbacks
+            for i in range(len(callbacks)):
+                callback: BaseTorchCallback = callbacks[i]
+                callback.on_batch_start(model=model, batch_id=batch_id, data=data, label=label)
 
             label = label.squeeze()
             # bag_label = label[0] //TODO this causes error
@@ -308,6 +346,12 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             acc = model.compute_accuracy(data, bag_label)
             train_acc.append(float(acc))
 
+            # Notifying Callbacks
+            for i in range(len(callbacks)):
+                callback: BaseTorchCallback = callbacks[i]
+                callback.on_batch_finished(model=model, batch_id=batch_id, data=data, label=label, batch_acc=float(acc),
+                                           batch_loss=float(loss))
+
             loss.backward()  # backward pass
             optimizer.step()  # update parameters
             # optim.zero_grad() # reset gradients (alternative if all grads are contained in the optimizer)
@@ -315,17 +359,29 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             del data, bag_label, label
 
         # VALIDATION PHASE
-
         result, _ = evaluate(model, validation_data)  # returns a results dict for metrics
         result['train_loss'] = sum(train_losses) / len(train_losses)  # torch.stack(train_losses).mean().item()
         result['train_acc'] = sum(train_acc) / len(train_acc)
 
         time_diff = utils.get_time_diff(start_time_epoch)
-        result['duration'] = (datetime.now() - start_time_epoch).total_seconds()
+        duration = (datetime.now() - start_time_epoch).total_seconds()
+        epoch_durations.append(duration)
+        result['duration'] = duration
+
+        remaining_time_eta = timedelta(seconds=np.mean(epoch_durations) * epochs_remaining)
+        eta_timestamp = datetime.now() + remaining_time_eta
+        eta_timestamp = eta_timestamp.strftime("%Y/%m/%d, %H:%M:%S")
 
         history.append(result)
         print('Epoch [{}]: Train Loss {:.4f}, Train Acc {:.4f}, Val Loss {:.4f}, Val Acc {:.4f}'.format(epoch, result[
-            'train_loss'], result['train_acc'], result['val_loss'], result['val_acc']) + '. Duration: ' + time_diff)
+            'train_loss'], result['train_acc'], result['val_loss'], result[
+                                                                                                            'val_acc']) + '. Duration: ' + time_diff + '. ETA: ' + eta_timestamp)
+
+        # Notifying Callbacks
+        for i in range(len(callbacks)):
+            callback: BaseTorchCallback = callbacks[i]
+            callback.on_epoch_finished(model=model, epoch=epoch, epoch_result=result, history=history)
+            cancel_requested = cancel_requested or callback.is_cancel_requested()
 
         # Save best model / checkpointing stuff
         is_best = bool(result['val_acc'] >= best_acc)
@@ -338,27 +394,33 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         }
 
         # Saving raw history
-        mil_metrics.write_history(history, history_keys, metrics_dir=checkpoint_out_dir)
-        mil_metrics.plot_accuracy(history, checkpoint_out_dir, include_raw=False, include_tikz=False)
-        mil_metrics.plot_losses(history, checkpoint_out_dir, include_raw=False, include_tikz=False)
+        mil_metrics.write_history(history, history_keys, metrics_dir=metrics_dir_live)
+        mil_metrics.plot_accuracy(history, metrics_dir_live, include_raw=False, include_tikz=False)
+        mil_metrics.plot_losses(history, metrics_dir_live, include_raw=False, include_tikz=False)
 
         # Saving model checkpoints
-        model_save_path_checkpoint = checkpoint_out_dir + os.sep + 'checkpoints' + os.sep
-        os.makedirs(model_save_path_checkpoint, exist_ok=True)
-        save_model(state, model_save_path_checkpoint + 'checkpoint-' + str(epoch) + '.h5', verbose=False)
+        save_model(state, checkpoint_out_dir + 'checkpoint-' + str(epoch) + '.h5', verbose=False)
         if is_best:
             save_model(state, model_save_path_best, verbose=True)
+
+        if cancel_requested:
+            print('Model was canceled before reaching all epochs.')
+
+    # Notifying callbacks
+    for i in range(len(callbacks)):
+        callback: BaseTorchCallback = callbacks[i]
+        callback.on_training_finished(model=model, was_canceled=cancel_requested, history=history)
 
     return history, history_keys, model_save_path_best
 
 
 @torch.no_grad()
 def get_predictions(model: OmniSpheroMil, data_loader: DataLoader):
-    ''' takes a trained model and validation or test dataloader
+    """ takes a trained model and validation or test dataloader
     and applies the model on the data producing predictions
 
     binary version
-    '''
+    """
     model.eval()
 
     all_y_hats = []
@@ -435,10 +497,11 @@ def evaluate(model: OmniSpheroMil, data_loader: DataLoader):
     return result, attention_weights
 
 
-def _binary_accuracy(outputs, targets):
+def _binary_accuracy(outputs: Tensor, targets: Tensor) -> float:
     assert targets.size() == outputs.size()
-    y_prob = torch.ge(outputs, 0.5).float()
-    return (targets == y_prob).sum().item() / targets.size(0)
+    y_prob: Tensor = torch.ge(outputs, 0.5).float()
+    acc: float = (targets == y_prob).sum().item() / targets.size(0)
+    return acc
 
 
 def debug_all_models(gpu_enabled: bool = True):
