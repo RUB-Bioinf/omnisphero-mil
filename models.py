@@ -1,20 +1,18 @@
+import math
+import os
 from datetime import datetime
 from datetime import timedelta
-from itertools import chain
+from typing import Union
 
+import numpy as np
 import torch
 import torch.nn as nn
-import os
-import numpy as np
-
 from torch import Tensor
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
-import torch.nn.functional as F
 
 import hardware
 import mil_metrics
-
 from torch_callbacks import BaseTorchCallback
 from util import utils
 
@@ -71,9 +69,16 @@ class OmniSpheroMil(nn.Module):
     def get_device_ordinals(self) -> [int]:
         return self._device_ordinals.copy()
 
+    def compute_loss(self, X: Tensor, y: Tensor):
+        pass
+
+    def compute_accuracy(self, X: Tensor, y: Tensor):
+        pass
+
 
 class BaselineMIL(OmniSpheroMil):
-    def __init__(self, input_dim, device, loss_function: str,activation_function:str, use_bias=True, use_max=True, device_ordinals=None):
+    def __init__(self, input_dim, device, loss_function: str, activation_function: str, use_bias=True, use_max=True,
+                 device_ordinals=None):
         super().__init__(device, device_ordinals)
         self.linear_nodes = 512
         self.num_classes = 1  # 3
@@ -82,7 +87,7 @@ class BaselineMIL(OmniSpheroMil):
         self.use_bias = use_bias
         self.use_max = use_max
         self.loss_function: str = loss_function
-        self.activation_function:str=activation_function
+        self.activation_function: str = activation_function
 
         # add batch norm? increases model complexity but possibly speeds up convergence
         self.feature_extractor_0 = nn.Sequential(
@@ -220,7 +225,7 @@ class BaselineMIL(OmniSpheroMil):
         return n_size
 
     # COMPUTATION METHODS
-    def compute_loss(self, X: Tensor, y: Tensor):
+    def compute_loss(self, X: Tensor, y: Tensor) -> (Tensor, Tensor):
         """ otherwise known as loss_fn
         Takes a data input of X,y (batches or bags) computes a forward pass and the resulting error.
         """
@@ -234,11 +239,16 @@ class BaselineMIL(OmniSpheroMil):
         # y_prob = y_prob.squeeze(dim=0)
 
         method = self.loss_function
-        loss = None
+        loss: Tensor = None
         if method == 'negative_log_bernoulli':
-            loss = -1. * (y * torch.log(y_prob) + (1. - y) * torch.log(1. - y_prob))  # negative log bernoulli loss
+            loss = -1. * (
+                    y * torch.log(y_prob) + (1.0 - y) * torch.log(1.0 - y_prob))  # negative log bernoulli loss
         elif method == 'binary_cross_entropy':
-            loss = F.binary_cross_entropy(y_hat_binarized, y)
+            # loss = y * torch.log(y_hat) + (1.0 - y) * torch.log(1.0 - y_hat)
+            # loss = torch.clamp(loss, min=-1.0, max=1.0)
+            # loss = loss * -1
+            b = nn.BCELoss()
+            loss = b(y_hat.squeeze(), y)
 
         # loss = F.cross_entropy(y_hat, y)
         # loss = F.binary_cross_entropy(y_hat_binarized, y)
@@ -373,9 +383,11 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         eta_timestamp = eta_timestamp.strftime("%Y/%m/%d, %H:%M:%S")
 
         history.append(result)
-        print('Epoch [{}]: Train Loss {:.4f}, Train Acc {:.4f}, Val Loss {:.4f}, Val Acc {:.4f}'.format(epoch, result[
-            'train_loss'], result['train_acc'], result['val_loss'], result[
-                                                                                                            'val_acc']) + '. Duration: ' + time_diff + '. ETA: ' + eta_timestamp)
+        print(
+            'Epoch {}/{}: Train Loss {:.4f}, Train Acc {:.4f}, Val Loss {:.4f}, Val Acc {:.4f}. Duration: {}. ETA: {}'.format(
+                epoch, epochs, result[
+                    'train_loss'], result['train_acc'], result['val_loss'], result['val_acc'], time_diff,
+                eta_timestamp))
 
         # Notifying Callbacks
         for i in range(len(callbacks)):
@@ -384,7 +396,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             cancel_requested = cancel_requested or callback.is_cancel_requested()
 
         # Save best model / checkpointing stuff
-        is_best = bool(result['val_acc'] >= best_acc)
+        is_best = bool(result['val_acc'] > best_acc)
         best_acc = max(result['val_acc'], best_acc)
         state = {
             'model_state_dict': model.state_dict(),
@@ -401,7 +413,8 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         # Saving model checkpoints
         save_model(state, checkpoint_out_dir + 'checkpoint-' + str(epoch) + '.h5', verbose=False)
         if is_best:
-            save_model(state, model_save_path_best, verbose=True)
+            print('New best model! Saving...')
+            save_model(state, model_save_path_best, verbose=False)
 
         if cancel_requested:
             print('Model was canceled before reaching all epochs.')
@@ -495,6 +508,20 @@ def evaluate(model: OmniSpheroMil, data_loader: DataLoader):
     result['val_loss'] = sum(test_losses) / len(test_losses)  # torch.stack(test_losses).mean().item()
     result['val_acc'] = sum(test_acc) / len(test_acc)
     return result, attention_weights
+
+
+def binary_cross_entropy(y: Union[float, list], y_predicted: Union[float, list]) -> float:
+    if not isinstance(y, list):
+        y = [y]
+    if not isinstance(y_predicted, list):
+        y_predicted = [y_predicted]
+
+    losses = []
+    for i in range(len(y)):
+        loss = y[i] * math.log(y_predicted[i]) + (1 - y[i]) * math.log(1 - y_predicted[i])
+        losses.append(loss * -1)
+
+    return float(np.mean(losses))
 
 
 def _binary_accuracy(outputs: Tensor, targets: Tensor) -> float:

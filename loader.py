@@ -80,7 +80,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
     worker_verbose: bool = max_workers == 1
 
     for file in files:
-        print('Considering source file: ' + file)
+        # print('Considering source file: ' + file)
         filepath = source_dir + os.sep + file
 
         if file.endswith('.json.zip'):
@@ -94,7 +94,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
 
         if file.endswith('.json'):
             if os.path.exists(filepath + '.zip'):
-                print('A zipped version also existed. Skipping.')
+                # print('A zipped version also existed. Skipping.')
                 continue
 
             loaded_files_list.append(filepath + os.sep + file)
@@ -132,6 +132,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
     X = []
     y = []
     error_list = []
+    print('\n')
 
     for i in range(len(future_list)):
         future = future_list[i]
@@ -148,7 +149,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
             print('\n' + gct() + 'Error extracting future results: ' + str(e) + '\n')
             error_list.append(e)
 
-    print(gct() + ' Fully Finished Loading Path.')
+    print('\n' + gct() + ' Fully Finished Loading Path.')
 
     # Deleting the futures and the future list to immediately releasing the memory.
     del future_list[:]

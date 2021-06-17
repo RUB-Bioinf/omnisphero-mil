@@ -1,35 +1,31 @@
 import math
-from datetime import datetime
-
-import torch
-from torch.utils.data import DataLoader
-
-import loader
-import numpy as np
 import os
 import random
 import sys
-
-import matplotlib.pyplot as plt
-import mil_metrics
-import models
-import hardware
-
+from datetime import datetime
 from sys import getsizeof
 from sys import platform as _platform
 
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from torch.utils.data import DataLoader
+
+import hardware
+import loader
+import mil_metrics
+import models
 from models import BaselineMIL
-from torch_callbacks import UnreasonableLossCallback
 from util import utils
 from util.utils import shuffle_and_split_data
 
-default_source_dir_win = "Y:\\bioinfdata\\work\\Omnisphero\\Sciebo\\HCA\\04_HTE_Batches\\BatchParamTest\\mil_labels\\exerpt"
+default_source_dir_win = "U:\\bioinfdata\\work\\OmniSphero\\mil\\migration\\training_data\\curated_win"
 default_out_dir_win_base = "U:\\bioinfdata\\work\\OmniSphero\\mil\\migration\\models\\win"
 
-default_source_dirs_unix = ["/mil/migration/training/EFB18",
-                            "/mil/migration/training/esm49",
-                            "/mil/migration/training/jk242",
-                            "/mil/migration/training/mp149"
+default_source_dirs_unix = ["/mil/migration/training_data/curated_linux/EFB18",
+                            "/mil/migration/training_data/curated_linux/esm49",
+                            "/mil/migration/training_data/curated_linux/jk242",
+                            "/mil/migration/training_data/curated_linux/mp149"
                             ]
 
 default_out_dir_unix_base = "/mil/migration/models/linux"
@@ -45,8 +41,9 @@ normalize_enum_default = 3
 max_workers_default = 5
 
 
-def main(source_dirs: [str], epochs: int = 3, max_workers: int = max_workers_default,
-         normalize_enum: int = normalize_enum_default, out_dir: str = None, gpu_enabled: bool = False):
+def main(source_dirs: [str], loss_function: str, epochs: int = 3, max_workers: int = max_workers_default,
+         normalize_enum: int = normalize_enum_default, out_dir: str = None, gpu_enabled: bool = False,
+         invert_bag_labels: bool = False):
     if out_dir is None:
         out_dir = source_dirs[0] + os.sep + 'training_results'
     print('Saving logs and protocols to: ' + out_dir)
@@ -104,6 +101,9 @@ def main(source_dirs: [str], epochs: int = 3, max_workers: int = max_workers_def
         X_size = X_size + X[i].nbytes
         print('Bag #' + str(i + 1) + ': ', str(X[i].shape), ' -> label: ', str(y[i]))
         f.write('\n' + str(i) + ';' + str(X[i].shape) + ';' + str(y[i]))
+
+        if invert_bag_labels:
+            y[i] = int(not y[i])
     f.close()
 
     X_s = utils.convert_size(X_size)
@@ -151,13 +151,12 @@ def main(source_dirs: [str], epochs: int = 3, max_workers: int = max_workers_def
     # Loading Hardware Device
     device = hardware.get_hardware_device(gpu_preferred=gpu_enabled)
     print('Selected device: ' + str(device))
-    # TODO an welcher Stelle sollte man das device laden?
 
     # Setting up Model
     print('Setting up model...')
     model = BaselineMIL(input_dim=input_dim, device=device,
                         device_ordinals=device_ordinals,
-                        loss_function='negative_log_bernoulli',
+                        loss_function=loss_function,
                         activation_function='binary')
 
     # Loader args
@@ -221,6 +220,7 @@ if __name__ == '__main__':
     print("OmniSphero MIL")
     debug: bool = False
 
+    current_epochs = 150
     current_max_workers = 45
     default_out_dir_base = default_out_dir_unix_base
     current_sources_dir = default_source_dirs_unix
@@ -229,15 +229,19 @@ if __name__ == '__main__':
         current_sources_dir = [current_sources_dir[0]]
 
     if sys.platform == 'win32':
+        current_epochs = 15
         current_max_workers = 5
         current_sources_dir = [default_source_dir_win]
         default_out_dir_base = default_out_dir_win_base
         current_gpu_enabled = False
 
-    current_out_dir = default_out_dir_base + os.sep + 'debug-training' + os.sep
+    out_dir_name = 'debug-training-bce'
+    current_out_dir = default_out_dir_base + os.sep + out_dir_name + os.sep
     os.makedirs(current_out_dir, exist_ok=True)
 
-    current_epochs = 1500
-
-    main(source_dirs=current_sources_dir, epochs=current_epochs, out_dir=current_out_dir,
-         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled)
+    main(source_dirs=current_sources_dir, out_dir=current_out_dir,
+         loss_function='binary_cross_entropy',
+         epochs=current_epochs,
+         max_workers=current_max_workers,
+         gpu_enabled=current_gpu_enabled,
+         invert_bag_labels=False)
