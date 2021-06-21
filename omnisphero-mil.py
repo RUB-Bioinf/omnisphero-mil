@@ -15,9 +15,14 @@ import hardware
 import loader
 import mil_metrics
 import models
+import torch_callbacks
 from models import BaselineMIL
 from util import utils
 from util.utils import shuffle_and_split_data
+
+# On windows, if there's not enough RAM:
+# https://github.com/Spandan-Madan/Pytorch_fine_tuning_Tutorial/issues/10
+
 
 default_source_dir_win = "U:\\bioinfdata\\work\\OmniSphero\\mil\\migration\\training_data\\curated_win"
 default_out_dir_win_base = "U:\\bioinfdata\\work\\OmniSphero\\mil\\migration\\models\\win"
@@ -41,11 +46,13 @@ normalize_enum_default = 3
 max_workers_default = 5
 
 
-def main(source_dirs: [str], loss_function: str, epochs: int = 3, max_workers: int = max_workers_default,
-         normalize_enum: int = normalize_enum_default, out_dir: str = None, gpu_enabled: bool = False,
-         invert_bag_labels: bool = False):
+def train_model(training_label: str, source_dirs: [str], loss_function: str, epochs: int = 3,
+                max_workers: int = max_workers_default, normalize_enum: int = normalize_enum_default,
+                out_dir: str = None, gpu_enabled: bool = False, invert_bag_labels: bool = False):
     if out_dir is None:
         out_dir = source_dirs[0] + os.sep + 'training_results'
+    out_dir = out_dir + os.sep + training_label + os.sep
+    os.makedirs(out_dir, exist_ok=True)
     print('Saving logs and protocols to: ' + out_dir)
 
     # PREPARING DATA
@@ -71,26 +78,31 @@ def main(source_dirs: [str], loss_function: str, epochs: int = 3, max_workers: i
         f.write(str(e))
     f.close()
 
+    # Saving one random image from every bag to the disk
     loading_preview_dir = out_dir + os.sep + 'loading_previews' + os.sep
     os.makedirs(loading_preview_dir, exist_ok=True)
     for i in range(len(X)):
         current_x = X[i]
         j = random.randint(0, current_x.shape[0] - 1)
 
+        preview_image_file = loading_preview_dir + 'preview_' + str(i) + '-' + str(j) + '_' + str(y[i]) + '.png'
         try:
             current_x = current_x[j]
-            preview_image_file = loading_preview_dir + 'preview_' + str(i) + '-' + str(j) + '_' + str(y[i]) + '.png'
 
-            current_x = loader.normalize_np(current_x, current_x.min(), current_x.max())
-            current_x = current_x * 255
-            current_x = current_x.astype(np.uint8)
-            current_x = np.einsum('abc->cba', current_x)
-            plt.imsave(preview_image_file, current_x)
+            if current_x.min() >= 0 and current_x.max() <= 1:
+                current_x = current_x * 255
+                current_x = current_x.astype(np.uint8)
+                current_x = np.einsum('abc->cba', current_x)
+                plt.imsave(preview_image_file, current_x)
         except Exception as e:
             # TODO display stacktrace
+            preview_image_file = preview_image_file + '-error.txt'
             preview_error_text = str(e.__class__.__name__) + ': "' + str(e) + '"'
-            print('ERROR WHILE SMOTE!! (Reverting to un-smote)')
             print(preview_error_text)
+
+            f = open(preview_image_file, 'w')
+            f.write(preview_error_text)
+            f.close()
         del current_x
 
     print('Finished loading data. Number of bags: ', len(X), '. Number of labels: ', len(y))
@@ -180,16 +192,19 @@ def main(source_dirs: [str], loss_function: str, epochs: int = 3, max_workers: i
 
     # Callbacks
     callbacks = []
+    callbacks.append(torch_callbacks.EarlyStopping(epoch_threshold=int(epochs / 5 + 1)))
     # callbacks.append(UnreasonableLossCallback(loss_max=100.0))
 
     ################
     # TRAINING START
     ################
     print('Start of training for ' + str(epochs) + ' epochs.')
+    print('Training: "' + training_label + '"!')
     history, history_keys, model_save_path_best = models.fit(model=model, optimizer=optimizer, epochs=epochs,
                                                              training_data=train_dl,
                                                              validation_data=validation_dl,
                                                              out_dir_base=out_dir,
+                                                             checkpoint_interval=50,
                                                              callbacks=callbacks)
     print('Finished training!')
     del train_dl
@@ -216,11 +231,10 @@ def main(source_dirs: [str], loss_function: str, epochs: int = 3, max_workers: i
     mil_metrics.plot_binary_roc_curve(fpr, tpr, metrics_dir)
 
 
-if __name__ == '__main__':
-    print("OmniSphero MIL")
-    debug: bool = False
+def main(debug: bool = False):
+    print('Debug mode: ' + str(debug))
 
-    current_epochs = 150
+    current_epochs = 3000
     current_max_workers = 45
     default_out_dir_base = default_out_dir_unix_base
     current_sources_dir = default_source_dirs_unix
@@ -229,19 +243,43 @@ if __name__ == '__main__':
         current_sources_dir = [current_sources_dir[0]]
 
     if sys.platform == 'win32':
-        current_epochs = 15
+        current_epochs = 2
         current_max_workers = 5
         current_sources_dir = [default_source_dir_win]
         default_out_dir_base = default_out_dir_win_base
         current_gpu_enabled = False
 
-    out_dir_name = 'debug-training-bce'
-    current_out_dir = default_out_dir_base + os.sep + out_dir_name + os.sep
+    current_out_dir = default_out_dir_base + os.sep
     os.makedirs(current_out_dir, exist_ok=True)
 
-    main(source_dirs=current_sources_dir, out_dir=current_out_dir,
-         loss_function='binary_cross_entropy',
-         epochs=current_epochs,
-         max_workers=current_max_workers,
-         gpu_enabled=current_gpu_enabled,
-         invert_bag_labels=False)
+    if debug:
+        for i in range(5, 8):
+            train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
+                        max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
+                        normalize_enum=i,
+                        invert_bag_labels=False,
+                        training_label='debug-train-std-'+str(i),
+                        loss_function='binary_cross_entropy',
+                        )
+    else:
+        for i in range(1, 8):
+            train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
+                        max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
+                        normalize_enum=i,
+                        training_label='bcr-normalized-' + str(i),
+                        invert_bag_labels=False,
+                        loss_function='binary_cross_entropy',
+                        )
+            train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
+                        max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
+                        normalize_enum=i,
+                        training_label='inverted-bcr-normalized-' + str(i),
+                        invert_bag_labels=True,
+                        loss_function='binary_cross_entropy',
+                        )
+
+
+if __name__ == '__main__':
+    print("Training OmniSphero MIL")
+    debug: bool = False
+    main(debug=debug)

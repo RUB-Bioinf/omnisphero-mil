@@ -2,6 +2,8 @@
 
 import os
 import time
+from typing import Iterable
+from typing import Union
 from zipfile import ZipFile
 import json
 import numpy as np
@@ -22,7 +24,11 @@ from util.utils import line_print
 # 1 = normalize every cell between 0 and 255 (8 bit)
 # 2 = normalize every cell individually with every color channel independent
 # 3 = normalize every cell individually with every color channel using the min / max of all three
-# 4 = normalize every cell but with bounds determined by the brightest cell in the same well
+# 4 = normalize every cell but with bounds determined by the brightest cell in the bag
+# 5 = z-score every cell individually with every color channel independent
+# 6 = z-score every cell individually with every color channel using the mean / std of all three
+# 7 = z-score every cell individually with every color channel independent using all samples in the bag
+# 8 = z-score every cell individually with every color channel using the mean / std of all three from all samples in the bag
 normalize_enum_default = 1
 
 
@@ -31,6 +37,7 @@ normalize_enum_default = 1
 def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: int):
     print('Looking for multiple source dirs to load json data from.')
     print('Batch dir: ', batch_dirs)
+    print('Normalization Protocol: ' + str(normalize_enum))
 
     X_full = None
     y_full = None
@@ -245,6 +252,9 @@ def parse_JSON(json_data, worker_verbose, normalize_enum) -> (np.array, int):
         # 2 = normalize every cell individually with every color channel independent
         # 3 = normalize every cell individually with every color channel using the min / max of all three
         # 4 = normalize every cell but with bounds determined by the brightest cell in the same well
+        # 5 = z-score every cell individually with every color channel independent
+        # 6 = z-score every cell individually with every color channel using the mean / std of all three
+
         r_min = min(r)
         g_min = min(g)
         b_min = min(b)
@@ -274,6 +284,22 @@ def parse_JSON(json_data, worker_verbose, normalize_enum) -> (np.array, int):
             g = normalize_np(g, rgb_min, rgb_max)
             b = normalize_np(b, rgb_min, rgb_max)
 
+        # 5 = z-score every cell individually with every color channel independent
+        if normalize_enum == 5:
+            r = z_score(r, axis=0)
+            g = z_score(g, axis=0)
+            b = z_score(b, axis=0)
+
+        # 6 = z-score every cell individually with every color channel using the mean / std of all three
+        if normalize_enum == 6:
+            rgb = np.concatenate((r, g, b), axis=0)
+            mean = np.mean(rgb)
+            std = np_std(rgb, axis=0, mean=mean)
+            r = z_score(r, axis=0, std=std, mean=mean)
+            g = z_score(g, axis=0, std=std, mean=mean)
+            b = z_score(b, axis=0, std=std, mean=mean)
+            del rgb, mean, std
+
         # Reshaping the color images to a 2 dimensional array
         r = np.reshape(r, (width, height))
         g = np.reshape(g, (width, height))
@@ -293,18 +319,36 @@ def parse_JSON(json_data, worker_verbose, normalize_enum) -> (np.array, int):
         del rgb
 
     # 4 = normalize every cell individually with every color channel using the min / max of all three
-    if normalize_enum == 4:
+    # 7 = z-score every cell individually with every color channel independent using all samples in the bag
+    # 8 = z-score every cell individually with every color channel using the mean / std of all three from all samples in the bag
+    if normalize_enum == 4 or normalize_enum == 7 or normalize_enum == 8:
+        if normalize_enum == 7:
+            bag_mean_r, bag_std_r = get_bag_mean(X, axis=0)
+            bag_mean_g, bag_std_g = get_bag_mean(X, axis=1)
+            bag_mean_b, bag_std_b = get_bag_mean(X, axis=2)
+        if normalize_enum == 8:
+            bag_mean, bag_std = get_bag_mean(X)
+
         for i in range(len(X)):
             current_x = X[i]
             current_r = current_x[:, :, 0]
             current_g = current_x[:, :, 1]
             current_b = current_x[:, :, 2]
 
-            current_r = normalize_np(current_r, best_well_min_r, best_well_max_r)
-            current_g = normalize_np(current_g, best_well_min_g, best_well_max_g)
-            current_b = normalize_np(current_b, best_well_min_b, best_well_max_b)
-            current_rgb = np.dstack((current_r, current_g, current_b))
+            if normalize_enum == 4:
+                current_r = normalize_np(current_r, best_well_min_r, best_well_max_r)
+                current_g = normalize_np(current_g, best_well_min_g, best_well_max_g)
+                current_b = normalize_np(current_b, best_well_min_b, best_well_max_b)
+            if normalize_enum == 7:
+                current_r = z_score(current_r, mean=bag_mean_r, std=bag_std_r)
+                current_g = z_score(current_g, mean=bag_mean_g, std=bag_std_g)
+                current_b = z_score(current_b, mean=bag_mean_b, std=bag_std_b)
+            if normalize_enum == 8:
+                current_r = z_score(current_r, mean=bag_mean, std=bag_std)
+                current_g = z_score(current_g, mean=bag_mean, std=bag_std)
+                current_b = z_score(current_b, mean=bag_mean, std=bag_std)
 
+            current_rgb = np.dstack((current_r, current_g, current_b))
             del current_r
             del current_g
             del current_b
@@ -313,6 +357,32 @@ def parse_JSON(json_data, worker_verbose, normalize_enum) -> (np.array, int):
 
     X = np.asarray(X)
     return X, y
+
+
+def get_bag_mean(n: [np.ndarray], axis: int = None):
+    combined_x = np.zeros(0)
+    for i in range(len(n)):
+        current_x = n[i]
+        dim_x = current_x.shape[0]
+        dim_y = current_x.shape[1]
+
+        if axis is None:
+            current_r = current_x[:, :, 0].reshape(dim_x * dim_y)
+            current_g = current_x[:, :, 1].reshape(dim_x * dim_y)
+            current_b = current_x[:, :, 2].reshape(dim_x * dim_y)
+
+            combined_x = np.append(combined_x, current_r)
+            combined_x = np.append(combined_x, current_g)
+            combined_x = np.append(combined_x, current_b)
+            del current_r, current_g, current_b
+        else:
+            current_axis = current_x[:, :, axis].reshape(dim_x * dim_y)
+            combined_x = np.append(combined_x, current_axis)
+            del current_axis
+
+    mean = np.mean(combined_x)
+    std = np_std(n=combined_x, mean=mean)
+    return mean, std[0]
 
 
 def convert_bag_to_batch(bags, labels):
@@ -375,7 +445,7 @@ def build_bags(tiles, labels):
 
 ####
 
-def normalize_np(n: np.ndarray, lower: float = 0.0, upper: float = 255.0) -> np.ndarray:
+def normalize_np(n: np.ndarray, lower: float = None, upper: float = None) -> np.ndarray:
     """
     Using linear normalization, every entry in a given numpy array between a lower and upper bound.
     The shape of the array can be arbitrary.
@@ -403,6 +473,11 @@ def normalize_np(n: np.ndarray, lower: float = 0.0, upper: float = 255.0) -> np.
     >>> normalize_np(n,0,100)
 
     """
+    if lower is None:
+        lower = np.min()
+    if upper is None:
+        upper = np.max()
+
     nnv = np.vectorize(_normalize_np_worker)
     return nnv(n, lower, upper)
 
@@ -416,6 +491,32 @@ def _normalize_np_worker(x: float, lower: float, upper: float):
     lower = float(lower)
     upper = float(upper)
     return (x - lower) / (upper - lower)
+
+
+def z_score(n: np.ndarray, axis=None,
+            mean: Union[np.ndarray, float] = None,
+            std: Union[np.ndarray, float] = None) -> np.ndarray:
+    """ Also often called standardization, which transforms the data into a
+    distribution with a mean of 0 and a standard deviation of 1.
+    Each standardized value is computed by subtracting the mean of the corresponding feature
+    and then dividing by the std dev.
+    X_zscr = (x-mu)/std
+    """
+
+    if mean is None:
+        mean = np.mean(n, axis=axis, keepdims=True)
+    if std is None:
+        std = np_std(n=n, axis=axis, mean=mean)
+    return (n - mean) / std
+
+
+####
+
+def np_std(n: np.ndarray, axis=None, mean: float = None) -> np.ndarray:
+    if mean is None:
+        mean = np.mean(n, axis=axis, keepdims=True)
+
+    return np.sqrt(((n - mean) ** 2).mean(axis=axis, keepdims=True))
 
 
 ####

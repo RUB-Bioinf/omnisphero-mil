@@ -45,7 +45,7 @@ def binary_accuracy(outputs, targets):
 
 # PLOTS
 
-def plot_accuracy(history, save_path: str, include_raw:bool=False, include_tikz: bool = False):
+def plot_accuracy(history, save_path: str, include_raw: bool = False, include_tikz: bool = False):
     ''' takes a history object and plots the accuracies
     '''
     # train_acc = [i['train_acc'] for i in history]
@@ -64,7 +64,7 @@ def plot_accuracy(history, save_path: str, include_raw:bool=False, include_tikz:
     plot_metric(history, 'val_acc', save_path, 'train_acc', include_tikz=include_tikz)
 
 
-def plot_losses(history, save_path: str, include_raw:bool=False, include_tikz: bool = False):
+def plot_losses(history, save_path: str, include_raw: bool = False, include_tikz: bool = False):
     ''' takes a history object and plots the losses
     '''
     # train_loss = [i['train_loss'] for i in history]
@@ -102,7 +102,7 @@ def plot_metric(history, metric_name: str, out_dir: str, second_metric_name: str
         second_metric_color, second_metric_type = _get_metric_color(second_metric_name)
 
         plt.plot(second_metric_values, color=second_metric_color)
-        plt.legend([metric_type+" "+metric_title, second_metric_type+" "+metric_title])
+        plt.legend([metric_type + " " + metric_title, second_metric_type + " " + metric_title])
         plt_title = 'Training & Validation'
 
         tikz_data_list.append(second_metric_values)
@@ -156,8 +156,8 @@ def plot_conf_matrix(y_true, y_pred, save_path,
     if len(target_names) == 2:
         tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
         binary_classification_counts = list((tn, fp, fn, tp))
-        print('TN, FP, FN, TP')
-        print(binary_classification_counts)
+        # print('TN, FP, FN, TP')
+        # print(binary_classification_counts)
 
     acc = np.trace(conf_mat) / float(np.sum(conf_mat))
     miss_class = 1 - acc
@@ -208,7 +208,7 @@ def binary_roc_curve(y_true, y_hat_scores):
     return fpr, tpr, thresholds
 
 
-def plot_binary_roc_curve(fpr, tpr, save_path):
+def plot_binary_roc_curve(fpr, tpr, save_path: str, dpi: int = 600):
     ''' plots a ROC curve with AUC score
     in a binary classification setting
     '''
@@ -222,7 +222,10 @@ def plot_binary_roc_curve(fpr, tpr, save_path):
     plt.legend(loc='lower right')
     plt.xlabel('False Positive Rate (1-specificity)')
     plt.ylabel('True Positive Rate (sensitivity)')
-    plt.savefig(save_path + '_binary_roc_curve.pdf', dpi=600)
+
+    plt.savefig(save_path + 'roc_curve.pdf', dpi=dpi)
+    plt.savefig(save_path + 'roc_curve.png', dpi=dpi)
+    plt.savefig(save_path + 'roc_curve.svg', dpi=dpi)
     plt.clf()
 
 

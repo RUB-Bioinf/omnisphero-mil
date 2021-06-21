@@ -1,5 +1,6 @@
 import math
 import os
+import sys
 from datetime import datetime
 from datetime import timedelta
 from typing import Union
@@ -225,7 +226,7 @@ class BaselineMIL(OmniSpheroMil):
         return n_size
 
     # COMPUTATION METHODS
-    def compute_loss(self, X: Tensor, y: Tensor) -> (Tensor, Tensor):
+    def compute_loss(self, X: Tensor, y: Tensor) -> [Tensor, Tensor]:
         """ otherwise known as loss_fn
         Takes a data input of X,y (batches or bags) computes a forward pass and the resulting error.
         """
@@ -256,7 +257,7 @@ class BaselineMIL(OmniSpheroMil):
         # loss = loss_func(y_hat, y)
         return loss, attention
 
-    def compute_accuracy(self, X: Tensor, y: Tensor):
+    def compute_accuracy(self, X: Tensor, y: Tensor) -> Tensor:
         """ compute accuracy
         """
         y = y.float()
@@ -294,11 +295,11 @@ def apply_optimizer(model: OmniSpheroMil, selection: str = 'adam') -> Optimizer:
 
 
 def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: DataLoader, validation_data: DataLoader,
-        out_dir_base: str, callbacks: [BaseTorchCallback]):
+        out_dir_base: str, callbacks: [BaseTorchCallback], checkpoint_interval: int = 1):
     """ Trains a model on the previously preprocessed train and val sets.
     Also calls evaluate in the validation phase of each epoch.
     """
-    best_acc = 0
+    best_loss = sys.float_info.max
     history = []
     history_keys = ['train_loss', 'train_acc', 'val_acc', 'val_loss']
 
@@ -396,8 +397,8 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             cancel_requested = cancel_requested or callback.is_cancel_requested()
 
         # Save best model / checkpointing stuff
-        is_best = bool(result['val_acc'] > best_acc)
-        best_acc = max(result['val_acc'], best_acc)
+        is_best = bool(result['val_loss'] < best_loss)
+        best_loss = max(result['val_loss'], best_loss)
         state = {
             'model_state_dict': model.state_dict(),
             'optim_state_dict': optimizer.state_dict(),
@@ -411,7 +412,8 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         mil_metrics.plot_losses(history, metrics_dir_live, include_raw=False, include_tikz=False)
 
         # Saving model checkpoints
-        save_model(state, checkpoint_out_dir + 'checkpoint-' + str(epoch) + '.h5', verbose=False)
+        if epoch % checkpoint_interval == 0:
+            save_model(state, checkpoint_out_dir + 'checkpoint-' + str(epoch) + '.h5', verbose=True)
         if is_best:
             print('New best model! Saving...')
             save_model(state, model_save_path_best, verbose=False)
@@ -524,11 +526,10 @@ def binary_cross_entropy(y: Union[float, list], y_predicted: Union[float, list])
     return float(np.mean(losses))
 
 
-def _binary_accuracy(outputs: Tensor, targets: Tensor) -> float:
+def _binary_accuracy(outputs: Tensor, targets: Tensor):
     assert targets.size() == outputs.size()
     y_prob: Tensor = torch.ge(outputs, 0.5).float()
-    acc: float = (targets == y_prob).sum().item() / targets.size(0)
-    return acc
+    return (targets == y_prob).sum().item() / targets.size(0)
 
 
 def debug_all_models(gpu_enabled: bool = True):

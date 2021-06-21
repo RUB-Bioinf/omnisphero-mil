@@ -1,3 +1,5 @@
+import sys
+
 import torch
 from torch import Tensor
 
@@ -39,6 +41,33 @@ class BaseTorchCallback:
 ##########################################################
 # Cancels training, if metrics become unreasonable
 ##########################################################
+
+class EarlyStopping(BaseTorchCallback):
+
+    def __init__(self, epoch_threshold: int, metric: str = 'val_loss'):
+        super().__init__()
+        self.metric: str = metric
+        self.epoch_threshold: int = epoch_threshold
+
+        self.epochs_without_improvement = 0
+        self.best_metric = sys.float_info.max
+
+    def on_training_start(self, model):
+        print('Early stopping initiated. Epochs: '+str(self.epoch_threshold)+'. Metric: '+self.metric)
+
+    def on_epoch_finished(self, model, epoch: int, epoch_result, history):
+        super().on_epoch_finished(model, epoch, epoch_result, history)
+
+        current_metric: float = epoch_result[self.metric]
+        if current_metric < self.best_metric:
+            self.best_metric = current_metric
+            self.epochs_without_improvement = 0
+        else:
+            self.epochs_without_improvement = self.epochs_without_improvement + 1
+            if self.epochs_without_improvement >= self.epoch_threshold:
+                print('Epoch threshold met. Early stopping training.')
+                self.request_cancellation()
+
 
 class UnreasonableLossCallback(BaseTorchCallback):
 
