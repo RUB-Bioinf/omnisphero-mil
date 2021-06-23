@@ -1,6 +1,8 @@
 import numpy as np
 import torch
 
+from util import log
+
 
 def get_hardware_device(gpu_preferred: bool = True):
     ''' Pick GPU if available, else run on CPU.
@@ -18,7 +20,7 @@ def get_hardware_device(gpu_preferred: bool = True):
             print('Wanted to run on GPU but it is not available!!')
             print('  =================')
 
-    print('Running on CPU.')
+    log.write('Running on CPU.')
     return torch.device('cpu')
 
 

@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader
 import hardware
 import mil_metrics
 from torch_callbacks import BaseTorchCallback
+from util import log
 from util import utils
 
 
@@ -22,7 +23,7 @@ from util import utils
 
 def save_model(state, save_path: str, verbose: bool = False):
     if verbose:
-        print('Saving model: ' + save_path)
+        log.write('Saving model: ' + save_path)
     torch.save(state, save_path)
 
 
@@ -70,7 +71,7 @@ class OmniSpheroMil(nn.Module):
     def get_device_ordinals(self) -> [int]:
         return self._device_ordinals.copy()
 
-    def compute_loss(self, X: Tensor, y: Tensor):
+    def compute_loss(self, X: Tensor, y: Tensor, clamp_min: float = None, clamp_max: float = None) -> [Tensor, Tensor]:
         pass
 
     def compute_accuracy(self, X: Tensor, y: Tensor):
@@ -226,7 +227,7 @@ class BaselineMIL(OmniSpheroMil):
         return n_size
 
     # COMPUTATION METHODS
-    def compute_loss(self, X: Tensor, y: Tensor) -> [Tensor, Tensor]:
+    def compute_loss(self, X: Tensor, y: Tensor, clamp_min: float = None, clamp_max: float = None):
         """ otherwise known as loss_fn
         Takes a data input of X,y (batches or bags) computes a forward pass and the resulting error.
         """
@@ -248,8 +249,15 @@ class BaselineMIL(OmniSpheroMil):
             # loss = y * torch.log(y_hat) + (1.0 - y) * torch.log(1.0 - y_hat)
             # loss = torch.clamp(loss, min=-1.0, max=1.0)
             # loss = loss * -1
+
             b = nn.BCELoss()
             loss = b(y_hat.squeeze(), y)
+            if clamp_min is not None:
+                loss = torch.clamp(loss, max=clamp_min)
+            if clamp_max is not None:
+                loss = torch.clamp(loss, max=clamp_max)
+
+            # https://github.com/yhenon/pytorch-retinanet/issues/3
 
         # loss = F.cross_entropy(y_hat, y)
         # loss = F.binary_cross_entropy(y_hat_binarized, y)
@@ -295,7 +303,8 @@ def apply_optimizer(model: OmniSpheroMil, selection: str = 'adam') -> Optimizer:
 
 
 def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: DataLoader, validation_data: DataLoader,
-        out_dir_base: str, callbacks: [BaseTorchCallback], checkpoint_interval: int = 1):
+        out_dir_base: str, callbacks: [BaseTorchCallback], checkpoint_interval: int = 1, clamp_min: float = None,
+        clamp_max: float = None):
     """ Trains a model on the previously preprocessed train and val sets.
     Also calls evaluate in the validation phase of each epoch.
     """
@@ -308,6 +317,11 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     os.makedirs(checkpoint_out_dir, exist_ok=True)
     os.makedirs(metrics_dir_live, exist_ok=True)
 
+    batch_losses_file = metrics_dir_live + 'batch_losses.csv'
+    f = open(batch_losses_file, 'w')
+    f.write('Epoch;Batch 1 Loss;Batch 2 Loss')
+    f.close()
+
     cancel_requested = False
     loss = None
     os.makedirs(checkpoint_out_dir, exist_ok=True)
@@ -315,9 +329,9 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     epoch_durations = []
 
     if model.is_cpu():
-        print('Training on CPU.')
+        log.write('Training on CPU.')
     else:
-        print('Training on GPU, using these ordinals: ' + str(model.get_device_ordinals()))
+        log.write('Training on GPU, using these ordinals: ' + str(model.get_device_ordinals()))
 
     # Notifying callbacks
     for i in range(len(callbacks)):
@@ -352,7 +366,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
             model.zero_grad()  # resets gradients
 
-            loss, _ = model.compute_loss(data, bag_label)  # forward pass
+            loss, _ = model.compute_loss(X=data, y=bag_label, clamp_max=clamp_max, clamp_min=clamp_min)  # forward pass
             train_losses.append(float(loss))
             acc = model.compute_accuracy(data, bag_label)
             train_acc.append(float(acc))
@@ -370,7 +384,8 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             del data, bag_label, label
 
         # VALIDATION PHASE
-        result, _ = evaluate(model, validation_data)  # returns a results dict for metrics
+        result, _, all_losses = evaluate(model, validation_data, clamp_max=clamp_max,
+                                         clamp_min=clamp_min)  # returns a results dict for metrics
         result['train_loss'] = sum(train_losses) / len(train_losses)  # torch.stack(train_losses).mean().item()
         result['train_acc'] = sum(train_acc) / len(train_acc)
 
@@ -384,9 +399,9 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         eta_timestamp = eta_timestamp.strftime("%Y/%m/%d, %H:%M:%S")
 
         history.append(result)
-        print(
+        log.write(
             'Epoch {}/{}: Train Loss {:.4f}, Train Acc {:.4f}, Val Loss {:.4f}, Val Acc {:.4f}. Duration: {}. ETA: {}'.format(
-                epoch, epochs, result[
+                epoch, epochs + 1, result[
                     'train_loss'], result['train_acc'], result['val_loss'], result['val_acc'], time_diff,
                 eta_timestamp))
 
@@ -398,7 +413,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
         # Save best model / checkpointing stuff
         is_best = bool(result['val_loss'] < best_loss)
-        best_loss = max(result['val_loss'], best_loss)
+        best_loss = min(result['val_loss'], best_loss)
         state = {
             'model_state_dict': model.state_dict(),
             'optim_state_dict': optimizer.state_dict(),
@@ -411,15 +426,20 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         mil_metrics.plot_accuracy(history, metrics_dir_live, include_raw=False, include_tikz=False)
         mil_metrics.plot_losses(history, metrics_dir_live, include_raw=False, include_tikz=False)
 
+        # Printing each loss for every batch
+        f = open(batch_losses_file, 'a')
+        f.write('\n' + str(epoch) + ';' + ';'.join([str(l) for l in all_losses]))
+        f.close()
+
         # Saving model checkpoints
         if epoch % checkpoint_interval == 0:
             save_model(state, checkpoint_out_dir + 'checkpoint-' + str(epoch) + '.h5', verbose=True)
         if is_best:
-            print('New best model! Saving...')
+            log.write('New best model! Saving...')
             save_model(state, model_save_path_best, verbose=False)
 
         if cancel_requested:
-            print('Model was canceled before reaching all epochs.')
+            log.write('Model was canceled before reaching all epochs.')
 
     # Notifying callbacks
     for i in range(len(callbacks)):
@@ -463,11 +483,10 @@ def get_predictions(model: OmniSpheroMil, data_loader: DataLoader):
         attention_scores = np.round(attention.cpu().data.numpy()[0], decimals=3)
         all_attention.append(attention_scores)
 
-        print('Bag Label:' + str(bag_label))
-        print('Predicted Label:' + str(predictions.numpy().item()))
-        print('attention scores (unique ones):')
-        # print(np.unique(attention_scores))
-        print(attention_scores)
+        # log.write('Bag Label:' + str(bag_label))
+        # log.write('Predicted Label:' + str(predictions.numpy().item()))
+        # log.write('attention scores (unique ones):')
+        # log.write(attention_scores)
 
         del data, bag_label, label
 
@@ -475,7 +494,7 @@ def get_predictions(model: OmniSpheroMil, data_loader: DataLoader):
 
 
 @torch.no_grad()
-def evaluate(model: OmniSpheroMil, data_loader: DataLoader):
+def evaluate(model: OmniSpheroMil, data_loader: DataLoader, clamp_max: float = None, clamp_min: float = None):
     ''' Evaluate model / validation operation
     Can be used for validation within fit as well as testing.
     '''
@@ -500,7 +519,7 @@ def evaluate(model: OmniSpheroMil, data_loader: DataLoader):
         data = data.to(model.get_device_ordinal(0))
         bag_label = bag_label.to(model.get_device_ordinal(3))
 
-        loss, attention_weights = model.compute_loss(data, bag_label)  # forward pass
+        loss, attention_weights = model.compute_loss(data, bag_label,clamp_max=clamp_max,clamp_min=clamp_min)  # forward pass
         test_losses.append(float(loss))
         acc = model.compute_accuracy(data, bag_label)
         test_acc.append(float(acc))
@@ -509,9 +528,10 @@ def evaluate(model: OmniSpheroMil, data_loader: DataLoader):
 
     result['val_loss'] = sum(test_losses) / len(test_losses)  # torch.stack(test_losses).mean().item()
     result['val_acc'] = sum(test_acc) / len(test_acc)
-    return result, attention_weights
+    return result, attention_weights, test_losses
 
 
+# deprecated
 def binary_cross_entropy(y: Union[float, list], y_predicted: Union[float, list]) -> float:
     if not isinstance(y, list):
         y = [y]

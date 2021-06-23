@@ -1,17 +1,17 @@
 # IMPORTS
 
+import json
 import os
+import random
 import time
-from typing import Iterable
+from concurrent.futures import ThreadPoolExecutor
+from sys import platform
 from typing import Union
 from zipfile import ZipFile
-import json
+
 import numpy as np
-from sys import platform
 
-from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
-
+from util import log
 from util.utils import gct
 from util.utils import get_time_diff
 from util.utils import line_print
@@ -35,9 +35,9 @@ normalize_enum_default = 1
 ####
 
 def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: int):
-    print('Looking for multiple source dirs to load json data from.')
-    print('Batch dir: ', batch_dirs)
-    print('Normalization Protocol: ' + str(normalize_enum))
+    log.write('Looking for multiple source dirs to load json data from.')
+    log.write('Batch dir: ' + str(batch_dirs))
+    log.write('Normalization Protocol: ' + str(normalize_enum))
 
     X_full = None
     y_full = None
@@ -46,7 +46,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
 
     for i in range(len(batch_dirs)):
         current_dir = batch_dirs[i]
-        print('Considering source directory: ' + current_dir)
+        log.write('Considering source directory: ' + current_dir)
 
         if os.path.isdir(current_dir):
             X, y, errors, loaded_files_list = load_bags_json(source_dir=current_dir, max_workers=max_workers,
@@ -71,7 +71,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
 # Main Loading function
 def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_current: int = 1, gp_max: int = 1):
     files = os.listdir(source_dir)
-    print('Loading from source: ' + source_dir)
+    log.write('Loading from source: ' + source_dir)
     loaded_files_list = []
 
     terminal_columns = None
@@ -139,7 +139,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
     X = []
     y = []
     error_list = []
-    print('\n')
+    log.write('\n')
 
     for i in range(len(future_list)):
         future = future_list[i]
@@ -153,10 +153,11 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
             if y_f is not None:
                 y.append(y_f)
         else:
-            print('\n' + gct() + 'Error extracting future results: ' + str(e) + '\n')
+            log.write('\n' + gct() + 'Error extracting future results: ' + str(e) + '\n')
             error_list.append(e)
 
-    print('\n' + gct() + ' Fully Finished Loading Path.')
+    print('\n')
+    log.write('Fully Finished Loading Path.')
 
     # Deleting the futures and the future list to immediately releasing the memory.
     del future_list[:]
@@ -183,9 +184,9 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum):
     X, y = parse_JSON(data, worker_verbose, normalize_enum)
 
     if worker_verbose:
-        print('File Shape: ' + filepath + ' -> ')
-        print("X-shape: " + str(np.asarray(X).shape))
-        print("y-shape: " + str(np.asarray(y).shape))
+        log.write('File Shape: ' + filepath + ' -> ')
+        log.write("X-shape: " + str(np.asarray(X).shape))
+        log.write("y-shape: " + str(np.asarray(y).shape))
 
     return X, y
 
@@ -194,7 +195,7 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum):
 
 def read_JSON_file(filepath, worker_verbose, normalize_enum):
     if worker_verbose:
-        print('Reading json: ' + filepath)
+        log.write('Reading json: ' + filepath)
 
     f = open(filepath)
     data = json.load(f)
@@ -224,7 +225,7 @@ def parse_JSON(json_data, worker_verbose, normalize_enum) -> (np.array, int):
         y = int(label)
 
     if worker_verbose:
-        print('Reading JSON: ' + str(width) + 'x' + str(height), '. Bits: ' + str(bit_depth))
+        log.write('Reading JSON: ' + str(width) + 'x' + str(height), '. Bits: ' + str(bit_depth))
 
     # Initializing "best" min / max values for every cell in the tile
     best_well_min_r = bit_max
@@ -421,9 +422,9 @@ def build_bags(tiles, labels):
     result_labels = []
     count = 0
 
-    print(len(result_bags))
-    print(len(result_bags[0]))
-    print(result_bags[0][0].shape)
+    log.write(str(len(result_bags)))
+    log.write(str(len(result_bags[0])))
+    log.write(str(result_bags[0][0].shape))
 
     # check number of bags against labels
     if len(result_bags) == len(labels):
@@ -517,6 +518,38 @@ def np_std(n: np.ndarray, axis=None, mean: float = None) -> np.ndarray:
         mean = np.mean(n, axis=axis, keepdims=True)
 
     return np.sqrt(((n - mean) ** 2).mean(axis=axis, keepdims=True))
+
+
+####
+
+def repack_pags(X: [np.array], y: [int], repack_percentage: float = 0.2):
+    y = np.asarray(y)
+    y0 = np.where(y == 0)[0]
+    y1 = np.where(y == 1)[0]
+
+    for i in range(len(y0)):
+        bag_index = y0[i]
+        current_x = X[bag_index]
+        x_length = current_x.shape[0]
+        repack_count = int(x_length * repack_percentage + 1)
+
+        log.write(
+            'Moving ' + str(repack_count) + ' out of ' + str(x_length) + ' elements from bag index ' + str(bag_index))
+        for j in range(repack_count):
+            move_index = random.randrange(1, x_length - j)
+            target_bag_index = np.random.choice(y1)
+
+            move_tile = current_x[move_index]
+            move_tile = np.expand_dims(move_tile, 0)
+            current_x = np.delete(current_x, move_index, axis=0)
+
+            target_bag = X[target_bag_index]
+            target_bag = np.append(target_bag, move_tile, axis=0)
+            X[target_bag_index] = target_bag
+
+        X[bag_index] = current_x
+
+    return X
 
 
 ####

@@ -7,10 +7,10 @@ from sys import platform
 import matplotlib.pyplot as plt
 import numpy as np
 
-
 # ###############################
 # OTHER UTIL FUNCTIONS
 # ###############################
+from util import log
 
 
 def gct(raw: bool = False) -> [str, datetime]:
@@ -267,6 +267,7 @@ def line_print(text: str, max_width: int = None, cutoff_too_large_text: bool = T
     else:
         out_s = str(text)
 
+    log.write(out_s, print_to_console=False)
     if use_new_line:
         print(out_s, end="\r")
     else:

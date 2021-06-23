@@ -17,6 +17,7 @@ import mil_metrics
 import models
 import torch_callbacks
 from models import BaselineMIL
+from util import log
 from util import utils
 from util.utils import shuffle_and_split_data
 
@@ -48,12 +49,22 @@ max_workers_default = 5
 
 def train_model(training_label: str, source_dirs: [str], loss_function: str, epochs: int = 3,
                 max_workers: int = max_workers_default, normalize_enum: int = normalize_enum_default,
-                out_dir: str = None, gpu_enabled: bool = False, invert_bag_labels: bool = False):
+                out_dir: str = None, gpu_enabled: bool = False, invert_bag_labels: bool = False,
+                repack_percentage: float = 0.2, global_log_dir: str = None):
     if out_dir is None:
         out_dir = source_dirs[0] + os.sep + 'training_results'
     out_dir = out_dir + os.sep + training_label + os.sep
     os.makedirs(out_dir, exist_ok=True)
     print('Saving logs and protocols to: ' + out_dir)
+
+    global_log_filename = None
+    local_log_filename = out_dir + os.sep + 'log.txt'
+    log.add_file(local_log_filename)
+    if global_log_dir is not None:
+        global_log_filename = global_log_dir + os.sep + 'log-' + training_label + '.txt'
+        os.makedirs(global_log_dir, exist_ok=True)
+        log.add_file(global_log_filename)
+    log.write('Starting training')
 
     # PREPARING DATA
     # out_dir = source_dir + os.sep + 'train' + os.sep + 'debug' + os.sep
@@ -70,7 +81,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, epo
     X = [np.einsum('bhwc->bchw', bag) for bag in X]
     # Hint: Dim should be (xxx, 3, 150, 150)
     loading_time = utils.get_time_diff(loading_start_time)
-    print('Loading finished in: ' + str(loading_time))
+    log.write('Loading finished in: ' + str(loading_time))
 
     # Finished loading. Printing errors and data
     f = open(out_dir + 'loading_errors.txt', 'w')
@@ -105,15 +116,10 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, epo
             f.close()
         del current_x
 
-    print('Finished loading data. Number of bags: ', len(X), '. Number of labels: ', len(y))
+    log.write('Finished loading data. Number of bags: ' + str(len(X)) + '. Number of labels: ' + str(len(y)))
     X_size = 0
-    f = open(out_dir + 'bags.csv', 'w')
-    f.write('Bag;Shape;Label')
     for i in range(len(X)):
         X_size = X_size + X[i].nbytes
-        print('Bag #' + str(i + 1) + ': ', str(X[i].shape), ' -> label: ', str(y[i]))
-        f.write('\n' + str(i) + ';' + str(X[i].shape) + ';' + str(y[i]))
-
         if invert_bag_labels:
             y[i] = int(not y[i])
     f.close()
@@ -121,8 +127,11 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, epo
     X_s = utils.convert_size(X_size)
     y_s = utils.convert_size(getsizeof(y))
 
-    print("X-size in memory: " + str(X_s))
-    print("y-size in memory: " + str(y_s))
+    log.write("X-size in memory: " + str(X_s))
+    log.write("y-size in memory: " + str(y_s))
+
+    # Printing Bag Shapes
+    print_bag_metadata(X, y, file_name=out_dir + 'bags.csv')
 
     # Printing more data
     f = open(out_dir + 'loading_data_statistics.csv', 'w')
@@ -135,23 +144,28 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, epo
     del X_s, y_s, X_size, f
 
     if len(X) == 0:
-        print('WARNING: NO DATA LOADED')
+        log.write('WARNING: NO DATA LOADED')
         return
 
     # Setting up bags for MIL
+    if repack_percentage>0:
+        X = loader.repack_pags(X, y, repack_percentage=repack_percentage)
+        print_bag_metadata(X, y, file_name=out_dir + 'bags_repacked.csv')
+
+    # Setting up datasets
     dataset, input_dim = loader.convert_bag_to_batch(X, y)
-    print('Detected input dim: ' + str(input_dim))
+    log.write('Detected input dim: ' + str(input_dim))
     del X, y
 
     # Train-Test Split
-    print('Shuffling and splitting data into train and val set')
+    log.write('Shuffling and splitting data into train and val set')
     training_data, validation_data = shuffle_and_split_data(dataset, train_percentage=0.7)
     del dataset
 
     training_data_tiles = sum([training_data[i][0].shape[0] for i in range(len(training_data))])
     validation_data_tiles = sum([validation_data[i][0].shape[0] for i in range(len(validation_data))])
-    print('Training data: ' + str(training_data_tiles) + ' tiles over ' + str(len(training_data)) + ' bags.')
-    print('Validation data: ' + str(validation_data_tiles) + ' tiles over ' + str(len(validation_data)) + ' bags.')
+    log.write('Training data: ' + str(training_data_tiles) + ' tiles over ' + str(len(training_data)) + ' bags.')
+    log.write('Validation data: ' + str(validation_data_tiles) + ' tiles over ' + str(len(validation_data)) + ' bags.')
 
     # Preparing for model loading
     device_ordinals = models.device_ordinals_local
@@ -162,10 +176,10 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, epo
 
     # Loading Hardware Device
     device = hardware.get_hardware_device(gpu_preferred=gpu_enabled)
-    print('Selected device: ' + str(device))
+    log.write('Selected device: ' + str(device))
 
     # Setting up Model
-    print('Setting up model...')
+    log.write('Setting up model...')
     model = BaselineMIL(input_dim=input_dim, device=device,
                         device_ordinals=device_ordinals,
                         loss_function=loss_function,
@@ -179,7 +193,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, epo
         loader_kwargs = {'num_workers': data_loader_cores, 'pin_memory': True}
 
     optimizer = models.apply_optimizer(model)
-    print('Finished loading data and model')
+    log.write('Finished loading data and model')
 
     ################
     # DATA START
@@ -193,23 +207,23 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, epo
     # Callbacks
     callbacks = []
     callbacks.append(torch_callbacks.EarlyStopping(epoch_threshold=int(epochs / 5 + 1)))
-    # callbacks.append(UnreasonableLossCallback(loss_max=100.0))
+    callbacks.append(torch_callbacks.UnreasonableLossCallback(loss_max=30.0))
 
     ################
     # TRAINING START
     ################
-    print('Start of training for ' + str(epochs) + ' epochs.')
-    print('Training: "' + training_label + '"!')
+    log.write('Start of training for ' + str(epochs) + ' epochs.')
+    log.write('Training: "' + training_label + '"!')
     history, history_keys, model_save_path_best = models.fit(model=model, optimizer=optimizer, epochs=epochs,
                                                              training_data=train_dl,
                                                              validation_data=validation_dl,
                                                              out_dir_base=out_dir,
                                                              checkpoint_interval=50,
                                                              callbacks=callbacks)
-    print('Finished training!')
+    log.write('Finished training!')
     del train_dl
 
-    print('Plotting and saving loss and acc plots...')
+    log.write('Plotting and saving loss and acc plots...')
     mil_metrics.write_history(history, history_keys, metrics_dir)
     mil_metrics.plot_losses(history, metrics_dir, include_raw=True, include_tikz=True)
     mil_metrics.plot_accuracy(history, metrics_dir, include_raw=True, include_tikz=True)
@@ -225,10 +239,40 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, epo
     # print('Saving Confidence Matrix')
     # mil_metrics.plot_conf_matrix(y_true, y_pred, metrics_dir, target_names=['Non Tox', 'Tox'], normalize=False)
 
-    print('Computing and plotting binary ROC-Curve')
-    print('Saving metrics here: ' + metrics_dir)
+    log.write('Computing and plotting binary ROC-Curve')
+    log.write('Saving metrics here: ' + metrics_dir)
     fpr, tpr, _ = mil_metrics.binary_roc_curve(y_true, y_hats)
     mil_metrics.plot_binary_roc_curve(fpr, tpr, metrics_dir)
+
+    log.remove_file(local_log_filename)
+    if global_log_dir is not None:
+        log.remove_file(global_log_filename)
+
+
+def print_bag_metadata(X, y, file_name: str):
+    f = open(file_name, 'w')
+    f.write(';Bag;Label;Memory Raw;Memory Formatted;Shape;Shape;Shape;Shape')
+
+    y0 = len(np.where(np.asarray(y) == 0)[0])
+    y1 = len(np.where(np.asarray(y) == 1)[0])
+
+    x_size = 0
+    bag_count = 0
+    for i in range(len(X)):
+        current_X = X[i]
+        x_size = x_size + current_X.nbytes
+        x_size_converted = utils.convert_size(current_X.nbytes)
+
+        shapes = ';'.join([str(s) for s in current_X.shape])
+        bag_count = bag_count + current_X.shape[0]
+
+        # print('Bag #' + str(i + 1) + ': ', shapes, ' -> label: ', str(y[i]))
+        f.write('\n;' + str(i) + ';' + str(y[i]) + ';' + str(current_X.nbytes) + ';' + x_size_converted + ';' + shapes)
+
+    f.write('\n' + 'Sum;' + str(len(X)) + ';0: ' + str(y0) + ';' + str(x_size) + ';' + utils.convert_size(
+        x_size) + ';' + str(bag_count))
+    f.write('\n;;1: ' + str(y1))
+    f.close()
 
 
 def main(debug: bool = False):
@@ -241,45 +285,66 @@ def main(debug: bool = False):
     current_gpu_enabled = True
     if debug:
         current_sources_dir = [current_sources_dir[0]]
+        current_epochs = 5
 
     if sys.platform == 'win32':
+        current_global_log_dir = 'U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\'
+        log.add_file('U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\all_logs.txt')
+
         current_epochs = 2
         current_max_workers = 5
         current_sources_dir = [default_source_dir_win]
         default_out_dir_base = default_out_dir_win_base
         current_gpu_enabled = False
+    else:
+        # log.add_file('/Sciebo/HCA/00_Logs/mil_log/linux/all_logs.txt')
+        current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log/linux/'
+        current_global_log_dir = None
 
     current_out_dir = default_out_dir_base + os.sep
     os.makedirs(current_out_dir, exist_ok=True)
 
+    log.write('Starting Training...')
     if debug:
         for i in range(5, 8):
             train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                         normalize_enum=i,
+                        global_log_dir=current_global_log_dir,
                         invert_bag_labels=False,
-                        training_label='debug-train-std-'+str(i),
+                        training_label='debug-train-std-' + str(i),
                         loss_function='binary_cross_entropy',
                         )
     else:
-        for i in range(1, 8):
-            train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
-                        max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
-                        normalize_enum=i,
-                        training_label='bcr-normalized-' + str(i),
-                        invert_bag_labels=False,
-                        loss_function='binary_cross_entropy',
-                        )
-            train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
-                        max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
-                        normalize_enum=i,
-                        training_label='inverted-bcr-normalized-' + str(i),
-                        invert_bag_labels=True,
-                        loss_function='binary_cross_entropy',
-                        )
+        for i in [5, 7, 8]:
+            for j in [0.3, 0.4, 0.5, 0.8]:
+                log.write('Normalizer: '+str(i))
+                log.write('Repacker: '+str(j))
+
+                train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
+                            max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
+                            normalize_enum=i,
+                            training_label='bcr-normalized-' + str(i)+'-repack-'+str(j),
+                            global_log_dir=current_global_log_dir,
+                            repack_percentage=j,
+                            invert_bag_labels=False,
+                            loss_function='binary_cross_entropy',
+                            )
+                train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
+                            max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
+                            normalize_enum=i,
+                            training_label='inverted-bcr-normalized-' + str(i)+'-repack-'+str(j),
+                            global_log_dir=current_global_log_dir,
+                            repack_percentage=j,
+                            invert_bag_labels=True,
+                            loss_function='binary_cross_entropy',
+                            )
+
+    log.write('Finished every training!')
 
 
 if __name__ == '__main__':
     print("Training OmniSphero MIL")
     debug: bool = False
+
     main(debug=debug)

@@ -26,6 +26,7 @@ import util.utils
 ###########
 
 # METRICS
+from util import log
 from util import utils
 
 
@@ -248,4 +249,4 @@ def write_history(history: List[Dict[str, float]], history_keys: [str], metrics_
     f.close()
 
     if verbose:
-        print('Saved training history: ', out_file)
+        log.write('Saved training history: '+ out_file)
