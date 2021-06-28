@@ -11,6 +11,7 @@ import torch.nn as nn
 from torch import Tensor
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
 
 import hardware
 import mil_metrics
@@ -71,7 +72,7 @@ class OmniSpheroMil(nn.Module):
     def get_device_ordinals(self) -> [int]:
         return self._device_ordinals.copy()
 
-    def compute_loss(self, X: Tensor, y: Tensor, clamp_min: float = None, clamp_max: float = None) -> [Tensor, Tensor]:
+    def compute_loss(self, X: Tensor, y: Tensor) -> [Tensor, Tensor]:
         pass
 
     def compute_accuracy(self, X: Tensor, y: Tensor):
@@ -79,8 +80,8 @@ class OmniSpheroMil(nn.Module):
 
 
 class BaselineMIL(OmniSpheroMil):
-    def __init__(self, input_dim, device, loss_function: str, activation_function: str, use_bias=True, use_max=True,
-                 device_ordinals=None):
+    def __init__(self, input_dim, device, loss_function: str, accuracy_function: str, use_bias=True, use_max=True,
+                 device_ordinals=None, enable_attention: bool = False):
         super().__init__(device, device_ordinals)
         self.linear_nodes = 512
         self.num_classes = 1  # 3
@@ -89,7 +90,9 @@ class BaselineMIL(OmniSpheroMil):
         self.use_bias = use_bias
         self.use_max = use_max
         self.loss_function: str = loss_function
-        self.activation_function: str = activation_function
+        self.accuracy_function: str = accuracy_function
+        self.enable_attention = enable_attention
+        self.attention_nodes = 128
 
         # add batch norm? increases model complexity but possibly speeds up convergence
         self.feature_extractor_0 = nn.Sequential(
@@ -183,6 +186,14 @@ class BaselineMIL(OmniSpheroMil):
         #        torch.max(dim=0, keepdim=True)
         #    ).to('cuda:3')
 
+        if self.enable_attention:
+            self.attention = nn.Sequential(
+                nn.Linear(self.linear_nodes, self.attention_nodes, bias=self.use_bias),
+                nn.Tanh(),
+                nn.Linear(self.attention_nodes, 1)  # self.num_classes, bias=self.use_bias)
+            )
+            self.attention = self.attention.to(self.get_device_ordinal(3))  # two-layer NN that
+
         self.classifier = nn.Sequential(
             nn.Linear(1, self.num_classes),  # * self.num_classes, self.num_classes),
             # nn.Softmax()
@@ -201,15 +212,25 @@ class BaselineMIL(OmniSpheroMil):
         hidden = self.feature_extractor_3(hidden.to(self.get_device_ordinal(3)))  # N x linear_nodes
 
         pooled = None
+        attention = None
         if not self.use_max:
             pooled = torch.mean(hidden, dim=[0, 1], keepdim=True)  # N x num_classes
+            attention = torch.tensor([[0.5]])
         elif self.use_max:
             pooled = torch.max(hidden)  # N x num_classes
             pooled = pooled.unsqueeze(dim=0)
             pooled = pooled.unsqueeze(dim=0)
+            attention = torch.tensor([[0.5]])
+        elif self.enable_attention:
+            attention = self.attention(hidden)
+            attention = torch.transpose(attention, 1, 0)
+            attention = F.softmax(attention, dim=1)
 
-        attention = torch.tensor([[0.5]])
-        y_hat = self.classifier(pooled)
+        if self.enable_attention:
+            y_hat = self.classifier(attention)
+        else:
+            y_hat = self.classifier(pooled)
+
         y_hat_binarized = torch.ge(y_hat, 0.5).float()
         return y_hat, y_hat_binarized, attention
 
@@ -252,12 +273,6 @@ class BaselineMIL(OmniSpheroMil):
 
             b = nn.BCELoss()
             loss = b(y_hat.squeeze(), y)
-            if clamp_min is not None:
-                loss = torch.clamp(loss, max=clamp_min)
-            if clamp_max is not None:
-                loss = torch.clamp(loss, max=clamp_max)
-
-            # https://github.com/yhenon/pytorch-retinanet/issues/3
 
         # loss = F.cross_entropy(y_hat, y)
         # loss = F.binary_cross_entropy(y_hat_binarized, y)
@@ -277,7 +292,7 @@ class BaselineMIL(OmniSpheroMil):
         y_hat = y_hat.squeeze(dim=0)
 
         acc = None
-        method = self.activation_function
+        method = self.accuracy_function
         if method == 'binary':
             acc = _binary_accuracy(y_hat, y)
         else:
@@ -286,7 +301,7 @@ class BaselineMIL(OmniSpheroMil):
         return acc
 
 
-def apply_optimizer(model: OmniSpheroMil, selection: str = 'adam') -> Optimizer:
+def choose_optimizer(model: OmniSpheroMil, selection: str) -> Optimizer:
     """ Chooses an optimizer according to the string specifed in the model CLI argument and build with specified args
     """
     if selection == 'adam':
@@ -366,7 +381,14 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
             model.zero_grad()  # resets gradients
 
-            loss, _ = model.compute_loss(X=data, y=bag_label, clamp_max=clamp_max, clamp_min=clamp_min)  # forward pass
+            loss, _ = model.compute_loss(X=data, y=bag_label)  # forward pass
+            if clamp_min is not None:
+                loss = torch.clamp(loss, min=clamp_min)
+            if clamp_max is not None:
+                loss = torch.clamp(loss, max=clamp_max)
+
+            # https://github.com/yhenon/pytorch-retinanet/issues/3
+
             train_losses.append(float(loss))
             acc = model.compute_accuracy(data, bag_label)
             train_acc.append(float(acc))
@@ -519,7 +541,13 @@ def evaluate(model: OmniSpheroMil, data_loader: DataLoader, clamp_max: float = N
         data = data.to(model.get_device_ordinal(0))
         bag_label = bag_label.to(model.get_device_ordinal(3))
 
-        loss, attention_weights = model.compute_loss(data, bag_label,clamp_max=clamp_max,clamp_min=clamp_min)  # forward pass
+        loss, attention_weights = model.compute_loss(data, bag_label)  # forward pass
+        if clamp_min is not None:
+            loss = torch.clamp(loss, min=clamp_min)
+        if clamp_max is not None:
+            loss = torch.clamp(loss, max=clamp_max)
+
+        # https://github.com/yhenon/pytorch-retinanet/issues/3
         test_losses.append(float(loss))
         acc = model.compute_accuracy(data, bag_label)
         test_acc.append(float(acc))

@@ -37,6 +37,12 @@ class BaseTorchCallback:
     def request_cancellation(self):
         self.__request_cancellation = True
 
+    def __str__(self) -> str:
+        return "Torch Callback: " + self._describe()
+
+    def _describe(self) -> str:
+        return None
+
 
 ##########################################################
 # Cancels training, if metrics become unreasonable
@@ -53,7 +59,7 @@ class EarlyStopping(BaseTorchCallback):
         self.best_metric = sys.float_info.max
 
     def on_training_start(self, model):
-        print('Early stopping initiated. Epochs: '+str(self.epoch_threshold)+'. Metric: '+self.metric)
+        print('Early stopping initiated. Epochs: ' + str(self.epoch_threshold) + '. Metric: ' + self.metric)
 
     def on_epoch_finished(self, model, epoch: int, epoch_result, history):
         super().on_epoch_finished(model, epoch, epoch_result, history)
@@ -67,6 +73,9 @@ class EarlyStopping(BaseTorchCallback):
             if self.epochs_without_improvement >= self.epoch_threshold:
                 print('Epoch threshold met. Early stopping training.')
                 self.request_cancellation()
+
+    def _describe(self) -> str:
+        return 'Early Stopping. Metric: "'+self.metric+". Threshold: "+str(self.epoch_threshold)
 
 
 class UnreasonableLossCallback(BaseTorchCallback):
@@ -82,6 +91,9 @@ class UnreasonableLossCallback(BaseTorchCallback):
 
         if val_loss > self.loss_max or loss > self.loss_max:
             self.request_cancellation()
+
+    def _describe(self) -> str:
+        return 'Unreasonable Loss. Max Loss: "'+str(self.loss_max)
 
 
 if __name__ == "__main__":

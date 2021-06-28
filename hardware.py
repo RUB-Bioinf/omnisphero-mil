@@ -24,10 +24,17 @@ def get_hardware_device(gpu_preferred: bool = True):
     return torch.device('cpu')
 
 
-def print_gpu_status():
-    print('Torch: is Cuda available: ' + str(torch.cuda.is_available()))
-    print('Torch: Visible Devices: ' + str(torch.cuda.device_count()))
-    print('Torch: Compiled Torch Architecture: ' + str(torch.cuda.get_arch_list()))
+def print_gpu_status(silent: bool = False) -> [str]:
+    out = []
+    out.append('Torch: is Cuda available: ' + str(torch.cuda.is_available()))
+    out.append('Torch: Visible Devices: ' + str(torch.cuda.device_count()))
+    out.append('Torch: Compiled Torch Architecture: ' + str(torch.cuda.get_arch_list()))
+
+    if not silent:
+        for line in out:
+            print(line)
+
+    return out
 
 
 def init():

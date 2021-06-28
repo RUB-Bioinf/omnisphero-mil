@@ -235,7 +235,7 @@ def convert_size(size_bytes):
     return "%s %s" % (s, size_name[i])
 
 
-def line_print(text: str, max_width: int = None, cutoff_too_large_text: bool = True, use_new_line: bool = True):
+def line_print(text: str, max_width: int = None, cutoff_too_large_text: bool = True, use_new_line: bool = True,include_in_log:bool=True):
     text = str(text)
 
     if max_width is None:
@@ -267,7 +267,9 @@ def line_print(text: str, max_width: int = None, cutoff_too_large_text: bool = T
     else:
         out_s = str(text)
 
-    log.write(out_s, print_to_console=False)
+    if include_in_log:
+        log.write(out_s, print_to_console=False)
+
     if use_new_line:
         print(out_s, end="\r")
     else:

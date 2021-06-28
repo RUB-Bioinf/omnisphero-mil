@@ -132,7 +132,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
             max_workers) + ' Threads running. Finished: ' + str(finished_count) + '/' + str(
             len(future_list)) + '. Errors: ' + str(
             error_count) + '. Running: ' + get_time_diff(
-            start_time) + '. ' + gct(), max_width=terminal_columns)
+            start_time) + '. ' + gct(), max_width=terminal_columns, include_in_log=False)
         all_finished = finished_count == len(future_list)
         time.sleep(1)
 
