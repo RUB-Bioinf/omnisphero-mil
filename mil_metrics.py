@@ -49,35 +49,24 @@ def binary_accuracy(outputs, targets):
 def plot_accuracy(history, save_path: str, include_raw: bool = False, include_tikz: bool = False):
     ''' takes a history object and plots the accuracies
     '''
-    # train_acc = [i['train_acc'] for i in history]
-    # val_acc = [x['val_acc'] for x in history]
-    # plt.plot(train_acc)
-    # plt.plot(val_acc)
-    # plt.xlabel('epoch')
-    # plt.ylabel('accuracy')
-    # plt.legend(['Training', 'Validation'])
-    # plt.title('Accuracy vs. No. of epochs for training and validation')
-    # plt.savefig(save_path + '_accuracies.pdf', dpi=600)
-    # plt.clf()
     if include_raw:
         plot_metric(history, 'val_acc', save_path, include_tikz=include_tikz)
         plot_metric(history, 'train_acc', save_path, include_tikz=include_tikz)
     plot_metric(history, 'val_acc', save_path, 'train_acc', include_tikz=include_tikz)
 
 
+def plot_accuracy_tiles(history, save_path: str, include_raw: bool = False, include_tikz: bool = False):
+    ''' takes a history object and plots the accuracies
+    '''
+    if include_raw:
+        plot_metric(history, 'val_acc_tiles', save_path, include_tikz=include_tikz)
+        plot_metric(history, 'train_acc_tiles', save_path, include_tikz=include_tikz)
+    plot_metric(history, 'val_acc_tiles', save_path, 'train_acc_tiles', include_tikz=include_tikz)
+
+
 def plot_losses(history, save_path: str, include_raw: bool = False, include_tikz: bool = False):
     ''' takes a history object and plots the losses
     '''
-    # train_loss = [i['train_loss'] for i in history]
-    # val_loss = [x['val_loss'] for x in history]
-    # plt.plot(train_loss)
-    # plt.plot(val_loss)
-    # plt.xlabel('epoch')
-    # plt.ylabel('loss')
-    # plt.legend(['Training', 'Validation'])
-    # plt.title('Loss vs. No. of epochs for training and validation')
-    # plt.savefig(save_path + '_losses.pdf', dpi=600)
-    # plt.clf()
     if include_raw:
         plot_metric(history, 'val_loss', save_path, include_tikz=include_tikz)
         plot_metric(history, 'train_loss', save_path, include_tikz=include_tikz)
@@ -93,12 +82,13 @@ def plot_metric(history, metric_name: str, out_dir: str, second_metric_name: str
     tikz_colors = [metric_color]
     tikz_legend = None
 
+    plt.clf()
     plt.plot(metric_values, color=metric_color)
     if second_metric_name is None:
         out_file_name = 'raw-' + metric_name
         plt_title = metric_type + ': ' + metric_title
     else:
-        out_file_name = metric_title.lower()
+        out_file_name = metric_name.lower().replace('val_', '').replace('train_', '')
         second_metric_values = [i[second_metric_name] for i in history]
         second_metric_color, second_metric_type = _get_metric_color(second_metric_name)
 
@@ -113,6 +103,7 @@ def plot_metric(history, metric_name: str, out_dir: str, second_metric_name: str
     plt.title(plt_title)
     plt.xlabel('Epoch')
     plt.ylabel(metric_title)
+    plt.tight_layout()
 
     os.makedirs(out_dir, exist_ok=True)
     plt.savefig(out_dir + os.sep + out_file_name + '.pdf', dpi=dpi)
@@ -123,6 +114,43 @@ def plot_metric(history, metric_name: str, out_dir: str, second_metric_name: str
         tikz = utils.get_plt_as_tex(data_list_y=tikz_data_list, plot_colors=tikz_colors, title=plt_title,
                                     label_y=metric_title, plot_titles=tikz_legend)
         f = open(out_dir + os.sep + out_file_name + '.tex', 'w')
+        f.write(tikz)
+        f.close()
+
+
+def plot_accuracies(history,out_dir:str, dpi: int = 600, include_tikz: bool = False):
+    values_train_acc_tiles = [i['train_acc_tiles'] for i in history]
+    values_val_acc_tiles = [i['val_acc_tiles'] for i in history]
+    values_train_acc_bags = [i['train_acc'] for i in history]
+    values_val_acc_bags = [i['val_acc'] for i in history]
+
+    title = 'Accuracy'
+    legend_entries = ['Tiles: Training','Tiles: Validation','Bags: Training','Bags: Validation']
+
+    tikz_data_list = [values_train_acc_tiles, values_val_acc_tiles, values_train_acc_bags, values_val_acc_bags]
+    tikz_colors = ['red', 'blue', 'teal', 'orange']
+
+    plt.clf()
+    plt.plot(values_train_acc_tiles, color='red')
+    plt.plot(values_val_acc_tiles, color='blue')
+    plt.plot(values_train_acc_bags, color='teal')
+    plt.plot(values_val_acc_bags, color='orange')
+
+    plt.legend(legend_entries)
+    plt.title(title)
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.tight_layout()
+
+    os.makedirs(out_dir, exist_ok=True)
+    plt.savefig(out_dir + os.sep + 'accuracy_combined.pdf', dpi=dpi)
+    plt.savefig(out_dir + os.sep + 'accuracy_combined.png', dpi=dpi)
+    plt.clf()
+
+    if include_tikz:
+        tikz = utils.get_plt_as_tex(data_list_y=tikz_data_list, plot_colors=tikz_colors, title=title,
+                                    label_y='Accuracy', plot_titles=legend_entries)
+        f = open(out_dir + os.sep + 'accuracy_combined.tex', 'w')
         f.write(tikz)
         f.close()
 
@@ -140,7 +168,9 @@ def _get_metric_title(metric_name: str):
     metric_name = metric_name.replace('train_', '')
 
     if metric_name == 'acc':
-        metric_name = 'accuracy'
+        metric_name = 'accuracy (Bags)'
+    if metric_name == 'acc_tiles':
+        metric_name = 'accuracy (Tiles)'
 
     return metric_name.capitalize()
 
@@ -249,4 +279,4 @@ def write_history(history: List[Dict[str, float]], history_keys: [str], metrics_
     f.close()
 
     if verbose:
-        log.write('Saved training history: '+ out_file)
+        log.write('Saved training history: ' + out_file)

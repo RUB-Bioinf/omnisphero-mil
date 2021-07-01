@@ -4,21 +4,22 @@ import random
 import sys
 from datetime import datetime
 from sys import getsizeof
-from sys import platform as _platform
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
 import hardware
+import label_map
 import loader
 import mil_metrics
 import models
 import torch_callbacks
 from models import BaselineMIL
 from util import log
+from util import sample_preview
 from util import utils
+from util.omnisphero_data_loader import OmniSpheroDataLoader
 from util.utils import shuffle_and_split_data
 
 # On windows, if there's not enough RAM:
@@ -32,8 +33,14 @@ default_source_dirs_unix = [
     # New CNN
     "/mil/migration/training_data/curated_linux/ESM36",
     "/mil/migration/training_data/curated_linux/ELS411",
-    # Old CNN
+    "/mil/migration/training_data/curated_linux/ELS517",
+    "/mil/migration/training_data/curated_linux/ELS637",
+    "/mil/migration/training_data/curated_linux/ELS681",
+    "/mil/migration/training_data/curated_linux/ELS682",
+    "/mil/migration/training_data/curated_linux/ELS719",
+    "/mil/migration/training_data/curated_linux/ELS744",
     "/mil/migration/training_data/curated_linux/EFB18",
+    # Old CNN
     "/mil/migration/training_data/curated_linux/esm49",
     "/mil/migration/training_data/curated_linux/jk242",
     "/mil/migration/training_data/curated_linux/mp149"
@@ -46,7 +53,11 @@ default_out_dir_unix_base = "/mil/migration/models/linux"
 # 1 = normalize every cell between 0 and 255 (8 bit)
 # 2 = normalize every cell individually with every color channel independent
 # 3 = normalize every cell individually with every color channel using the min / max of all three
-# 4 = normalize every cell but with bounds determined by the brightest cell in the same well
+# 4 = normalize every cell but with bounds determined by the brightest cell in the bag
+# 5 = z-score every cell individually with every color channel independent
+# 6 = z-score every cell individually with every color channel using the mean / std of all three
+# 7 = z-score every cell individually with every color channel independent using all samples in the bag
+# 8 = z-score every cell individually with every color channel using the mean / std of all three from all samples in the bag
 normalize_enum_default = 3
 
 max_workers_default = 5
@@ -55,7 +66,7 @@ max_workers_default = 5
 def train_model(training_label: str, source_dirs: [str], loss_function: str, device_ordinals: [int],
                 epochs: int = 3, max_workers: int = max_workers_default, normalize_enum: int = normalize_enum_default,
                 out_dir: str = None, gpu_enabled: bool = False, invert_bag_labels: bool = False,
-                repack_percentage: float = 0.2, global_log_dir: str = None, optimizer: str = 'adam',
+                repack_percentage: float = 0.0, global_log_dir: str = None, optimizer: str = 'adadelta',
                 clamp_min: float = None, clamp_max: float = None
                 ):
     if out_dir is None:
@@ -113,8 +124,11 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     # LOADING START
     ################
     loading_start_time = datetime.now()
-    X, y, errors, loaded_files_list = loader.load_bags_json_batch(batch_dirs=source_dirs, max_workers=max_workers,
-                                                                  normalize_enum=normalize_enum)
+    label_map.clear()
+
+    X, y, y_tiles, errors, loaded_files_list = loader.load_bags_json_batch(batch_dirs=source_dirs,
+                                                                           max_workers=max_workers,
+                                                                           normalize_enum=normalize_enum)
     X = [np.einsum('bhwc->bchw', bag) for bag in X]
     # Hint: Dim should be (xxx, 3, 150, 150)
     loading_time = utils.get_time_diff(loading_start_time)
@@ -131,33 +145,35 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         current_x = X[i]
         j = random.randint(0, current_x.shape[0] - 1)
 
-        preview_image_file = loading_preview_dir + 'preview_' + str(i) + '-' + str(j) + '_' + str(y[i]) + '.png'
-        try:
-            current_x = current_x[j]
+        preview_image_file_base = loading_preview_dir + 'preview_' + str(i) + '-' + str(j) + '_' + str(y[i])
+        current_x = current_x[j]
+        current_x: np.ndarray = np.einsum('abc->cba', current_x)
+        if current_x.min() >= 0 and current_x.max() <= 1:
+            # Normalized Image
+            preview_image_file = preview_image_file_base + '.png'
+            sample_preview.save_normalized_rgb(current_x, preview_image_file)
+        if normalize_enum >= 5:
+            sample_preview.save_z_scored_image(current_x, dim_x=150, dim_y=150,
+                                               fig_titles=['r (Nuclei)', 'g (Oligos)', 'b (Neurites)'],
+                                               filename=preview_image_file_base + '.png',
+                                               min=-3.0, max=3.0, normalize_enum=normalize_enum)
 
-            if current_x.min() >= 0 and current_x.max() <= 1:
-                current_x = current_x * 255
-                current_x = current_x.astype(np.uint8)
-                current_x = np.einsum('abc->cba', current_x)
-                plt.imsave(preview_image_file, current_x)
-        except Exception as e:
-            # TODO display stacktrace
-            preview_image_file = preview_image_file + '-error.txt'
-            preview_error_text = str(e.__class__.__name__) + ': "' + str(e) + '"'
-            print(preview_error_text)
-
-            f = open(preview_image_file, 'w')
-            f.write(preview_error_text)
-            f.close()
         del current_x
 
+    # Calculating Bag Size and possibly inverting labels
     log.write('Finished loading data. Number of bags: ' + str(len(X)) + '. Number of labels: ' + str(len(y)))
     X_size = 0
     for i in range(len(X)):
         X_size = X_size + X[i].nbytes
         if invert_bag_labels:
             y[i] = int(not y[i])
+            y_tiles[i] = not y_tiles[i]
     f.close()
+    if invert_bag_labels:
+        label_map.invert_labels()
+
+    # Printing sample hashes and labels
+    label_map.to_file(filename=out_dir + 'label_map.csv')
 
     X_s = utils.convert_size(X_size)
     y_s = utils.convert_size(getsizeof(y))
@@ -171,9 +187,6 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     protocol_f.write('\nBags with label 1: ' + str(len(np.where(np.asarray(y) == 1)[0])))
     protocol_f.write("\nX-size in memory: " + str(X_s))
     protocol_f.write("\ny-size in memory: " + str(y_s))
-
-    # Printing Bag Shapes
-    print_bag_metadata(X, y, file_name=out_dir + 'bags.csv')
 
     # Printing more data
     f = open(out_dir + 'loading_data_statistics.csv', 'w')
@@ -190,15 +203,19 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         protocol_f.write('\n\nWARNING: NO DATA LOADED')
         return
 
+    # Printing Bag Shapes
     # Setting up bags for MIL
     if repack_percentage > 0:
-        X = loader.repack_pags(X, y, repack_percentage=repack_percentage)
-        print_bag_metadata(X, y, file_name=out_dir + 'bags_repacked.csv')
+        print_bag_metadata(X, y, y_tiles, file_name=out_dir + 'bags_pre-packed.csv')
+        X, y, y_tiles = loader.repack_bags_merge(X, y, y_tiles, repack_percentage=repack_percentage)
+        print_bag_metadata(X, y, y_tiles, file_name=out_dir + 'bags_repacked.csv')
+    else:
+        print_bag_metadata(X, y, y_tiles, file_name=out_dir + 'bags.csv')
 
     # Setting up datasets
-    dataset, input_dim = loader.convert_bag_to_batch(X, y)
+    dataset, input_dim = loader.convert_bag_to_batch(X, y, y_tiles)
     log.write('Detected input dim: ' + str(input_dim))
-    del X, y
+    del X, y, y_tiles
 
     # Train-Test Split
     log.write('Shuffling and splitting data into train and val set')
@@ -243,8 +260,9 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     # DATA START
     ################
     # Data Generators
-    train_dl = DataLoader(training_data, batch_size=1, shuffle=True, **loader_kwargs)
-    validation_dl = DataLoader(validation_data, batch_size=1, shuffle=False, **loader_kwargs)
+    train_dl = OmniSpheroDataLoader(training_data, batch_size=1, shuffle=True, **loader_kwargs)
+    validation_dl = OmniSpheroDataLoader(validation_data, batch_size=1, shuffle=False, **loader_kwargs)
+    del training_data, validation_data
     test_dl = None
     # test_dl = DataLoader(test_data, batch_size=1, shuffle=True, **loader_kwargs)
 
@@ -291,6 +309,8 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     mil_metrics.write_history(history, history_keys, metrics_dir)
     mil_metrics.plot_losses(history, metrics_dir, include_raw=True, include_tikz=True)
     mil_metrics.plot_accuracy(history, metrics_dir, include_raw=True, include_tikz=True)
+    mil_metrics.plot_accuracy_tiles(history, metrics_dir, include_raw=True, include_tikz=True)
+    mil_metrics.plot_accuracies(history, metrics_dir, include_tikz=True)
 
     ###############
     # TESTING START
@@ -313,9 +333,9 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         log.remove_file(global_log_filename)
 
 
-def print_bag_metadata(X, y, file_name: str):
+def print_bag_metadata(X, y, y_tiles, file_name: str):
     f = open(file_name, 'w')
-    f.write(';Bag;Label;Memory Raw;Memory Formatted;Shape;Shape;Shape;Shape')
+    f.write(';Bag;Label;Tile Labels (Sum);Memory Raw;Memory Formatted;Shape;Shape;Shape;Shape')
 
     y0 = len(np.where(np.asarray(y) == 0)[0])
     y1 = len(np.where(np.asarray(y) == 1)[0])
@@ -331,7 +351,8 @@ def print_bag_metadata(X, y, file_name: str):
         bag_count = bag_count + current_X.shape[0]
 
         # print('Bag #' + str(i + 1) + ': ', shapes, ' -> label: ', str(y[i]))
-        f.write('\n;' + str(i) + ';' + str(y[i]) + ';' + str(current_X.nbytes) + ';' + x_size_converted + ';' + shapes)
+        f.write('\n;' + str(i) + ';' + str(y[i]) + ';' + str(sum(y_tiles[i])) + ';' + str(
+            current_X.nbytes) + ';' + x_size_converted + ';' + shapes)
 
     f.write('\n' + 'Sum;' + str(len(X)) + ';0: ' + str(y0) + ';' + str(x_size) + ';' + utils.convert_size(
         x_size) + ';' + str(bag_count))
@@ -351,7 +372,7 @@ def main(debug: bool = False):
     current_gpu_enabled = True
     if debug:
         current_sources_dir = [current_sources_dir[0]]
-        current_epochs = 5
+        current_epochs = 100
 
     # Preparing for model loading
     current_device_ordinals = models.device_ordinals_ehrlich
@@ -360,7 +381,6 @@ def main(debug: bool = False):
         current_global_log_dir = 'U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\'
         log.add_file('U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\all_logs.txt')
 
-        current_epochs = 2
         current_max_workers = 5
         current_sources_dir = [default_source_dir_win]
         default_out_dir_base = default_out_dir_win_base
@@ -374,50 +394,35 @@ def main(debug: bool = False):
 
     log.write('Starting Training...')
     if debug:
-        for i in range(5, 8):
-            train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
-                        max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
-                        device_ordinals=current_device_ordinals,
-                        normalize_enum=i,
-                        global_log_dir=current_global_log_dir,
-                        invert_bag_labels=False,
-                        training_label='debug-train-std-' + str(i),
-                        loss_function='binary_cross_entropy',
-                        )
+        train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
+                    max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
+                    device_ordinals=current_device_ordinals,
+                    normalize_enum=5,
+                    global_log_dir=current_global_log_dir,
+                    repack_percentage=0.1,
+                    invert_bag_labels=False,
+                    training_label='debug-train-std',
+                    loss_function='binary_cross_entropy',
+                    )
     else:
         for i in [4, 5, 6, 7, 8]:
-            for j in [0.3, 0.8]:
-                for o in ['adam', 'adadelta', 'momentum']:
-                    train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
-                                max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
-                                normalize_enum=i,
-                                training_label='bce-normalize' + str(i) + '-repack' + str(j) + '-optimizer-' + o,
-                                global_log_dir=current_global_log_dir,
-                                repack_percentage=j,
-                                invert_bag_labels=False,
-                                loss_function='binary_cross_entropy',
-                                optimizer=o,
-                                device_ordinals=current_device_ordinals
-                                )
-                    train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
-                                max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
-                                normalize_enum=i,
-                                training_label='bce-normalize' + str(i) + '-repack' + str(
-                                    j) + '-optimizer-' + o + '-inverted',
-                                global_log_dir=current_global_log_dir,
-                                repack_percentage=j,
-                                invert_bag_labels=True,
-                                loss_function='binary_cross_entropy',
-                                optimizer=o,
-                                device_ordinals=current_device_ordinals
-                                )
+            train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
+                        max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
+                        normalize_enum=i,
+                        training_label='bce-normalize' + str(i) + '-previews',
+                        global_log_dir=current_global_log_dir,
+                        invert_bag_labels=False,
+                        loss_function='binary_cross_entropy',
+                        optimizer='adadelta',
+                        device_ordinals=current_device_ordinals
+                        )
 
     log.write('Finished every training!')
 
 
 if __name__ == '__main__':
     print("Training OmniSphero MIL")
-    debug: bool = False
+    debug: bool = True
 
     hardware.print_gpu_status()
 

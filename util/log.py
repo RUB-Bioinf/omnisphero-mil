@@ -1,5 +1,6 @@
 import os
 import sys
+from pathlib import Path
 
 from util.utils import gct
 
@@ -31,7 +32,7 @@ def set_file(filename: str):
     add_file(filename=filename)
 
 
-def write(output, print_to_console: bool = True, include_timestamp: bool = True):
+def write(output, print_to_console: bool = True, include_timestamp: bool = True,include_in_files:bool=True):
     global _log_files
     output = str(output)
 
@@ -42,15 +43,21 @@ def write(output, print_to_console: bool = True, include_timestamp: bool = True)
     if print_to_console:
         print(output)
 
-    for current_out_file in _log_files:
-        if os.path.exists(current_out_file):
-            f = open(current_out_file, 'a')
-            f.write('\n')
-        else:
-            f = open(current_out_file, 'w')
+    if include_in_files:
+        for current_out_file in _log_files:
+            if os.path.exists(current_out_file):
+                f = open(current_out_file, 'a')
+                f.write('\n')
+            else:
+                # Creating the parent path
+                parent_path = Path(current_out_file)
+                parent_path = parent_path.parent.absolute()
+                os.makedirs(parent_path, exist_ok=True)
 
-        f.write(output)
-        f.close()
+                f = open(current_out_file, 'w')
+
+            f.write(output)
+            f.close()
 
 
 def main():
