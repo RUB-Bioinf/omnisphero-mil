@@ -10,7 +10,6 @@ import torch
 from torch.utils.data import DataLoader
 
 import hardware
-import label_map
 import loader
 import mil_metrics
 import models
@@ -66,6 +65,7 @@ max_workers_default = 5
 def train_model(training_label: str, source_dirs: [str], loss_function: str, device_ordinals: [int],
                 epochs: int = 3, max_workers: int = max_workers_default, normalize_enum: int = normalize_enum_default,
                 out_dir: str = None, gpu_enabled: bool = False, invert_bag_labels: bool = False,
+                shuffle_data_loaders: bool = True, model_enable_attention: bool = False, model_use_max: bool = True,
                 repack_percentage: float = 0.0, global_log_dir: str = None, optimizer: str = 'adadelta',
                 clamp_min: float = None, clamp_max: float = None
                 ):
@@ -76,8 +76,10 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     loading_preview_dir = out_dir + os.sep + 'loading_previews' + os.sep
     os.makedirs(loading_preview_dir, exist_ok=True)
 
-    print('Saving logs and protocols to: ' + out_dir)
+    print('Model classification - Use Max: ' + str(model_use_max))
+    print('Model classification - Use Attention: ' + str(model_enable_attention))
 
+    print('Saving logs and protocols to: ' + out_dir)
     # Logging params and args
     protocol_f = open(out_dir + os.sep + 'protocol.txt', 'w')
     protocol_f.write('Start time: ' + utils.gct())
@@ -86,6 +88,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     protocol_f.write('\nLoss function: ' + loss_function)
     protocol_f.write('\nDevice ordinals: ' + str(device_ordinals))
     protocol_f.write('\nEpochs: ' + str(epochs))
+    protocol_f.write('\nShuffle data loader: ' + str(shuffle_data_loaders))
     protocol_f.write('\nMax Loader Workers: ' + str(max_workers))
     protocol_f.write('\nNormalize Enum: ' + str(normalize_enum))
     protocol_f.write('\nGPU Enabled: ' + str(gpu_enabled))
@@ -124,7 +127,6 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     # LOADING START
     ################
     loading_start_time = datetime.now()
-    label_map.clear()
 
     X, y, y_tiles, errors, loaded_files_list = loader.load_bags_json_batch(batch_dirs=source_dirs,
                                                                            max_workers=max_workers,
@@ -155,7 +157,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         if normalize_enum >= 5:
             sample_preview.save_z_scored_image(current_x, dim_x=150, dim_y=150,
                                                fig_titles=['r (Nuclei)', 'g (Oligos)', 'b (Neurites)'],
-                                               filename=preview_image_file_base + '.png',
+                                               filename=preview_image_file_base + '-z.png',
                                                min=-3.0, max=3.0, normalize_enum=normalize_enum)
 
         del current_x
@@ -169,11 +171,6 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
             y[i] = int(not y[i])
             y_tiles[i] = not y_tiles[i]
     f.close()
-    if invert_bag_labels:
-        label_map.invert_labels()
-
-    # Printing sample hashes and labels
-    label_map.to_file(filename=out_dir + 'label_map.csv')
 
     X_s = utils.convert_size(X_size)
     y_s = utils.convert_size(getsizeof(y))
@@ -239,6 +236,8 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     log.write('Setting up model...')
     accuracy_function = 'binary'
     model = BaselineMIL(input_dim=input_dim, device=device,
+                        use_max=model_use_max,
+                        enable_attention=model_enable_attention,
                         device_ordinals=device_ordinals,
                         loss_function=loss_function,
                         accuracy_function=accuracy_function)
@@ -260,8 +259,8 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     # DATA START
     ################
     # Data Generators
-    train_dl = OmniSpheroDataLoader(training_data, batch_size=1, shuffle=True, **loader_kwargs)
-    validation_dl = OmniSpheroDataLoader(validation_data, batch_size=1, shuffle=False, **loader_kwargs)
+    train_dl = OmniSpheroDataLoader(training_data, batch_size=1, shuffle=shuffle_data_loaders, **loader_kwargs)
+    validation_dl = OmniSpheroDataLoader(validation_data, batch_size=1, shuffle=shuffle_data_loaders, **loader_kwargs)
     del training_data, validation_data
     test_dl = None
     # test_dl = DataLoader(test_data, batch_size=1, shuffle=True, **loader_kwargs)
@@ -273,10 +272,14 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
 
     protocol_f.write('\n\n == Model Information==')
     protocol_f.write('\nDevice Ordinals: ' + str(device_ordinals))
+    protocol_f.write('\nClassification: Use Max: ' + str(model_use_max))
+    protocol_f.write('\nClassification: Use Attention: ' + str(model_enable_attention))
     protocol_f.write('\nInput dim: ' + str(input_dim))
     protocol_f.write('\ntorch Device: ' + str(device))
     protocol_f.write('\nLoss Function: ' + str(loss_function))
     protocol_f.write('\nAccuracy Function: ' + str(accuracy_function))
+    protocol_f.write('\nModel classification - Use Max: ' + str(model_use_max))
+    protocol_f.write('\nModel classification - Use Attention: ' + str(model_enable_attention))
     protocol_f.write('\n\nData Loader - Cores: ' + str(data_loader_cores))
     protocol_f.write('\nData Loader - Pin Memory: ' + str(data_loader_pin_memory))
     protocol_f.write('\nCallback Count: ' + str(len(callbacks)))
@@ -365,14 +368,14 @@ def main(debug: bool = False):
     epsilon = sys.float_info.epsilon
     epsilon = 0.0001
 
-    current_epochs = 3000
+    current_epochs = 400
     current_max_workers = 15
     default_out_dir_base = default_out_dir_unix_base
     current_sources_dir = default_source_dirs_unix
     current_gpu_enabled = True
     if debug:
         current_sources_dir = [current_sources_dir[0]]
-        current_epochs = 100
+        current_epochs = 5
 
     # Preparing for model loading
     current_device_ordinals = models.device_ordinals_ehrlich
@@ -398,22 +401,44 @@ def main(debug: bool = False):
                     max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                     device_ordinals=current_device_ordinals,
                     normalize_enum=5,
+                    training_label='debug',
                     global_log_dir=current_global_log_dir,
                     repack_percentage=0.1,
+                    model_use_max=False,
+                    model_enable_attention=True,
                     invert_bag_labels=False,
-                    training_label='debug-train-std',
                     loss_function='binary_cross_entropy',
                     )
     else:
-        for i in [4, 5, 6, 7, 8]:
+        # for m in [True, False]:
+        #     for a in [True, False]:
+        #         for i in [8, 7, 6, 5, 4, 0]:
+        #             train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
+        #                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
+        #                         normalize_enum=i,
+        #                         training_label='16-bit-normalize-' + str(i) + '-bcr-adadelta-useMax-' + str(
+        #                             m) + '-attention-fast-' + str(a),
+        #                         global_log_dir=current_global_log_dir,
+        #                         invert_bag_labels=False,
+        #                         loss_function='binary_cross_entropy',
+        #                         repack_percentage=0.1,
+        #                         optimizer='adadelta',
+        #                         model_enable_attention=a,
+        #                         model_use_max=m,
+        #                         device_ordinals=current_device_ordinals
+        #                         )
+        for i in [5, 7]:
             train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                         normalize_enum=i,
-                        training_label='bce-normalize' + str(i) + '-previews',
+                        training_label='attention-debug-normalize-' + str(i),
                         global_log_dir=current_global_log_dir,
                         invert_bag_labels=False,
                         loss_function='binary_cross_entropy',
+                        repack_percentage=0.1,
                         optimizer='adadelta',
+                        model_enable_attention=True,
+                        model_use_max=False,
                         device_ordinals=current_device_ordinals
                         )
 
@@ -422,8 +447,8 @@ def main(debug: bool = False):
 
 if __name__ == '__main__':
     print("Training OmniSphero MIL")
-    debug: bool = True
+    debug: bool = False
 
     hardware.print_gpu_status()
 
-    main(debug=debug)
+    main(debug=False)

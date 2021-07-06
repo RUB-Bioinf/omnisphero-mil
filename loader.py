@@ -10,7 +10,6 @@ from typing import Union
 from zipfile import ZipFile
 
 import numpy as np
-import label_map
 import traceback
 
 from util import log
@@ -165,7 +164,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
 
     for i in range(len(future_list)):
         future = future_list[i]
-        line_print('Extracting future: ' + str(i) + '/' + str(len(future_list)),include_in_log=False)
+        line_print('Extracting future: ' + str(i + 1) + '/' + str(len(future_list)), include_in_log=False)
 
         e = future.exception()
         if e is None:
@@ -394,9 +393,9 @@ def parse_JSON(json_data, worker_verbose, normalize_enum) -> (np.array, int, [in
         y_tiles = []
         for i in range(len(X)):
             # Deprecated tile hashing
-            current_x = X[i]
-            current_x: np.ndarray = np.einsum('abc->cba', current_x)
-            label_map.put_label(sample=current_x, label=label)
+            # current_x = X[i]
+            # current_x: np.ndarray = np.einsum('abc->cba', current_x)
+            # label_map.put_label(sample=current_x, label=label)
 
             # Actually writing bag labels
             y_tiles.append(label)

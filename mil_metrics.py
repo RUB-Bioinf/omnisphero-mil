@@ -143,8 +143,8 @@ def plot_accuracies(history,out_dir:str, dpi: int = 600, include_tikz: bool = Fa
     plt.tight_layout()
 
     os.makedirs(out_dir, exist_ok=True)
-    plt.savefig(out_dir + os.sep + 'accuracy_combined.pdf', dpi=dpi)
-    plt.savefig(out_dir + os.sep + 'accuracy_combined.png', dpi=dpi)
+    plt.savefig(out_dir + os.sep + 'acc_combined.pdf', dpi=dpi)
+    plt.savefig(out_dir + os.sep + 'acc_combined.png', dpi=dpi)
     plt.clf()
 
     if include_tikz:

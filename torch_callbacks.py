@@ -1,12 +1,12 @@
 import sys
-
-import torch
 from torch import Tensor
+from util import log
 
 
 #########################
 # Base class to inherit
 #########################
+
 
 class BaseTorchCallback:
     def __init__(self):
@@ -71,11 +71,11 @@ class EarlyStopping(BaseTorchCallback):
         else:
             self.epochs_without_improvement = self.epochs_without_improvement + 1
             if self.epochs_without_improvement >= self.epoch_threshold:
-                print('Epoch threshold met. Early stopping training.')
+                log.write('Epoch threshold without metric improvement met. Early stopping training.')
                 self.request_cancellation()
 
     def _describe(self) -> str:
-        return 'Early Stopping. Metric: "'+self.metric+". Threshold: "+str(self.epoch_threshold)
+        return 'Early Stopping. Metric: "' + self.metric + ". Threshold: " + str(self.epoch_threshold)
 
 
 class UnreasonableLossCallback(BaseTorchCallback):
@@ -90,10 +90,11 @@ class UnreasonableLossCallback(BaseTorchCallback):
         loss = epoch_result['train_loss']
 
         if val_loss > self.loss_max or loss > self.loss_max:
+            log.write('The current loss has exceeded its maximum! Aborting training!!')
             self.request_cancellation()
 
     def _describe(self) -> str:
-        return 'Unreasonable Loss. Max Loss: "'+str(self.loss_max)
+        return 'Unreasonable Loss. Max Loss: "' + str(self.loss_max)
 
 
 if __name__ == "__main__":

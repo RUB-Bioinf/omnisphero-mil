@@ -47,7 +47,7 @@ def load_checkpoint(load_path, model, optimizer):
 #######
 
 device_ordinals_local = [0, 0, 0, 0]
-device_ordinals_ehrlich = [1, 1, 2, 2]
+device_ordinals_ehrlich = [0, 1, 2, 3]
 device_ordinals_cluster = [0, 1, 2, 3]
 
 
@@ -84,16 +84,19 @@ class BaselineMIL(OmniSpheroMil):
     def __init__(self, input_dim, device, loss_function: str, accuracy_function: str, use_bias=True, use_max=True,
                  device_ordinals=None, enable_attention: bool = False):
         super().__init__(device, device_ordinals)
-        self.linear_nodes = 512
-        self.num_classes = 1  # 3
+        self.linear_nodes: int = 512
+        self.num_classes: int = 1  # 3
         self.input_dim = input_dim
 
-        self.use_bias = use_bias
-        self.use_max = use_max
+        self.use_bias: bool = use_bias
+        self.use_max: bool = use_max
         self.loss_function: str = loss_function
         self.accuracy_function: str = accuracy_function
-        self.enable_attention = enable_attention
+        self.enable_attention: bool = enable_attention
         self.attention_nodes = 128
+
+        if self.enable_attention:
+            self.use_max = False
 
         # add batch norm? increases model complexity but possibly speeds up convergence
         self.feature_extractor_0 = nn.Sequential(
@@ -196,7 +199,7 @@ class BaselineMIL(OmniSpheroMil):
             self.attention = self.attention.to(self.get_device_ordinal(3))  # two-layer NN that
 
         self.classifier = nn.Sequential(
-            nn.Linear(1, self.num_classes),  # * self.num_classes, self.num_classes),
+            nn.Linear(self.linear_nodes, self.num_classes),  # * self.num_classes, self.num_classes),
             # nn.Softmax()
             nn.Sigmoid()
         )
@@ -205,6 +208,7 @@ class BaselineMIL(OmniSpheroMil):
     def forward(self, x):
         """ Forward NN pass, declaring the exact interplay of model components
         """
+        # Running the bag through the hidden layers
         x = x.squeeze(
             0)  # necessary? compresses unnecessary dimensions eg. (1,batch,channel,x,y) -> (batch,channel,x,y)
         hidden = self.feature_extractor_0(x)
@@ -212,8 +216,7 @@ class BaselineMIL(OmniSpheroMil):
         hidden = self.feature_extractor_2(hidden.to(self.get_device_ordinal(2)))
         hidden = self.feature_extractor_3(hidden.to(self.get_device_ordinal(3)))  # N x linear_nodes
 
-        pooled = None
-        attention = None
+        # Predicting the whole bag
         if not self.use_max:
             pooled = torch.mean(hidden, dim=[0, 1], keepdim=True)  # N x num_classes
             attention = torch.tensor([[0.5]])
@@ -222,36 +225,41 @@ class BaselineMIL(OmniSpheroMil):
             pooled = pooled.unsqueeze(dim=0)
             pooled = pooled.unsqueeze(dim=0)
             attention = torch.tensor([[0.5]])
-        elif self.enable_attention:
+
+        if self.enable_attention:
             attention = self.attention(hidden)
             attention = torch.transpose(attention, 1, 0)
             attention = F.softmax(attention, dim=1)
 
-        if self.enable_attention:
-            y_hat = self.classifier(attention)
-        else:
-            y_hat = self.classifier(pooled)
+            pooled = torch.mm(attention, hidden)
 
+        y_hat = self.classifier(pooled)
+
+        # Predicting every single tile
         y_tiles = []
         s = hidden.shape
         for i in range(s[0]):
             h = hidden[i]
             h = h.unsqueeze(dim=0)
+
             if not self.use_max:
                 h = torch.mean(h, dim=[0, 1], keepdim=True)
             elif self.use_max:
                 h = torch.max(h)
                 h = h.unsqueeze(dim=0)
                 h = h.unsqueeze(dim=0)
-            elif self.enable_attention:
-                h = self.attention(h)
-                h = torch.transpose(h, 1, 0)
-                h = F.softmax(h, dim=1)
-            else:
-                h = None
+
+            if self.enable_attention:
+                a = attention[0, i]
+                h = hidden[i]
+                h = h.unsqueeze(dim=0)
+
+                h = a * h
+
             h = self.classifier(h)
             y_tiles.append(h)
 
+        # Returning the predictions
         y_hat_binarized = torch.ge(y_hat, 0.5).float()
         return y_hat, y_hat_binarized, attention, y_tiles
 
@@ -321,14 +329,14 @@ class BaselineMIL(OmniSpheroMil):
         tile_acc = None
         accuracy_list = None
         if y_tiles is not None:
-            tile_acc, accuracy_list = self.compute_accuracy_tiles(y_targets=y_tiles,y_predictions=y_hat_tiles)
+            tile_acc, accuracy_list = self.compute_accuracy_tiles(y_targets=y_tiles, y_predictions=y_hat_tiles)
 
         return bag_acc, tile_acc, accuracy_list
 
     def compute_accuracy_tiles(self, y_targets: Tensor, y_predictions: [Tensor]) -> (float, [float]):
         accuracy_list = []
 
-        if not(len(y_predictions) == y_targets.shape[1]):
+        if not (len(y_predictions) == y_targets.shape[1]):
             raise Exception('Prediction and target sizes must match!')
 
         for i in range(len(y_predictions)):
@@ -371,23 +379,34 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
     checkpoint_out_dir = out_dir_base + 'checkpoints' + os.sep
     metrics_dir_live = out_dir_base + 'metrics_live' + os.sep
+    epoch_data_dir_live = metrics_dir_live + 'epochs_live' + os.sep
     os.makedirs(checkpoint_out_dir, exist_ok=True)
     os.makedirs(metrics_dir_live, exist_ok=True)
+    os.makedirs(epoch_data_dir_live, exist_ok=True)
 
     # Writing Live Loss CSV
-    batch_headers = ';'.join(['Batch '+str(batch_id) for batch_id, (data, label, tile_labels) in enumerate(training_data)])
+    batch_headers = ';'.join(
+        ['Batch ' + str(batch_id) for batch_id, (data, label, tile_labels) in enumerate(training_data)])
     batch_losses_file = metrics_dir_live + 'batch_losses.csv'
     f = open(batch_losses_file, 'w')
-    f.write('Epoch;'+batch_headers)
+    f.write('Epoch;' + batch_headers)
     f.close()
 
     # Writing Live Tile Accuracy CSV
-    tile_accuracy_file = metrics_dir_live+'tile_accuracy.csv'
+    tile_accuracy_file = metrics_dir_live + 'tile_accuracy.csv'
     f = open(tile_accuracy_file, 'w')
-    f.write('Epoch;'+batch_headers)
-    f.write('\nValidation;'+';'.join([str(tile_labels.numpy()[0]).replace('\n', '') for batch_id, (data, label, tile_labels) in enumerate(training_data)]))
+    f.write('Epoch;' + batch_headers)
+    f.write('\nValidation;' + ';'.join(
+        [str(tile_labels.cpu().numpy()[0]).replace('\n', '') for batch_id, (data, label, tile_labels) in
+         enumerate(training_data)]))
     f.close()
 
+    # Preparing detailed epoch output files
+    data_batch_dirs = [epoch_data_dir_live + 'data_batch_' + str(batch_id) + '.csv' for
+                       batch_id, (data, label, tile_labels) in enumerate(training_data)]
+    [open(d, 'w').close() for d in data_batch_dirs]
+
+    # Fields and param setup
     cancel_requested = False
     loss = None
     os.makedirs(checkpoint_out_dir, exist_ok=True)
@@ -405,7 +424,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         callback.on_training_start(model=model)
 
     epoch = 0
-    while (epoch <= epochs) and not cancel_requested:
+    while (epoch - 1 <= epochs) and not cancel_requested:
         epoch = epoch + 1
 
         # TRAINING PHASE
@@ -428,11 +447,24 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             # bag_label = label[0] //TODO this causes error
             bag_label = label
 
+            # writing data from the batch
+            f = open(data_batch_dirs[batch_id], 'a')
+            f.write('Epoch: ' + str(epoch))
+            f.write('\nTile Index;Tile Hash;Bag Label;Tile Labels;Tile Labels (Sum)')
+            for i in range(data.shape[1]):
+                tile = data[0, i].cpu().numpy()
+                tile_label = tile_labels[0, i].numpy()
+                f.write('\n' + str(i) + ';' + np.format_float_positional(hash(str(tile))) + ';' + str(
+                    label.numpy()) + ';' + str(tile_label))
+            f.write('\n\n')
+            f.close()
+
             data = data.to(model.get_device_ordinal(0))
             bag_label = bag_label.to(model.get_device_ordinal(3))
             tile_labels = tile_labels.to(model.get_device_ordinal(3))
 
-            model.zero_grad()  # resets gradients
+            # resets gradients
+            model.zero_grad()
 
             loss, _ = model.compute_loss(X=data, y=bag_label)  # forward pass
             if clamp_min is not None:
@@ -461,7 +493,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
         # VALIDATION PHASE
         result, _, all_losses, all_tile_lists = evaluate(model, validation_data, clamp_max=clamp_max,
-                                         clamp_min=clamp_min)  # returns a results dict for metrics
+                                                         clamp_min=clamp_min)  # returns a results dict for metrics
         result['train_loss'] = sum(train_losses) / len(train_losses)  # torch.stack(train_losses).mean().item()
         result['train_acc'] = sum(train_acc) / len(train_acc)
         result['train_acc_tiles'] = sum(train_acc_tiles) / len(train_acc_tiles)
@@ -479,7 +511,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         log.write(
             'Epoch {}/{}: Train Loss: {:.4f}, Train Acc (Bags): {:.4f}, Train Acc (Tiles): {:.4f}, Val Loss: {:.4f}, '
             'Val Acc (Bags): {:.4f}, Val Acc (Tiles): {:.4f}. Duration: {}. ETA: {}'.format(
-                epoch, epochs + 1, result['train_loss'], result['train_acc'], result['train_acc_tiles'],
+                epoch, epochs, result['train_loss'], result['train_acc'], result['train_acc_tiles'],
                 result['val_loss'], result['val_acc'], result['val_acc_tiles'], time_diff,
                 eta_timestamp))
 
@@ -504,7 +536,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         mil_metrics.plot_accuracy(history, metrics_dir_live, include_raw=False, include_tikz=False)
         mil_metrics.plot_accuracy_tiles(history, metrics_dir_live, include_raw=False, include_tikz=False)
         mil_metrics.plot_losses(history, metrics_dir_live, include_raw=False, include_tikz=False)
-        mil_metrics.plot_accuracies(history,metrics_dir_live,include_tikz=False)
+        mil_metrics.plot_accuracies(history, metrics_dir_live, include_tikz=False)
 
         # Printing each loss for every batch
         f = open(batch_losses_file, 'a')
@@ -643,7 +675,7 @@ def binary_cross_entropy(y: Union[float, list], y_predicted: Union[float, list])
 
 
 def _binary_accuracy(outputs: Tensor, targets: Tensor) -> Tensor:
-    assert targets.size() == outputs.size()
+    # assert targets.size() == outputs.size()
     y_prob: Tensor = torch.ge(outputs, 0.5).float()
     return (targets == y_prob).sum().item() / targets.size(0)
 
