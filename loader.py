@@ -48,12 +48,13 @@ normalize_enum_descriptions = [
 
 ####
 
-def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: int):
+def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: int, include_raw: bool = True):
     log.write('Looking for multiple source dirs to load json data from.')
     log.write('Batch dir: ' + str(batch_dirs))
     log.write('Normalization Protocol: ' + str(normalize_enum))
 
     X_full = None
+    X_raw_full = None
     y_full = None
     y_tiles_full = None
     error_list = []
@@ -64,15 +65,23 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
         log.write('Considering source directory: ' + current_dir)
 
         if os.path.isdir(current_dir):
-            X, y, y_tiles, errors, loaded_files_list = load_bags_json(source_dir=current_dir, max_workers=max_workers,
-                                                                      normalize_enum=normalize_enum, gp_current=i + 1,
-                                                                      gp_max=len(batch_dirs))
+            X, y, y_tiles, X_raw, errors, loaded_files_list = load_bags_json(source_dir=current_dir,
+                                                                             max_workers=max_workers,
+                                                                             normalize_enum=normalize_enum,
+                                                                             gp_current=i + 1,
+                                                                             gp_max=len(batch_dirs),
+                                                                             include_raw=include_raw)
 
             error_list.extend(errors)
             if X_full is None:
                 X_full = X
             else:
                 X_full = np.concatenate((X_full, X), axis=0)
+
+            if X_raw_full is None:
+                X_raw_full = X_raw
+            else:
+                X_raw_full = np.concatenate((X_raw_full, X_raw), axis=0)
 
             if y is not None:
                 if y_full is None:
@@ -85,11 +94,12 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
                 else:
                     y_tiles_full = np.concatenate((y_tiles_full, y_tiles), axis=0)
 
-    return X_full, y_full, y_tiles_full, error_list, loaded_files_list
+    return X_full, y_full, y_tiles_full, X_raw_full, error_list, loaded_files_list
 
 
 # Main Loading function
-def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_current: int = 1, gp_max: int = 1):
+def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_current: int = 1, gp_max: int = 1,
+                   include_raw: bool = True):
     files = os.listdir(source_dir)
     log.write('Loading from source: ' + source_dir)
     loaded_files_list = []
@@ -115,7 +125,8 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
             future = executor.submit(unzip_and_read_JSON,
                                      filepath,
                                      worker_verbose,
-                                     normalize_enum
+                                     normalize_enum,
+                                     include_raw
                                      )
             future_list.append(future)
 
@@ -128,7 +139,8 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
             future = executor.submit(read_JSON_file,
                                      filepath,
                                      worker_verbose,
-                                     normalize_enum
+                                     normalize_enum,
+                                     include_raw
                                      )
             future_list.append(future)
 
@@ -158,6 +170,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
 
     X = []
     y = []
+    X_raw = []
     y_tiles = []
     error_list = []
     log.write('\n')
@@ -168,13 +181,15 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
 
         e = future.exception()
         if e is None:
-            X_f, y_f, y_f_tiles = future.result()
+            X_f, y_f, y_f_tiles, y_f_raw = future.result()
             if X_f is not None:
                 X.append(X_f)
             if y_f is not None:
                 y.append(y_f)
             if y_f_tiles is not None:
                 y_tiles.append(y_f_tiles)
+            if y_f_raw is not None:
+                X_raw.append(y_f_raw)
         else:
             log.write('\n' + gct() + 'Error extracting future results: ' + str(e) + '\n')
             tb = traceback.TracebackException.from_exception(e)
@@ -189,13 +204,13 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
     del future_list[:]
     del future_list
 
-    return X, y, y_tiles, error_list, loaded_files_list
+    return X, y, y_tiles, X_raw, error_list, loaded_files_list
 
 
 ####
 
 
-def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum) -> (np.array, int, [int]):
+def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, include_raw: bool = True) -> (np.array, int, [int]):
     if worker_verbose:
         print('Unzipping and reading json: ' + filepath)
 
@@ -207,19 +222,20 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum) -> (np.array, 
     input_zip.close()
 
     data = json.loads(data)
-    X, y_bag, y_tiles = parse_JSON(data, worker_verbose, normalize_enum)
+    X, y_bag, y_tiles, X_raw = parse_JSON(data, worker_verbose, normalize_enum, include_raw=include_raw)
 
     if worker_verbose:
         log.write('File Shape: ' + filepath + ' -> ')
         log.write("X-shape: " + str(np.asarray(X).shape))
         log.write("y-shape: " + str(np.asarray(y_bag).shape))
 
-    return X, y_bag, y_tiles
+    return X, y_bag, y_tiles, X_raw
 
 
 ####
 
-def read_JSON_file(filepath, worker_verbose, normalize_enum) -> (np.array, int, [int]):
+def read_JSON_file(filepath, worker_verbose, normalize_enum, include_raw: bool = True) -> (
+        np.ndarray, int, [int], np.ndarray):
     if worker_verbose:
         log.write('Reading json: ' + filepath)
 
@@ -227,14 +243,16 @@ def read_JSON_file(filepath, worker_verbose, normalize_enum) -> (np.array, int, 
     data = json.load(f)
     f.close()
 
-    return parse_JSON(data, worker_verbose, normalize_enum)
+    return parse_JSON(data, worker_verbose, normalize_enum, include_raw=include_raw)
 
 
 ####
 
-def parse_JSON(json_data, worker_verbose, normalize_enum) -> (np.array, int, [int]):
+def parse_JSON(json_data, worker_verbose, normalize_enum, include_raw: bool = True) -> (
+        np.ndarray, int, [int], np.ndarray):
     # Setting up arrays
     X = []
+    X_raw = []
     y = None
     y_tiles = None
 
@@ -277,6 +295,23 @@ def parse_JSON(json_data, worker_verbose, normalize_enum) -> (np.array, int, [in
         r = np.array(current_tile['r'])
         g = np.array(current_tile['g'])
         b = np.array(current_tile['b'])
+
+        if include_raw:
+            # Reshaping the color images to a 2 dimensional array
+            raw_r = np.reshape(r, (width, height))
+            raw_g = np.reshape(g, (width, height))
+            raw_b = np.reshape(b, (width, height))
+
+            # Normalizing r,g,b based on max bit depth to convert them to 8 bit int
+            raw_r = raw_r / bit_max * 255
+            raw_g = raw_g / bit_max * 255
+            raw_b = raw_b / bit_max * 255
+
+            # Concatenating the color images to a rgb image
+            raw_rgb = np.dstack((raw_r, raw_g, raw_b))
+            raw_rgb = raw_rgb.astype('uint8')
+            X_raw.append(raw_rgb)
+            del raw_r, raw_g, raw_b, raw_rgb
 
         # 0 = no normalisation
         # 1 = normalize every cell between 0 and 255 (8 bit)
@@ -401,7 +436,8 @@ def parse_JSON(json_data, worker_verbose, normalize_enum) -> (np.array, int, [in
             y_tiles.append(label)
 
     X = np.asarray(X)
-    return X, y, y_tiles
+    X_raw = np.asarray(X_raw)
+    return X, y, y_tiles, X_raw
 
 
 def get_bag_mean(n: [np.ndarray], axis: int = None):
@@ -445,7 +481,8 @@ def convert_bag_to_batch(bags, labels, y_tiles):
         batch_data = np.asarray(bag, dtype='float32')
         batch_label = np.asarray(bag_label, dtype='float32')
         batch_label_tiles = np.asarray(tile_labels, dtype='float32')
-        dataset.append((batch_data, batch_label, batch_label_tiles))
+        batch_original_index = np.asarray(index, dtype='float32')
+        dataset.append((batch_data, batch_label, batch_label_tiles, batch_original_index))
 
         input_dim = batch_data.shape[1:]
 
@@ -571,9 +608,10 @@ def np_std(n: np.ndarray, axis=None, mean: float = None) -> np.ndarray:
 # Takes the read data and labes and creates new bags, so that bags with label 1 contain PERCENTAGE% tiles with label
 # 1, while the rest is label 0. This is done by merging two adjacent input bags together.
 # Yes, this discards a lot of tiles
-def repack_bags_merge(X: [np.array], y: [int], y_tiles: [int], repack_percentage: float = 0.05):
+def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], y_tiles: [int], repack_percentage: float = 0.05):
     pair_index = -1
     new_x = []
+    new_x_r = []
     new_y = []
     new_y_tiles = []
 
@@ -583,6 +621,8 @@ def repack_bags_merge(X: [np.array], y: [int], y_tiles: [int], repack_percentage
         # Setting up data, extracting bags and labels
         current_bag = X[i]
         partner_bag = X[i + 1]
+        current_bag_raw = X_raw[i]
+        partner_bag_raw = X_raw[i + 1]
         current_label = y[i]
         partner_label = y[i + 1]
         # current_tile_labels = y_tiles[i]
@@ -595,14 +635,19 @@ def repack_bags_merge(X: [np.array], y: [int], y_tiles: [int], repack_percentage
         if y[i] == 0:
             negative_bag = current_bag
             positive_bag = partner_bag
+            negative_bag_raw = current_bag_raw
+            positive_bag_raw = partner_bag_raw
         else:
             negative_bag = partner_bag
             positive_bag = current_bag
-        del current_bag, partner_bag, partner_label, current_label
+            negative_bag_raw = partner_bag_raw
+            positive_bag_raw = current_bag_raw
+        del current_bag, partner_bag, partner_label, current_label, current_bag_raw, partner_bag_raw
 
         if pair_index % 2 == 0:
             # This new entry is all label 0. Thus, nothing needs to change.
             new_x.append(negative_bag)
+            new_x_r.append(negative_bag_raw)
             new_y.append(0)
             new_y_tiles.append([0 for i in range(negative_bag.shape[0])])
         else:
@@ -613,20 +658,25 @@ def repack_bags_merge(X: [np.array], y: [int], y_tiles: [int], repack_percentage
             for j in range(repack_count):
                 move_index = random.randrange(1, positive_bag.shape[0] - j)
                 positive_sample = positive_bag[move_index]
+                positive_sample_raw = positive_bag_raw[move_index]
                 positive_bag = np.delete(positive_bag, move_index, axis=0)
+                positive_bag_raw = np.delete(positive_bag_raw, move_index, axis=0)
 
                 positive_sample = np.expand_dims(positive_sample, 0)
+                positive_sample_raw = np.expand_dims(positive_sample_raw, 0)
                 negative_bag = np.append(negative_bag, positive_sample, axis=0)
+                negative_bag_raw = np.append(negative_bag_raw, positive_sample_raw, axis=0)
 
             current_tile_labels = [0 for _ in range(original_count)]
             current_tile_labels.extend([1 for _ in range(repack_count)])
 
             new_y.append(1)
             new_x.append(negative_bag)
+            new_x_r.append(negative_bag_raw)
             new_y_tiles.append(current_tile_labels)
 
-    del X, y
-    return new_x, new_y, new_y_tiles
+    del X, X_raw, y
+    return new_x, new_x_r, new_y, new_y_tiles
 
 
 def repack_bags(X: [np.array], y: [int], repack_percentage: float = 0.2):

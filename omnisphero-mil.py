@@ -67,13 +67,17 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
                 out_dir: str = None, gpu_enabled: bool = False, invert_bag_labels: bool = False,
                 shuffle_data_loaders: bool = True, model_enable_attention: bool = False, model_use_max: bool = True,
                 repack_percentage: float = 0.0, global_log_dir: str = None, optimizer: str = 'adadelta',
-                clamp_min: float = None, clamp_max: float = None
+                clamp_min: float = None, clamp_max: float = None,
+                data_split_percentage_validation: float = 0.3, data_split_percentage_test: float = 0.15,
                 ):
     if out_dir is None:
         out_dir = source_dirs[0] + os.sep + 'training_results'
+
     out_dir = out_dir + os.sep + training_label + os.sep
-    os.makedirs(out_dir, exist_ok=True)
     loading_preview_dir = out_dir + os.sep + 'loading_previews' + os.sep
+    metrics_dir = out_dir + os.sep + 'metrics' + os.sep
+    os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(metrics_dir, exist_ok=True)
     os.makedirs(loading_preview_dir, exist_ok=True)
 
     print('Model classification - Use Max: ' + str(model_use_max))
@@ -106,11 +110,6 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         log.add_file(global_log_filename)
 
     # PREPARING DATA
-    # out_dir = source_dir + os.sep + 'train' + os.sep + 'debug' + os.sep
-    metrics_dir = out_dir + os.sep + 'metrics' + os.sep
-    os.makedirs(out_dir, exist_ok=True)
-    os.makedirs(metrics_dir, exist_ok=True)
-
     protocol_f.write('\n\n == Directories ==')
     protocol_f.write('\nGlobal Log dir: ' + str(global_log_dir))
     protocol_f.write('\nLocal Log dir: ' + str(local_log_filename))
@@ -128,10 +127,12 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     ################
     loading_start_time = datetime.now()
 
-    X, y, y_tiles, errors, loaded_files_list = loader.load_bags_json_batch(batch_dirs=source_dirs,
-                                                                           max_workers=max_workers,
-                                                                           normalize_enum=normalize_enum)
+    X, y, y_tiles, X_raw, errors, loaded_files_list = loader.load_bags_json_batch(batch_dirs=source_dirs,
+                                                                                  max_workers=max_workers,
+                                                                                  include_raw=True,
+                                                                                  normalize_enum=normalize_enum)
     X = [np.einsum('bhwc->bchw', bag) for bag in X]
+    X_raw = [np.einsum('bhwc->bchw', bag) for bag in X_raw]
     # Hint: Dim should be (xxx, 3, 150, 150)
     loading_time = utils.get_time_diff(loading_start_time)
     log.write('Loading finished in: ' + str(loading_time))
@@ -165,8 +166,10 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     # Calculating Bag Size and possibly inverting labels
     log.write('Finished loading data. Number of bags: ' + str(len(X)) + '. Number of labels: ' + str(len(y)))
     X_size = 0
+    X_size_raw = 0
     for i in range(len(X)):
         X_size = X_size + X[i].nbytes
+        X_size_raw = X_size_raw + X_raw[i].nbytes
         if invert_bag_labels:
             y[i] = int(not y[i])
             y_tiles[i] = not y_tiles[i]
@@ -191,7 +194,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         f.write(str(i) + ';' + loaded_files_list[i] + '\n')
     f.write('\n\nX-size in memory: ' + str(X_s))
     f.write('\n\ny-size in memory: ' + str(y_s))
-    f.write('\n\ny-Loading time: ' + str(loading_time))
+    f.write('\n\nLoading time: ' + str(loading_time))
     f.close()
     del X_s, y_s, X_size, f
 
@@ -204,7 +207,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     # Setting up bags for MIL
     if repack_percentage > 0:
         print_bag_metadata(X, y, y_tiles, file_name=out_dir + 'bags_pre-packed.csv')
-        X, y, y_tiles = loader.repack_bags_merge(X, y, y_tiles, repack_percentage=repack_percentage)
+        X, X_raw, y, y_tiles = loader.repack_bags_merge(X, X_raw, y, y_tiles, repack_percentage=repack_percentage)
         print_bag_metadata(X, y, y_tiles, file_name=out_dir + 'bags_repacked.csv')
     else:
         print_bag_metadata(X, y, y_tiles, file_name=out_dir + 'bags.csv')
@@ -212,21 +215,37 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     # Setting up datasets
     dataset, input_dim = loader.convert_bag_to_batch(X, y, y_tiles)
     log.write('Detected input dim: ' + str(input_dim))
-    del X, y, y_tiles
+    del X, y
 
     # Train-Test Split
     log.write('Shuffling and splitting data into train and val set')
-    training_data, validation_data = shuffle_and_split_data(dataset, train_percentage=0.7)
+    test_data = []
+    test_data_tiles = None
+    training_data, validation_data = shuffle_and_split_data(dataset,
+                                                            split_percentage=data_split_percentage_validation)
+    if data_split_percentage_test is not None and data_split_percentage_test > 0:
+        training_data, test_data = shuffle_and_split_data(dataset=training_data,
+                                                          split_percentage=data_split_percentage_test)
     del dataset
 
-    training_data_tiles = sum([training_data[i][0].shape[0] for i in range(len(training_data))])
-    validation_data_tiles = sum([validation_data[i][0].shape[0] for i in range(len(validation_data))])
+    f = open(out_dir + 'data-distribution.txt', 'w')
+    training_data_tiles: int = sum([training_data[i][0].shape[0] for i in range(len(training_data))])
+    validation_data_tiles: int = sum([validation_data[i][0].shape[0] for i in range(len(validation_data))])
     log.write('Training data: ' + str(training_data_tiles) + ' tiles over ' + str(len(training_data)) + ' bags.')
     log.write('Validation data: ' + str(validation_data_tiles) + ' tiles over ' + str(len(validation_data)) + ' bags.')
     protocol_f.write(
         '\nTraining data: ' + str(training_data_tiles) + ' tiles over ' + str(len(training_data)) + ' bags.')
     protocol_f.write(
         '\nValidation data: ' + str(validation_data_tiles) + ' tiles over ' + str(len(validation_data)) + ' bags.')
+    f.write('Training data: ' + str(training_data_tiles) + ' tiles over ' + str(len(training_data)) + ' bags.')
+    f.write('Validation data: ' + str(validation_data_tiles) + ' tiles over ' + str(len(validation_data)) + ' bags.')
+
+    if data_split_percentage_test is not None:
+        test_data_tiles: int = sum([test_data[i][0].shape[0] for i in range(len(test_data))])
+        log.write('Test data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.')
+        f.write('Test data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.')
+        protocol_f.write('Test data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.')
+    f.close()
 
     # Loading Hardware Device
     device = hardware.get_hardware_device(gpu_preferred=gpu_enabled)
@@ -259,10 +278,13 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     # DATA START
     ################
     # Data Generators
+    test_dl = None
     train_dl = OmniSpheroDataLoader(training_data, batch_size=1, shuffle=shuffle_data_loaders, **loader_kwargs)
     validation_dl = OmniSpheroDataLoader(validation_data, batch_size=1, shuffle=shuffle_data_loaders, **loader_kwargs)
-    del training_data, validation_data
-    test_dl = None
+    if data_split_percentage_test is not None:
+        test_dl = OmniSpheroDataLoader(test_data, batch_size=1, shuffle=shuffle_data_loaders, **loader_kwargs)
+
+    del training_data, validation_data, test_data
     # test_dl = DataLoader(test_data, batch_size=1, shuffle=True, **loader_kwargs)
 
     # Callbacks
@@ -310,30 +332,83 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
 
     log.write('Plotting and saving loss and acc plots...')
     mil_metrics.write_history(history, history_keys, metrics_dir)
-    mil_metrics.plot_losses(history, metrics_dir, include_raw=True, include_tikz=True)
+    mil_metrics.plot_losses(history, metrics_dir, include_raw=True, include_tikz=True, clamp=2.0)
     mil_metrics.plot_accuracy(history, metrics_dir, include_raw=True, include_tikz=True)
     mil_metrics.plot_accuracy_tiles(history, metrics_dir, include_raw=True, include_tikz=True)
     mil_metrics.plot_accuracies(history, metrics_dir, include_tikz=True)
 
-    ###############
+    ##################
     # TESTING START
-    ###############
-    # Get best saved model from this run
-    model, model_optimizer, _, _ = models.load_checkpoint(model_save_path_best, model, model_optimizer)
-    y_hats, y_pred, y_true = models.get_predictions(model, validation_dl)
-    del validation_dl, test_dl
+    ##################
+    log.write('Testing best model on validation and test data to determine performance')
+    test_dir = out_dir + 'metrics' + os.sep + 'performance-validation-data' + os.sep
+    test_model(model, model_save_path_best, model_optimizer, data_loader=validation_dl, out_dir=test_dir, X_raw=X_raw,
+               y_tiles=y_tiles)
+    if data_split_percentage_test > 0:
+        test_dir = out_dir + 'metrics' + os.sep + 'performance-test-data' + os.sep
+        test_model(model, model_save_path_best, model_optimizer, data_loader=test_dl, out_dir=test_dir, X_raw=X_raw,
+                   y_tiles=y_tiles)
 
-    # print('Saving Confidence Matrix')
-    # mil_metrics.plot_conf_matrix(y_true, y_pred, metrics_dir, target_names=['Non Tox', 'Tox'], normalize=False)
-
-    log.write('Computing and plotting binary ROC-Curve')
-    log.write('Saving metrics here: ' + metrics_dir)
-    fpr, tpr, _ = mil_metrics.binary_roc_curve(y_true, y_hats)
-    mil_metrics.plot_binary_roc_curve(fpr, tpr, metrics_dir)
+    ##################################
+    # FINISHED TRAINING - Cleaning up
+    ##################################
+    log.write("Finished training and testing for this run. Job's done!")
+    del validation_dl, test_dl, X_raw, y_tiles
 
     log.remove_file(local_log_filename)
     if global_log_dir is not None:
         log.remove_file(global_log_filename)
+    del f
+
+    # Run finished
+    # Noting more to do beyond this point
+
+
+def test_model(model, model_save_path_best, model_optimizer, data_loader, X_raw, y_tiles, out_dir):
+    attention_out_dir = out_dir + os.sep + 'attention' + os.sep
+    os.makedirs(attention_out_dir, exist_ok=True)
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Get best saved model from this run
+    model, model_optimizer, _, _ = models.load_checkpoint(model_save_path_best, model, model_optimizer)
+    y_hats, y_pred, y_true, _, _, _ = models.get_predictions(model, data_loader)
+
+    # Saving attention scores for every tile in every bag!
+    log.write('Writing attention scores to: ' + attention_out_dir)
+    try:
+        mil_metrics.save_tile_attention(out_dir=attention_out_dir, model=model, normalized=True,
+                                        dataset=data_loader, X_raw=X_raw, y_tiles=y_tiles)
+        mil_metrics.save_tile_attention(out_dir=attention_out_dir, model=model, normalized=False,
+                                        dataset=data_loader, X_raw=X_raw, y_tiles=y_tiles)
+    except Exception as e:
+        log.write('Failed to save the attention score for every tile!')
+        f = open(attention_out_dir + 'attention-error.txt', 'a')
+        f.write('\nError: ' + str(e.__class__) + '\n' + str(e))
+        f.close()
+    log.write('Finished writing attention scores.')
+
+    try:
+        log.write('Saving Confidence Matrix')
+        mil_metrics.plot_conf_matrix(y_true, y_pred, out_dir, target_names=['Inner Ring', 'Outer Ring'],
+                                     normalize=False)
+        mil_metrics.plot_conf_matrix(y_true, y_pred, out_dir, target_names=['Inner Ring', 'Outer Ring'], normalize=True)
+    except Exception as e:
+        log.write('Failed to save the Confidence Matrix!')
+        f = open(attention_out_dir + 'confidence-error.txt', 'a')
+        f.write('\nError: ' + str(e.__class__) + '\n' + str(e))
+        f.close()
+    log.write('Finished writing confidence Matrix.')
+
+    log.write('Computing and plotting binary ROC-Curve')
+    try:
+        fpr, tpr, _ = mil_metrics.binary_roc_curve(y_true, y_hats)
+        mil_metrics.plot_binary_roc_curve(fpr, tpr, out_dir)
+    except Exception as e:
+        log.write('Failed to save the ROC curve!')
+        f = open(attention_out_dir + 'roc-error.txt', 'a')
+        f.write('\nError: ' + str(e.__class__) + '\n' + str(e))
+        f.close()
+    log.write('Finished writing confidence Matrix.')
 
 
 def print_bag_metadata(X, y, y_tiles, file_name: str):
@@ -364,9 +439,9 @@ def print_bag_metadata(X, y, y_tiles, file_name: str):
 
 
 def main(debug: bool = False):
+    if sys.platform == 'win32':
+        debug = True
     print('Debug mode: ' + str(debug))
-    epsilon = sys.float_info.epsilon
-    epsilon = 0.0001
 
     current_epochs = 400
     current_max_workers = 15
@@ -400,7 +475,7 @@ def main(debug: bool = False):
         train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                     max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                     device_ordinals=current_device_ordinals,
-                    normalize_enum=5,
+                    normalize_enum=0,
                     training_label='debug',
                     global_log_dir=current_global_log_dir,
                     repack_percentage=0.1,
@@ -427,21 +502,24 @@ def main(debug: bool = False):
         #                         model_use_max=m,
         #                         device_ordinals=current_device_ordinals
         #                         )
-        for i in [5, 7]:
-            train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
-                        max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
-                        normalize_enum=i,
-                        training_label='attention-debug-normalize-' + str(i),
-                        global_log_dir=current_global_log_dir,
-                        invert_bag_labels=False,
-                        loss_function='binary_cross_entropy',
-                        repack_percentage=0.1,
-                        optimizer='adadelta',
-                        model_enable_attention=True,
-                        model_use_max=False,
-                        device_ordinals=current_device_ordinals
-                        )
-
+        for l in ['binary_cross_entropy', 'negative_log_bernoulli']:
+            for o in ['adadelta', 'adam']:
+                for r in [0.05, 0.1, 0.15]:
+                    for i in [5, 7, 2, 3, 4]:
+                        train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
+                                    max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
+                                    normalize_enum=i,
+                                    training_label='attention-' + o + '-' + l + '-normalize-' + str(
+                                        i) + 'repack-' + str(r),
+                                    global_log_dir=current_global_log_dir,
+                                    invert_bag_labels=False,
+                                    loss_function=l,
+                                    repack_percentage=r,
+                                    optimizer=o,
+                                    model_enable_attention=True,
+                                    model_use_max=False,
+                                    device_ordinals=current_device_ordinals
+                                    )
     log.write('Finished every training!')
 
 

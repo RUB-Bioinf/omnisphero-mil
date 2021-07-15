@@ -282,14 +282,14 @@ def line_print(text: str, max_width: int = None, cutoff_too_large_text: bool = T
 ###########################
 
 # shuffle data and split into training and validation set
-def shuffle_and_split_data(dataset, train_percentage=0.7):
+def shuffle_and_split_data(dataset, split_percentage: float):
     '''
     Takes a dataset that was converted from bags to batches and shuffles and splits it into two splits (train/val)
     '''
-    train_percentage_index = int(train_percentage * len(dataset))
+    split_percentage_index = math.ceil(split_percentage * len(dataset))
     indices = np.arange(len(dataset))
     random.shuffle(indices)
-    train_ind, test_ind = np.asarray(indices[:train_percentage_index]), np.asarray(indices[train_percentage_index:])
+    test_ind,train_ind = np.asarray(indices[:split_percentage_index]), np.asarray(indices[split_percentage_index:])
 
     training_ds = [dataset[i] for i in train_ind]
     validation_ds = [dataset[j] for j in test_ind]

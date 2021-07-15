@@ -386,7 +386,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
     # Writing Live Loss CSV
     batch_headers = ';'.join(
-        ['Batch ' + str(batch_id) for batch_id, (data, label, tile_labels) in enumerate(training_data)])
+        ['Batch ' + str(batch_id) for batch_id, (data, label, tile_labels, batch_index) in enumerate(training_data)])
     batch_losses_file = metrics_dir_live + 'batch_losses.csv'
     f = open(batch_losses_file, 'w')
     f.write('Epoch;' + batch_headers)
@@ -397,13 +397,13 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     f = open(tile_accuracy_file, 'w')
     f.write('Epoch;' + batch_headers)
     f.write('\nValidation;' + ';'.join(
-        [str(tile_labels.cpu().numpy()[0]).replace('\n', '') for batch_id, (data, label, tile_labels) in
+        [str(tile_labels.cpu().numpy()[0]).replace('\n', '') for batch_id, (data, label, tile_labels, tile_index) in
          enumerate(training_data)]))
     f.close()
 
     # Preparing detailed epoch output files
     data_batch_dirs = [epoch_data_dir_live + 'data_batch_' + str(batch_id) + '.csv' for
-                       batch_id, (data, label, tile_labels) in enumerate(training_data)]
+                       batch_id, (data, label, tile_labels, original_bag_index) in enumerate(training_data)]
     [open(d, 'w').close() for d in data_batch_dirs]
 
     # Fields and param setup
@@ -435,7 +435,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         start_time_epoch = datetime.now()
         epochs_remaining = epochs - epoch
 
-        for batch_id, (data, label, tile_labels) in enumerate(training_data):
+        for batch_id, (data, label, tile_labels, bag_index) in enumerate(training_data):
             # torch.cuda.empty_cache()
 
             # Notifying Callbacks
@@ -577,9 +577,11 @@ def get_predictions(model: OmniSpheroMil, data_loader: DataLoader):
     all_y_hats = []
     all_predictions = []
     all_true = []
-    all_attention = []
+    all_attentions = []
+    all_tiles = []
+    original_bag_indices = []
 
-    for batch_id, (data, label, label_tiles) in enumerate(data_loader):
+    for batch_id, (data, label, label_tiles, original_bag_index) in enumerate(data_loader):
         label = label.squeeze()
         # bag_label = label[0]
         bag_label = label
@@ -597,16 +599,18 @@ def get_predictions(model: OmniSpheroMil, data_loader: DataLoader):
         all_predictions.append(predictions.numpy().item())
         all_true.append(bag_label.numpy().item())
         attention_scores = np.round(attention.cpu().data.numpy()[0], decimals=3)
-        all_attention.append(attention_scores)
+        all_attentions.append(attention_scores)
+        all_tiles.append(label_tiles.cpu().numpy()[0])
+        original_bag_indices.append(int(original_bag_index.cpu()))
 
         # log.write('Bag Label:' + str(bag_label))
         # log.write('Predicted Label:' + str(predictions.numpy().item()))
         # log.write('attention scores (unique ones):')
         # log.write(attention_scores)
 
-        del data, bag_label, label
+        del data, bag_label, label,label_tiles
 
-    return all_y_hats, all_predictions, all_true
+    return all_y_hats, all_predictions, all_true, all_tiles, all_attentions, original_bag_indices
 
 
 @torch.no_grad()
@@ -622,7 +626,7 @@ def evaluate(model: OmniSpheroMil, data_loader: DataLoader, clamp_max: float = N
     result = {}
     attention_weights = None
 
-    for batch_id, (data, label, tile_labels) in enumerate(data_loader):
+    for batch_id, (data, label, tile_labels, original_bag_index) in enumerate(data_loader):
         label = label.squeeze()
         # bag_label = label[0]
         bag_label = label
