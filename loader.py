@@ -3,6 +3,7 @@
 import json
 import os
 import random
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from sys import platform
@@ -45,10 +46,13 @@ normalize_enum_descriptions = [
     '8: z-score samples with combined mean / std over the bag'
 ]
 
+well_regex = '([A-Z]+)(\\d+)'
+
 
 ####
 
-def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: int, include_raw: bool = True):
+def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: int, include_raw: bool = True,
+                         label_0_well_indices: [int] = [0, 1, 2, 3, 4], label_1_well_indices: [int] = [7, 8, 9]):
     log.write('Looking for multiple source dirs to load json data from.')
     log.write('Batch dir: ' + str(batch_dirs))
     log.write('Normalization Protocol: ' + str(normalize_enum))
@@ -69,6 +73,8 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
                                                                              max_workers=max_workers,
                                                                              normalize_enum=normalize_enum,
                                                                              gp_current=i + 1,
+                                                                             label_0_well_indices=label_0_well_indices,
+                                                                             label_1_well_indices=label_1_well_indices,
                                                                              gp_max=len(batch_dirs),
                                                                              include_raw=include_raw)
 
@@ -98,7 +104,8 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
 
 
 # Main Loading function
-def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_current: int = 1, gp_max: int = 1,
+def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label_0_well_indices: [int],
+                   label_1_well_indices: [int], gp_current: int = 1, gp_max: int = 1,
                    include_raw: bool = True):
     files = os.listdir(source_dir)
     log.write('Loading from source: ' + source_dir)
@@ -126,6 +133,8 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
                                      filepath,
                                      worker_verbose,
                                      normalize_enum,
+                                     label_0_well_indices,
+                                     label_1_well_indices,
                                      include_raw
                                      )
             future_list.append(future)
@@ -140,6 +149,8 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
                                      filepath,
                                      worker_verbose,
                                      normalize_enum,
+                                     label_0_well_indices,
+                                     label_1_well_indices,
                                      include_raw
                                      )
             future_list.append(future)
@@ -182,13 +193,10 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
         e = future.exception()
         if e is None:
             X_f, y_f, y_f_tiles, y_f_raw = future.result()
-            if X_f is not None:
+            if X_f is not None and y_f is not None and y_f_tiles is not None and y_f_raw is not None:
                 X.append(X_f)
-            if y_f is not None:
                 y.append(y_f)
-            if y_f_tiles is not None:
                 y_tiles.append(y_f_tiles)
-            if y_f_raw is not None:
                 X_raw.append(y_f_raw)
         else:
             log.write('\n' + gct() + 'Error extracting future results: ' + str(e) + '\n')
@@ -210,7 +218,8 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, gp_cu
 ####
 
 
-def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, include_raw: bool = True) -> (np.array, int, [int]):
+def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_indices: [int],
+                        label_1_well_indices: [int], include_raw: bool = True) -> (np.array, int, [int]):
     if worker_verbose:
         print('Unzipping and reading json: ' + filepath)
 
@@ -222,7 +231,9 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, include_raw: b
     input_zip.close()
 
     data = json.loads(data)
-    X, y_bag, y_tiles, X_raw = parse_JSON(data, worker_verbose, normalize_enum, include_raw=include_raw)
+    X, y_bag, y_tiles, X_raw = parse_JSON(data, worker_verbose, normalize_enum,
+                                          label_0_well_indices=label_0_well_indices,
+                                          label_1_well_indices=label_1_well_indices, include_raw=include_raw)
 
     if worker_verbose:
         log.write('File Shape: ' + filepath + ' -> ')
@@ -234,7 +245,8 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, include_raw: b
 
 ####
 
-def read_JSON_file(filepath, worker_verbose, normalize_enum, include_raw: bool = True) -> (
+def read_JSON_file(filepath, worker_verbose, normalize_enum, label_0_well_indices: [int],
+                   label_1_well_indices: [int], include_raw: bool = True) -> (
         np.ndarray, int, [int], np.ndarray):
     if worker_verbose:
         log.write('Reading json: ' + filepath)
@@ -243,12 +255,14 @@ def read_JSON_file(filepath, worker_verbose, normalize_enum, include_raw: bool =
     data = json.load(f)
     f.close()
 
-    return parse_JSON(data, worker_verbose, normalize_enum, include_raw=include_raw)
+    return parse_JSON(data, worker_verbose, normalize_enum, label_0_well_indices=label_0_well_indices,
+                      label_1_well_indices=label_1_well_indices, include_raw=include_raw)
 
 
 ####
 
-def parse_JSON(json_data, worker_verbose, normalize_enum, include_raw: bool = True) -> (
+def parse_JSON(json_data, worker_verbose, normalize_enum, label_0_well_indices: [int],
+               label_1_well_indices: [int], include_raw: bool = True) -> (
         np.ndarray, int, [int], np.ndarray):
     # Setting up arrays
     X = []
@@ -260,8 +274,15 @@ def parse_JSON(json_data, worker_verbose, normalize_enum, include_raw: bool = Tr
     width = json_data['tileWidth']
     height = json_data['tileHeight']
     bit_depth = json_data['bit_depth']
+    well = json_data['well']
 
-    # bit_max = np.iinfo('uint' + str(bit_depth)).max
+    m = re.findall(well_regex, well)[0]
+    well_letter = m[0]
+    well_number = int(m[1])
+    if worker_verbose:
+        print('Reconstructing well: "' + well + '" -> "' + well_letter + str(well_number) + '".')
+
+    # bit_max = np.info('uint' + str(bit_depth)).max
     bit_max = pow(2, bit_depth) - 1
     has_label = False
     label = None
@@ -271,6 +292,18 @@ def parse_JSON(json_data, worker_verbose, normalize_enum, include_raw: bool = Tr
         label = json_data['label']
         y = int(label)
         has_label = True
+
+    # Overwriting label to match the param
+    if well_number in label_1_well_indices:
+        label = 1
+    elif well_number in label_0_well_indices:
+        label = 0
+    else:
+        # Label not in the ranges. This bag is not to be used!
+        if worker_verbose:
+            print('This bag has no label assigned. Removing.')
+
+        return X, y, y_tiles, X_raw
 
     if worker_verbose:
         log.write('Reading JSON: ' + str(width) + 'x' + str(height) + '. Bits: ' + str(bit_depth))
@@ -609,42 +642,37 @@ def np_std(n: np.ndarray, axis=None, mean: float = None) -> np.ndarray:
 # 1, while the rest is label 0. This is done by merging two adjacent input bags together.
 # Yes, this discards a lot of tiles
 def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], y_tiles: [int], repack_percentage: float = 0.05):
-    pair_index = -1
     new_x = []
     new_x_r = []
     new_y = []
     new_y_tiles = []
 
-    for i in range(0, len(y), 2):
-        pair_index = pair_index + 1
+    negative_indices = np.where(np.asarray(y) == 0)[0]
+    positive_indices = np.where(np.asarray(y) == 1)[0]
+    random.shuffle(negative_indices)
+    random.shuffle(positive_indices)
 
+    k = 0
+    for i in range(len(negative_indices)):
         # Setting up data, extracting bags and labels
-        current_bag = X[i]
-        partner_bag = X[i + 1]
-        current_bag_raw = X_raw[i]
-        partner_bag_raw = X_raw[i + 1]
-        current_label = y[i]
-        partner_label = y[i + 1]
-        # current_tile_labels = y_tiles[i]
-        # partner_tile_labels = y_tiles[i+1]
+        current_bag = X[negative_indices[i]]
+        partner_bag = X[positive_indices[k]]
+        current_bag_raw = X_raw[negative_indices[i]]
+        partner_bag_raw = X_raw[positive_indices[k]]
+        current_label = y[negative_indices[i]]
+        partner_label = y[positive_indices[k]]
 
         # Checking if labels match. If they do, we have no alternating inner-outer migration ring pattern!
         if current_label == partner_label:
             raise Exception('Bag partners hd the same label!')
 
-        if y[i] == 0:
-            negative_bag = current_bag
-            positive_bag = partner_bag
-            negative_bag_raw = current_bag_raw
-            positive_bag_raw = partner_bag_raw
-        else:
-            negative_bag = partner_bag
-            positive_bag = current_bag
-            negative_bag_raw = partner_bag_raw
-            positive_bag_raw = current_bag_raw
+        negative_bag = current_bag
+        positive_bag = partner_bag
+        negative_bag_raw = current_bag_raw
+        positive_bag_raw = partner_bag_raw
         del current_bag, partner_bag, partner_label, current_label, current_bag_raw, partner_bag_raw
 
-        if pair_index % 2 == 0:
+        if i % 2 == 0:
             # This new entry is all label 0. Thus, nothing needs to change.
             new_x.append(negative_bag)
             new_x_r.append(negative_bag_raw)
@@ -655,6 +683,7 @@ def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], y_tiles: [
             # As such, we will take all zero-label samples from the current bag and add random PARAM-% samples from the positive bag.
             original_count = negative_bag.shape[0]
             repack_count = math.ceil(original_count * repack_percentage + 1)
+            repack_count = min(repack_count, positive_bag.shape[0])
             for j in range(repack_count):
                 move_index = random.randrange(1, positive_bag.shape[0] - j)
                 positive_sample = positive_bag[move_index]
@@ -674,6 +703,7 @@ def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], y_tiles: [
             new_x.append(negative_bag)
             new_x_r.append(negative_bag_raw)
             new_y_tiles.append(current_tile_labels)
+            k = k + 1
 
     del X, X_raw, y
     return new_x, new_x_r, new_y, new_y_tiles

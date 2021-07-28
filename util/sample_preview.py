@@ -1,12 +1,11 @@
-import os
-import matplotlib.pyplot as plt
-from matplotlib import cm
-import numpy as np
-from util import log
 import traceback
-from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-from matplotlib.figure import Figure
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib import cm
+
 import loader
+from util import log
 
 
 def save_normalized_rgb(img: np.ndarray, filename: str):

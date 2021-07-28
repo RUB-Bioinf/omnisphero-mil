@@ -7,7 +7,6 @@ from sys import getsizeof
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 
 import hardware
 import loader
@@ -25,27 +24,23 @@ from util.utils import shuffle_and_split_data
 # https://github.com/Spandan-Madan/Pytorch_fine_tuning_Tutorial/issues/10
 
 
-default_source_dir_win = "U:\\bioinfdata\\work\\OmniSphero\\mil\\migration\\training_data\\curated_win"
-default_out_dir_win_base = "U:\\bioinfdata\\work\\OmniSphero\\mil\\migration\\models\\win"
+default_source_dir_win = "U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_win"
+default_out_dir_win_base = "U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\win"
 
 default_source_dirs_unix = [
     # New CNN
-    "/mil/migration/training_data/curated_linux/ESM36",
-    "/mil/migration/training_data/curated_linux/ELS411",
-    "/mil/migration/training_data/curated_linux/ELS517",
-    "/mil/migration/training_data/curated_linux/ELS637",
-    "/mil/migration/training_data/curated_linux/ELS681",
-    "/mil/migration/training_data/curated_linux/ELS682",
-    "/mil/migration/training_data/curated_linux/ELS719",
-    "/mil/migration/training_data/curated_linux/ELS744",
-    "/mil/migration/training_data/curated_linux/EFB18",
-    # Old CNN
-    "/mil/migration/training_data/curated_linux/esm49",
-    "/mil/migration/training_data/curated_linux/jk242",
-    "/mil/migration/training_data/curated_linux/mp149"
+    "/mil/oligo-diff/training_data/curated_linux/ESM36",
+    "/mil/oligo-diff/training_data/curated_linux/ELS411",
+    "/mil/oligo-diff/training_data/curated_linux/ELS517",
+    "/mil/oligo-diff/training_data/curated_linux/ELS637",
+    "/mil/oligo-diff/training_data/curated_linux/ELS681",
+    "/mil/oligo-diff/training_data/curated_linux/ELS682",
+    "/mil/oligo-diff/training_data/curated_linux/ELS719",
+    "/mil/oligo-diff/training_data/curated_linux/ELS744",
+    "/mil/oligo-diff/training_data/curated_linux/EFB18"
 ]
 
-default_out_dir_unix_base = "/mil/migration/models/linux"
+default_out_dir_unix_base = "/mil/oligo-diff/models/linux"
 
 # normalize_enum is an enum to determine normalisation as follows:
 # 0 = no normalisation
@@ -144,6 +139,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     f.close()
 
     # Saving one random image from every bag to the disk
+    log.write('Writing loading preview samples to: '+loading_preview_dir)
     for i in range(len(X)):
         current_x = X[i]
         j = random.randint(0, current_x.shape[0] - 1)
@@ -443,8 +439,8 @@ def main(debug: bool = False):
         debug = True
     print('Debug mode: ' + str(debug))
 
-    current_epochs = 400
-    current_max_workers = 15
+    current_epochs = 800
+    current_max_workers = 35
     default_out_dir_base = default_out_dir_unix_base
     current_sources_dir = default_source_dirs_unix
     current_gpu_enabled = True
