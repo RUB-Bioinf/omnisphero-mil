@@ -237,6 +237,7 @@ class BaselineMIL(OmniSpheroMil):
 
         # Predicting every single tile
         y_tiles = []
+        y_tiles_binarized = []
         s = hidden.shape
         for i in range(s[0]):
             h = hidden[i]
@@ -258,10 +259,11 @@ class BaselineMIL(OmniSpheroMil):
 
             h = self.classifier(h)
             y_tiles.append(h)
+            y_tiles_binarized.append(torch.ge(h, 0.5).float())
 
         # Returning the predictions
         y_hat_binarized = torch.ge(y_hat, 0.5).float()
-        return y_hat, y_hat_binarized, attention, y_tiles
+        return y_hat, y_hat_binarized, attention, y_tiles, y_tiles_binarized
 
     def _get_conv_output(self, shape):
         """ generate a single fictional input sample and do a forward pass over
@@ -285,7 +287,7 @@ class BaselineMIL(OmniSpheroMil):
         # y = y.unsqueeze(dim=0)
         # y = torch.argmax(y, dim=1)
 
-        y_hat, y_hat_binarized, attention, _ = self.forward(X)
+        y_hat, y_hat_binarized, attention, _, _ = self.forward(X)
         # y_prob = torch.ge(y_hat, 0.5).float() # for binary classification only. Rounds prediction output to 0 or 1
         y_prob = torch.clamp(y_hat, min=1e-5, max=1. - 1e-5)
         # y_prob = y_prob.squeeze(dim=0)
@@ -309,14 +311,14 @@ class BaselineMIL(OmniSpheroMil):
         # loss = loss_func(y_hat, y)
         return loss, attention
 
-    def compute_accuracy(self, X: Tensor, y: Tensor, y_tiles: Tensor) -> (Tensor, float, [float]):
+    def compute_accuracy(self, X: Tensor, y: Tensor, y_tiles: Tensor) -> (Tensor, float, [float], [int]):
         """ compute accuracy
         """
         y = y.float()
         y = y.unsqueeze(dim=0)
         # y = torch.argmax(y, dim=1)
 
-        y_hat, y_hat_binarized, _, y_hat_tiles = self.forward(X)
+        y_hat, y_hat_binarized, _, y_hat_tiles, _ = self.forward(X)
         y_hat = y_hat.squeeze(dim=0)
 
         bag_acc = None
@@ -327,28 +329,32 @@ class BaselineMIL(OmniSpheroMil):
             raise Exception('Illegal accuracy method selected: "' + method + '"!')
 
         tile_acc = None
-        accuracy_list = None
+        tile_accuracy_list = None
+        tile_prediction_list = None
         if y_tiles is not None:
-            tile_acc, accuracy_list = self.compute_accuracy_tiles(y_targets=y_tiles, y_predictions=y_hat_tiles)
+            tile_acc, tile_accuracy_list, tile_prediction_list = self.compute_accuracy_tiles(y_targets=y_tiles,
+                                                                                             y_predictions=y_hat_tiles)
 
-        return bag_acc, tile_acc, accuracy_list
+        return bag_acc, tile_acc, tile_accuracy_list, tile_prediction_list
 
-    def compute_accuracy_tiles(self, y_targets: Tensor, y_predictions: [Tensor]) -> (float, [float]):
+    def compute_accuracy_tiles(self, y_targets: Tensor, y_predictions: [Tensor]) -> (float, [float], [int]):
         accuracy_list = []
+        tile_hat_list = []
 
         if not (len(y_predictions) == y_targets.shape[1]):
             raise Exception('Prediction and target sizes must match!')
 
         for i in range(len(y_predictions)):
-            hat = y_predictions[i].squeeze()
-            hat = torch.ge(hat, 0.5).float()
-            y = y_targets[0, i].float()
+            hat: Tensor = y_predictions[i].squeeze()
+            hat = torch.ge(hat, 0.5).float()  # TODO use binary from forward pass here??
+            y: Tensor = y_targets[0, i].float()
 
             correct = float(y) == float(hat)
             accuracy_list.append(float(correct))
+            tile_hat_list.append(int(hat))
 
         accuracy = sum(accuracy_list) / len(accuracy_list)
-        return accuracy, accuracy_list
+        return accuracy, accuracy_list, tile_hat_list
 
 
 def choose_optimizer(model: OmniSpheroMil, selection: str) -> Optimizer:
@@ -475,7 +481,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             # https://github.com/yhenon/pytorch-retinanet/issues/3
 
             train_losses.append(float(loss))
-            acc, acc_tiles, _ = model.compute_accuracy(data, bag_label, tile_labels)
+            acc, acc_tiles, _, _ = model.compute_accuracy(data, bag_label, tile_labels)
             train_acc.append(float(acc))
             train_acc_tiles.append(float(acc_tiles))
 
@@ -492,8 +498,8 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             del data, bag_label, label
 
         # VALIDATION PHASE
-        result, _, all_losses, all_tile_lists = evaluate(model, validation_data, clamp_max=clamp_max,
-                                                         clamp_min=clamp_min)  # returns a results dict for metrics
+        result, _, all_losses, all_tile_lists, _ = evaluate(model, validation_data, clamp_max=clamp_max,
+                                                            clamp_min=clamp_min)  # returns a results dict for metrics
         result['train_loss'] = sum(train_losses) / len(train_losses)  # torch.stack(train_losses).mean().item()
         result['train_acc'] = sum(train_acc) / len(train_acc)
         result['train_acc_tiles'] = sum(train_acc_tiles) / len(train_acc_tiles)
@@ -548,8 +554,10 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         f.close()
 
         # Saving model checkpoints
-        if epoch % checkpoint_interval == 0:
-            save_model(state, checkpoint_out_dir + 'checkpoint-' + str(epoch) + '.h5', verbose=True)
+        if checkpoint_interval is not None and checkpoint_interval > 0:
+            if epoch % checkpoint_interval == 0:
+                save_model(state, checkpoint_out_dir + 'checkpoint-' + str(epoch) + '.h5', verbose=True)
+
         if is_best:
             log.write('New best model! Saving...')
             save_model(state, model_save_path_best, verbose=False)
@@ -578,7 +586,8 @@ def get_predictions(model: OmniSpheroMil, data_loader: DataLoader):
     all_predictions = []
     all_true = []
     all_attentions = []
-    all_tiles = []
+    all_y_tiles = []
+    all_tiles_true = []
     original_bag_indices = []
 
     for batch_id, (data, label, label_tiles, original_bag_index) in enumerate(data_loader):
@@ -588,8 +597,8 @@ def get_predictions(model: OmniSpheroMil, data_loader: DataLoader):
         bag_label = bag_label.cpu()
 
         data = data.to(model.get_device_ordinal(0))
+        y_hat, predictions, attention, _, prediction_tiles_binarized = model.forward(data)
 
-        y_hat, predictions, attention, prediction_tiles = model(data)
         y_hat = y_hat.squeeze(dim=0)  # for binary setting
         y_hat = y_hat.cpu()
         predictions = predictions.squeeze(dim=0)  # for binary setting
@@ -598,19 +607,23 @@ def get_predictions(model: OmniSpheroMil, data_loader: DataLoader):
         all_y_hats.append(y_hat.numpy().item())
         all_predictions.append(predictions.numpy().item())
         all_true.append(bag_label.numpy().item())
+        # all_y_tiles = prediction_tiles.cpu().data.numpy()[0]
         attention_scores = np.round(attention.cpu().data.numpy()[0], decimals=3)
         all_attentions.append(attention_scores)
-        all_tiles.append(label_tiles.cpu().numpy()[0])
+        # all_tiles_true.append(label_tiles.cpu().numpy()[0])
         original_bag_indices.append(int(original_bag_index.cpu()))
+
+        all_tiles_true.append(label_tiles.cpu().numpy()[0])
+        all_y_tiles.append(np.asarray([int(prediction_tiles_binarized[i].cpu()) for i in range(len(prediction_tiles_binarized))]))
 
         # log.write('Bag Label:' + str(bag_label))
         # log.write('Predicted Label:' + str(predictions.numpy().item()))
         # log.write('attention scores (unique ones):')
         # log.write(attention_scores)
 
-        del data, bag_label, label,label_tiles
+        del data, bag_label, label, label_tiles
 
-    return all_y_hats, all_predictions, all_true, all_tiles, all_attentions, original_bag_indices
+    return all_y_hats, all_predictions, all_true, all_y_tiles, all_tiles_true, all_attentions, original_bag_indices
 
 
 @torch.no_grad()
@@ -623,6 +636,7 @@ def evaluate(model: OmniSpheroMil, data_loader: DataLoader, clamp_max: float = N
     test_acc = []
     test_acc_tiles = []
     acc_tiles_list_list = []
+    tiles_prediction_list_list = []
     result = {}
     attention_weights = None
 
@@ -650,9 +664,10 @@ def evaluate(model: OmniSpheroMil, data_loader: DataLoader, clamp_max: float = N
 
         # https://github.com/yhenon/pytorch-retinanet/issues/3
         test_losses.append(float(loss))
-        acc, acc_tiles, acc_tiles_list = model.compute_accuracy(data, bag_label, tile_labels)
+        acc, acc_tiles, acc_tiles_list, tiles_prediction_list = model.compute_accuracy(data, bag_label, tile_labels)
         test_acc_tiles.append(float(acc_tiles))
         acc_tiles_list_list.append(acc_tiles_list)
+        tiles_prediction_list_list.append(tiles_prediction_list)
         test_acc.append(float(acc))
 
         del data, bag_label, tile_labels, label
@@ -660,7 +675,7 @@ def evaluate(model: OmniSpheroMil, data_loader: DataLoader, clamp_max: float = N
     result['val_loss'] = sum(test_losses) / len(test_losses)  # torch.stack(test_losses).mean().item()
     result['val_acc'] = sum(test_acc) / len(test_acc)
     result['val_acc_tiles'] = sum(test_acc_tiles) / len(test_acc_tiles)
-    return result, attention_weights, test_losses, acc_tiles_list_list
+    return result, attention_weights, test_losses, acc_tiles_list_list, tiles_prediction_list_list
 
 
 # deprecated

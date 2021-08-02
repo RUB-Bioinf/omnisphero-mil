@@ -302,7 +302,7 @@ def write_history(history: List[Dict[str, float]], history_keys: [str], metrics_
 
 
 def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X_raw: np.ndarray, y_tiles: np.ndarray,
-                        colormap_name: str = 'jet', dpi: int = 1700, overlay_alpha: float = 0.65,
+                        colormap_name: str = 'jet', dpi: int = 350, overlay_alpha: float = 0.65,
                         normalized: bool = False):
     if not model.enable_attention:
         log.write('Not using attention. Scores skipped.')
@@ -310,8 +310,10 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
 
     color_map = plt.get_cmap(colormap_name)
     os.makedirs(out_dir, exist_ok=True)
-    y_hats, all_predictions, all_true, all_tile_predictions, all_attentions, original_bag_indices = models.get_predictions(
+    y_hats, all_predictions, all_true, all_y_tiles, all_tiles_true, all_attentions, original_bag_indices = models.get_predictions(
         model, dataset)
+
+    # model.compute_accuracy(data, bag_label, tile_labels)
 
     print('')
     for i in range(len(y_hats)):
@@ -319,8 +321,8 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
         original_bag_index = original_bag_indices[i]
         tile_attentions = all_attentions[i]
 
-        y_tile_predictions = all_tile_predictions[i]
-        y_tile_predictions_true = y_tiles[original_bag_index]
+        y_tile_predictions = all_y_tiles[i]
+        y_tile_predictions_true = all_tiles_true[i]
         y_bag = all_predictions[i]
         y_bag_true = all_true[i]
 
@@ -330,13 +332,14 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
         image_width = None
         image_height = None
         tile_count = raw_bag.shape[0]
-        correct_tiles = 0.0
+        correct_tiles: float = 0.0
+
         for j in range(tile_count):
             current_tile = raw_bag[j]
             attention = tile_attentions[j]
             normalized_attention = (attention - tile_attentions.min()) / (tile_attentions.max() - tile_attentions.min())
 
-            correct_tiles = correct_tiles + float(y_tile_predictions[j] == y_tile_predictions_true[j])
+            correct_tiles = float(correct_tiles + float(y_tile_predictions[j] == y_tile_predictions_true[j]))
 
             r = current_tile[0] / 255 * overlay_alpha
             g = current_tile[1] / 255 * overlay_alpha
@@ -366,7 +369,7 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
             colored_tiles.append(rgb)
             image_width, image_height = r.shape
 
-        tile_accuracy = correct_tiles / float(tile_count)
+        tile_accuracy: float = correct_tiles / float(tile_count)
         # Saving base image
         filename_base = out_dir + 'bag-' + str(original_bag_index)
         if normalized:
@@ -399,14 +402,21 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
         plt.imshow(out_image)
         plt.xticks([], [])
         plt.yticks([], [])
+
+        tile_accuracy_formatted = str("{:.4f}".format(tile_accuracy))
         plt.xlabel('Bag label: ' + str(int(y_bag_true)) + '. Prediction: ' + str(int(y_bag)))
-        plt.ylabel('Tiles: ' + str(tile_count) + '. Tile Accuracy: ' + str(tile_accuracy))
+        plt.ylabel('Tiles: ' + str(tile_count) + '. Tile Accuracy: ' + tile_accuracy_formatted)
         plt.title('Attention Scores: Bag #' + str(original_bag_index))
 
         plt.tight_layout()
         plt.savefig(filename_base + '-detail.png', dpi=dpi)
         plt.savefig(filename_base + '-detail.pdf', dpi=dpi)
         plt.clf()
+
+        f = open(out_dir + os.sep + 'debug-bag-accuracy.txt', 'a')
+        f.write('bag-' + str(original_bag_index) + ': Tile Accuracy: ' + str(tile_accuracy) + ', ' + str(
+            correct_tiles) + ' out of ' + str(tile_count) + '.\n')
+        f.close()
 
 
 def fuse_image_tiles(images: [np.ndarray], image_width: int, image_height: int):

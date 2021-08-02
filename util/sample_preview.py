@@ -35,7 +35,7 @@ def save_rgb(img: np.ndarray, filename: str):
 
 
 def save_z_scored_image(img: np.ndarray, filename: str, normalize_enum: int, min: float = -3.0, dim_x: int = 150,
-                        dim_y: int = 150, max: float = 3.0, dpi: int = 600, fig_titles: [str] = ['r', 'g', 'b']):
+                        dim_y: int = 150, max: float = 3.0, dpi: int = 250, fig_titles: [str] = ['r', 'g', 'b']):
     x = np.arange(0, dim_x, 1)
     y = np.arange(0, dim_y, 1)
     j = cm.get_cmap('jet')

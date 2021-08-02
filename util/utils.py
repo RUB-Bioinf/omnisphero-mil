@@ -3,6 +3,7 @@ import os
 import random
 from datetime import datetime
 from sys import platform
+import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -282,17 +283,42 @@ def line_print(text: str, max_width: int = None, cutoff_too_large_text: bool = T
 ###########################
 
 # shuffle data and split into training and validation set
-def shuffle_and_split_data(dataset, split_percentage: float):
+def shuffle_and_split_data(dataset, split_percentage: float, _recursion_depth: int = 0):
     '''
     Takes a dataset that was converted from bags to batches and shuffles and splits it into two splits (train/val)
     '''
     split_percentage_index = math.ceil(split_percentage * len(dataset))
     indices = np.arange(len(dataset))
     random.shuffle(indices)
-    test_ind,train_ind = np.asarray(indices[:split_percentage_index]), np.asarray(indices[split_percentage_index:])
+    test_ind, train_ind = np.asarray(indices[:split_percentage_index]), np.asarray(indices[split_percentage_index:])
 
     training_ds = [dataset[i] for i in train_ind]
     validation_ds = [dataset[j] for j in test_ind]
+
+    num_positive = sum([int(dataset[i][1]) for i in range(len(dataset))])
+    num_negative = len(dataset) - num_positive
+    if not (num_positive == 0 or num_negative == 0) and (
+            num_positive >= 2 and num_negative >= 2 and split_percentage_index >= 2) and (
+            _recursion_depth < sys.getrecursionlimit() - 10):
+        # This if branch tests if there are no positive or negative bags.
+        # So if there are none, that means there are not enough bags to suffle and end up with at least one pos / negative bag after the shuffle
+
+        # Also checks if there are at least two pos and negative bags to fairly distribute them in the first place!
+
+        training_num_positive = sum([int(training_ds[i][1]) for i in range(len(training_ds))])
+        training_num_negative = len(training_ds) - training_num_positive
+
+        validation_num_positive = sum([int(validation_ds[i][1]) for i in range(len(validation_ds))])
+        validation_num_negative = len(validation_ds) - validation_num_positive
+
+        if training_num_positive == 0 or training_num_negative == 0 or validation_num_positive == 0 or validation_num_negative == 0:
+            # At this point, there is at least one dataset without positive or negative bags
+            log.write(
+                '[' + str(_recursion_depth) + '/' + str(sys.getrecursionlimit()) + '] Data shuffle resulted in inequal '
+                                                                                   'distribution. Trying again.')
+
+            del training_ds, validation_ds
+            return shuffle_and_split_data(dataset, split_percentage, _recursion_depth + 1)
 
     del dataset
     return training_ds, validation_ds

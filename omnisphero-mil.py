@@ -18,6 +18,7 @@ from util import log
 from util import sample_preview
 from util import utils
 from util.omnisphero_data_loader import OmniSpheroDataLoader
+from util.utils import line_print
 from util.utils import shuffle_and_split_data
 
 # On windows, if there's not enough RAM:
@@ -29,15 +30,24 @@ default_out_dir_win_base = "U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\m
 
 default_source_dirs_unix = [
     # New CNN
+    "/mil/oligo-diff/training_data/curated_linux/EFB18",
     "/mil/oligo-diff/training_data/curated_linux/ESM36",
-    "/mil/oligo-diff/training_data/curated_linux/ELS411",
+    # "/mil/oligo-diff/training_data/curated_linux/ELS411",
     "/mil/oligo-diff/training_data/curated_linux/ELS517",
     "/mil/oligo-diff/training_data/curated_linux/ELS637",
     "/mil/oligo-diff/training_data/curated_linux/ELS681",
     "/mil/oligo-diff/training_data/curated_linux/ELS682",
-    "/mil/oligo-diff/training_data/curated_linux/ELS719",
-    "/mil/oligo-diff/training_data/curated_linux/ELS744",
-    "/mil/oligo-diff/training_data/curated_linux/EFB18"
+    "/mil/oligo-diff/training_data/curated_linux/ELS719"
+    # "/mil/oligo-diff/training_data/curated_linux/ELS744",
+]
+
+ideal_source_dirs_unix = [
+    # New CNN
+    "/mil/oligo-diff/training_data/curated_linux/ESM36",
+    "/mil/oligo-diff/training_data/curated_linux/ELS517",
+    "/mil/oligo-diff/training_data/curated_linux/ELS637",
+    "/mil/oligo-diff/training_data/curated_linux/ELS681",
+    "/mil/oligo-diff/training_data/curated_linux/ELS682"
 ]
 
 default_out_dir_unix_base = "/mil/oligo-diff/models/linux"
@@ -63,6 +73,8 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
                 shuffle_data_loaders: bool = True, model_enable_attention: bool = False, model_use_max: bool = True,
                 repack_percentage: float = 0.0, global_log_dir: str = None, optimizer: str = 'adadelta',
                 clamp_min: float = None, clamp_max: float = None,
+                tile_constraints_0: [int] = loader.tile_constraints_none,
+                tile_constraints_1: [int] = loader.tile_constraints_none,
                 data_split_percentage_validation: float = 0.3, data_split_percentage_test: float = 0.15,
                 ):
     if out_dir is None:
@@ -125,6 +137,8 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     X, y, y_tiles, X_raw, errors, loaded_files_list = loader.load_bags_json_batch(batch_dirs=source_dirs,
                                                                                   max_workers=max_workers,
                                                                                   include_raw=True,
+                                                                                  constraints_0=tile_constraints_0,
+                                                                                  constraints_1=tile_constraints_1,
                                                                                   normalize_enum=normalize_enum)
     X = [np.einsum('bhwc->bchw', bag) for bag in X]
     X_raw = [np.einsum('bhwc->bchw', bag) for bag in X_raw]
@@ -139,8 +153,10 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     f.close()
 
     # Saving one random image from every bag to the disk
-    log.write('Writing loading preview samples to: '+loading_preview_dir)
+    log.write('Writing loading preview samples to: ' + loading_preview_dir)
+    print('\n')
     for i in range(len(X)):
+        line_print('Writing loading preview: ' + str(i + 1) + '/' + str(len(X)), include_in_log=False)
         current_x = X[i]
         j = random.randint(0, current_x.shape[0] - 1)
 
@@ -158,6 +174,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
                                                min=-3.0, max=3.0, normalize_enum=normalize_enum)
 
         del current_x
+    print('\n')
 
     # Calculating Bag Size and possibly inverting labels
     log.write('Finished loading data. Number of bags: ' + str(len(X)) + '. Number of labels: ' + str(len(y)))
@@ -233,13 +250,13 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         '\nTraining data: ' + str(training_data_tiles) + ' tiles over ' + str(len(training_data)) + ' bags.')
     protocol_f.write(
         '\nValidation data: ' + str(validation_data_tiles) + ' tiles over ' + str(len(validation_data)) + ' bags.')
-    f.write('Training data: ' + str(training_data_tiles) + ' tiles over ' + str(len(training_data)) + ' bags.')
-    f.write('Validation data: ' + str(validation_data_tiles) + ' tiles over ' + str(len(validation_data)) + ' bags.')
+    f.write('Training data: ' + str(training_data_tiles) + ' tiles over ' + str(len(training_data)) + ' bags.\n')
+    f.write('Validation data: ' + str(validation_data_tiles) + ' tiles over ' + str(len(validation_data)) + ' bags.\n')
 
     if data_split_percentage_test is not None:
         test_data_tiles: int = sum([test_data[i][0].shape[0] for i in range(len(test_data))])
         log.write('Test data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.')
-        f.write('Test data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.')
+        f.write('Test data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.\n')
         protocol_f.write('Test data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.')
     f.close()
 
@@ -286,7 +303,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     # Callbacks
     callbacks = []
     callbacks.append(torch_callbacks.EarlyStopping(epoch_threshold=int(epochs / 5 + 1)))
-    callbacks.append(torch_callbacks.UnreasonableLossCallback(loss_max=30.0))
+    callbacks.append(torch_callbacks.UnreasonableLossCallback(loss_max=40.0))
 
     protocol_f.write('\n\n == Model Information==')
     protocol_f.write('\nDevice Ordinals: ' + str(device_ordinals))
@@ -320,7 +337,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
                                                              training_data=train_dl,
                                                              validation_data=validation_dl,
                                                              out_dir_base=out_dir,
-                                                             checkpoint_interval=50,
+                                                             checkpoint_interval=None,
                                                              clamp_min=clamp_min, clamp_max=clamp_max,
                                                              callbacks=callbacks)
     log.write('Finished training!')
@@ -367,7 +384,7 @@ def test_model(model, model_save_path_best, model_optimizer, data_loader, X_raw,
 
     # Get best saved model from this run
     model, model_optimizer, _, _ = models.load_checkpoint(model_save_path_best, model, model_optimizer)
-    y_hats, y_pred, y_true, _, _, _ = models.get_predictions(model, data_loader)
+    y_hats, y_pred, y_true, _,_, _, _ = models.get_predictions(model, data_loader)
 
     # Saving attention scores for every tile in every bag!
     log.write('Writing attention scores to: ' + attention_out_dir)
@@ -385,12 +402,12 @@ def test_model(model, model_save_path_best, model_optimizer, data_loader, X_raw,
 
     try:
         log.write('Saving Confidence Matrix')
-        mil_metrics.plot_conf_matrix(y_true, y_pred, out_dir, target_names=['Inner Ring', 'Outer Ring'],
+        mil_metrics.plot_conf_matrix(y_true, y_pred, out_dir, target_names=['Control', 'Oligo Diff'],
                                      normalize=False)
-        mil_metrics.plot_conf_matrix(y_true, y_pred, out_dir, target_names=['Inner Ring', 'Outer Ring'], normalize=True)
+        mil_metrics.plot_conf_matrix(y_true, y_pred, out_dir, target_names=['Control', 'Oligo Diff'], normalize=True)
     except Exception as e:
         log.write('Failed to save the Confidence Matrix!')
-        f = open(attention_out_dir + 'confidence-error.txt', 'a')
+        f = open(attention_out_dir + 'confidence-errors.txt', 'a')
         f.write('\nError: ' + str(e.__class__) + '\n' + str(e))
         f.close()
     log.write('Finished writing confidence Matrix.')
@@ -500,12 +517,12 @@ def main(debug: bool = False):
         #                         )
         for l in ['binary_cross_entropy', 'negative_log_bernoulli']:
             for o in ['adadelta', 'adam']:
-                for r in [0.05, 0.1, 0.15]:
-                    for i in [5, 7, 2, 3, 4]:
+                for r in [0.15]:
+                    for i in [5, 7, 6, 3, 4]:
                         train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                                     max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                                     normalize_enum=i,
-                                    training_label='attention-' + o + '-' + l + '-normalize-' + str(
+                                    training_label='constrained-attention-' + o + '-' + l + '-normalize-' + str(
                                         i) + 'repack-' + str(r),
                                     global_log_dir=current_global_log_dir,
                                     invert_bag_labels=False,
@@ -514,6 +531,8 @@ def main(debug: bool = False):
                                     optimizer=o,
                                     model_enable_attention=True,
                                     model_use_max=False,
+                                    tile_constraints_0=loader.tile_constraints_nuclei,
+                                    tile_constraints_1=loader.tile_constraints_oligos,
                                     device_ordinals=current_device_ordinals
                                     )
     log.write('Finished every training!')
