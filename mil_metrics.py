@@ -17,6 +17,7 @@ import numpy as np
 import torch
 from sklearn.metrics import auc
 from sklearn.metrics import confusion_matrix
+from sklearn.metrics import precision_recall_curve
 from sklearn.metrics import roc_curve
 from torch.utils.data import DataLoader
 
@@ -29,6 +30,7 @@ from util import utils
 # plt.style.use('ggplot')
 # FUNCTIONS
 ###########
+from util.utils import get_plt_as_tex
 from util.utils import line_print
 
 
@@ -237,12 +239,12 @@ def plot_conf_matrix(y_true, y_pred, out_dir, target_names, title='Confusion Mat
     plt.xlabel('Predicted label\naccuracy={:0.4f}; misclass={:0.4f}'.format(acc, miss_class))
     plt.tight_layout()
 
-    outname = 'confusion_matrix_raw'
+    out_name = 'confusion_matrix_raw'
     if normalize:
-        outname = 'confusion_matrix_normalized'
+        out_name = 'confusion_matrix_normalized'
 
-    plt.savefig(out_dir + outname + '.pdf', dpi=dpi)
-    plt.savefig(out_dir + outname + '.png', dpi=dpi)
+    plt.savefig(out_dir + out_name + '.pdf', dpi=dpi)
+    plt.savefig(out_dir + out_name + '.png', dpi=dpi)
     plt.clf()
 
 
@@ -257,26 +259,100 @@ def binary_roc_curve(y_true, y_hat_scores):
     return fpr, tpr, thresholds
 
 
-def plot_binary_roc_curve(fpr, tpr, save_path: str, dpi: int = 600):
+def binary_pr_curve(y_true, y_hat_scores):
+    precision, recall, thresholds = precision_recall_curve(y_true, y_hat_scores)
+    return precision, recall, thresholds
+
+
+def plot_binary_pr_curve(precision, recall, thresholds, y_true, save_path: str, title: str, dpi: int = 600):
+    pr_auc = float('NaN')
+    try:
+        pr_auc = auc(recall, precision)
+    except Exception as e:
+        log.write(str(e))
+
+    y_true = np.asarray(y_true)
+    pr_no_skill = len(y_true[y_true == 1]) / len(y_true)
+
+    filename_base = 'pr_curve-' + title
+    log.write('Saving "' + title + '" PR to: ' + save_path)
+
+    plt.plot([0, 1], [pr_no_skill, pr_no_skill], linestyle='--')
+    plt.plot(recall, precision, label='PR (Area = {:.3f})'.format(pr_auc))
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('Recall (TPR)')
+    plt.ylabel('Precision (PPV)')
+    plt.title('Precision-Recall Curve: ' + title)
+    plt.legend(loc='best')
+
+    plt.savefig(save_path + os.sep + filename_base + '.png', dpi=dpi)
+    plt.savefig(save_path + os.sep + filename_base + '.pdf', dpi=dpi, transparent=True)
+    plt.savefig(save_path + os.sep + filename_base + '.svg', dpi=dpi, transparent=True)
+    plt.clf()
+
+    # Writing PR as .tex
+    f = open(save_path + os.sep + filename_base + '.tex', 'w')
+    f.write(get_plt_as_tex(data_list_x=[recall], data_list_y=[precision],
+                           title='Precision Recall Curve', label_y='True positive rate',
+                           label_x='False Positive Rate',
+                           plot_titles=['PR (Area = {:.3f})'.format(pr_auc)],
+                           plot_colors=['blue'], legend_pos='south west'))
+    f.close()
+
+    # Writing raw PR data as CSV
+    f = open(save_path + os.sep + filename_base + '.csv', 'w')
+    f.write('Baseline: ' + str(pr_no_skill) + '\n')
+    f.write('i;Recall;Precision;Thresholds\n')
+    for i in range(len(precision)):
+        f.write(
+            str(i + 1) + ';' + str(recall[i]) + ';' + str(precision[i]) + ';' + str(thresholds[0]) + ';\n')
+    f.close()
+
+
+def plot_binary_roc_curve(fpr, tpr, thresholds, save_path: str, title: str, dpi: int = 600):
     ''' plots a ROC curve with AUC score
     in a binary classification setting
     '''
-    area = auc(fpr, tpr)
+    title = title.lower()
+
+    area = float('NaN')
+    try:
+        area = auc(fpr, tpr)
+    except Exception as e:
+        log.write(str(e))
 
     lw = 2
     plt.clf()
     plt.plot([0, 1], [0, 1], color='blue', lw=lw, linestyle='--')
-    plt.plot(fpr, tpr, color='darkorange', lw=lw, label='ROC curve (AUC={:0.3f})'.format(area))
+    plt.plot(fpr, tpr, color='darkorange', lw=lw, label='ROC Curve (AUC={:0.3f})'.format(area))
     plt.xlim([0.0, 1.0])
     plt.ylim([0.0, 1.05])
     plt.legend(loc='lower right')
     plt.xlabel('False Positive Rate (1-specificity)')
     plt.ylabel('True Positive Rate (sensitivity)')
 
-    plt.savefig(save_path + os.sep + 'roc_curve.pdf', dpi=dpi)
-    plt.savefig(save_path + os.sep + 'roc_curve.png', dpi=dpi)
-    plt.savefig(save_path + os.sep + 'roc_curve.svg', dpi=dpi)
+    # Writing ROC curve as image data
+    filename_base = 'roc_curve-' + title
+    log.write('Saving "' + title + '" ROC to: ' + save_path)
+    plt.savefig(save_path + os.sep + filename_base + '.pdf', dpi=dpi)
+    plt.savefig(save_path + os.sep + filename_base + '.png', dpi=dpi)
+    plt.savefig(save_path + os.sep + filename_base + '.svg', dpi=dpi)
     plt.clf()
+
+    # Writing ROC as .tex
+    f = open(save_path + os.sep + filename_base + '.tex', 'w')
+    f.write(get_plt_as_tex(data_list_x=[fpr], data_list_y=[tpr], title='ROC Curve: ' + title.capitalize(),
+                           label_y='True positive rate', label_x='False Positive Rate', plot_colors=['blue']))
+    f.close()
+
+    # Writing raw ROC data as CSV
+    f = open(save_path + os.sep + filename_base + '.csv', 'w')
+    f.write('i;FPR;TPR;Thresholds\n')
+    for i in range(len(thresholds)):
+        f.write(
+            str(i + 1) + ';' + str(fpr[i]) + ';' + str(tpr[i]) + ';' + str(thresholds[i]) + ';\n')
+    f.close()
 
 
 def write_history(history: List[Dict[str, float]], history_keys: [str], metrics_dir: str, verbose: bool = False):

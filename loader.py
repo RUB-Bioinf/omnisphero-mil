@@ -693,7 +693,8 @@ def np_std(n: np.ndarray, axis=None, mean: float = None) -> np.ndarray:
 # Takes the read data and labes and creates new bags, so that bags with label 1 contain PERCENTAGE% tiles with label
 # 1, while the rest is label 0. This is done by merging two adjacent input bags together.
 # Yes, this discards a lot of tiles
-def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], y_tiles: [int], repack_percentage: float = 0.05):
+def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], repack_percentage: float = 0.05,
+                      positive_bag_min_samples: int = None):
     new_x = []
     new_x_r = []
     new_y = []
@@ -703,6 +704,9 @@ def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], y_tiles: [
     positive_indices = np.where(np.asarray(y) == 1)[0]
     random.shuffle(negative_indices)
     random.shuffle(positive_indices)
+
+    if positive_bag_min_samples is None:
+        positive_bag_min_samples = 0
 
     k = 0
     for i in range(len(negative_indices)):
@@ -738,6 +742,9 @@ def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], y_tiles: [
             repack_count = min(repack_count, positive_bag.shape[0] - 2)
             repack_count = max(repack_count, 0)
 
+            negative_bag_original = np.array(negative_bag, copy=True)
+            negative_bag_raw_original = np.array(negative_bag_raw, copy=True)
+
             repacked_tiles = 0
             for j in range(repack_count):
                 if repack_count == 0 or positive_bag.shape[0] <= 0:
@@ -765,7 +772,7 @@ def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], y_tiles: [
             current_tile_labels = [0 for _ in range(original_count)]
             current_tile_labels.extend([1 for _ in range(repacked_tiles)])
 
-            if 1 in current_tile_labels and repacked_tiles > 0:
+            if 1 in current_tile_labels and repacked_tiles > 0 and repacked_tiles >= positive_bag_min_samples:
                 new_y.append(1)
                 new_x.append(negative_bag)
                 new_x_r.append(negative_bag_raw)
@@ -773,9 +780,13 @@ def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], y_tiles: [
             else:
                 # Despite trying to repack the data, there were no tiles repacked actually!
                 # This bag is discarded, just to be safe!
-                log.write('Warning! Positive bag #' + str(k) + ' failed to repack! This bag and negative bag #' + str(
-                    i) + ' are discarded!')
-                pass
+                log.write('Warning! Positive bag #' + str(k) + ' failed to repack! This bag is discarded!')
+
+                # Yet, the (unchanged) negative bag can be appended to the list. Nice.
+                new_x.append(negative_bag_original)
+                new_x_r.append(negative_bag_raw_original)
+                new_y.append(0)
+                new_y_tiles.append([0 for i in range(negative_bag_original.shape[0])])
 
             # incrementing k, so the next iteration can pick the next positive bag
             k = k + 1

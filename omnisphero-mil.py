@@ -32,13 +32,13 @@ default_source_dirs_unix = [
     # New CNN
     "/mil/oligo-diff/training_data/curated_linux/EFB18",
     "/mil/oligo-diff/training_data/curated_linux/ESM36",
-    # "/mil/oligo-diff/training_data/curated_linux/ELS411",
+    "/mil/oligo-diff/training_data/curated_linux/ELS411",
     "/mil/oligo-diff/training_data/curated_linux/ELS517",
     "/mil/oligo-diff/training_data/curated_linux/ELS637",
     "/mil/oligo-diff/training_data/curated_linux/ELS681",
     "/mil/oligo-diff/training_data/curated_linux/ELS682",
-    "/mil/oligo-diff/training_data/curated_linux/ELS719"
-    # "/mil/oligo-diff/training_data/curated_linux/ELS744",
+    "/mil/oligo-diff/training_data/curated_linux/ELS719",
+    "/mil/oligo-diff/training_data/curated_linux/ELS744"
 ]
 
 ideal_source_dirs_unix = [
@@ -72,7 +72,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
                 out_dir: str = None, gpu_enabled: bool = False, invert_bag_labels: bool = False,
                 shuffle_data_loaders: bool = True, model_enable_attention: bool = False, model_use_max: bool = True,
                 repack_percentage: float = 0.0, global_log_dir: str = None, optimizer: str = 'adadelta',
-                clamp_min: float = None, clamp_max: float = None,
+                clamp_min: float = None, clamp_max: float = None, positive_bag_min_samples: int = None,
                 tile_constraints_0: [int] = loader.tile_constraints_none,
                 tile_constraints_1: [int] = loader.tile_constraints_none,
                 data_split_percentage_validation: float = 0.3, data_split_percentage_test: float = 0.15,
@@ -104,7 +104,8 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     protocol_f.write('\nNormalize Enum: ' + str(normalize_enum))
     protocol_f.write('\nGPU Enabled: ' + str(gpu_enabled))
     protocol_f.write('\nInvert Bag Labels: ' + str(invert_bag_labels))
-    protocol_f.write('\nRepack Percentage: ' + str(repack_percentage))
+    protocol_f.write('\nRepack: Percentage: ' + str(repack_percentage))
+    protocol_f.write('\nRepack: Minimum Positive Samples: ' + str(positive_bag_min_samples))
     protocol_f.write('\nClamp Min: ' + str(clamp_min))
     protocol_f.write('\nClamp Max: ' + str(clamp_max))
 
@@ -133,7 +134,6 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     # LOADING START
     ################
     loading_start_time = datetime.now()
-
     X, y, y_tiles, X_raw, errors, loaded_files_list = loader.load_bags_json_batch(batch_dirs=source_dirs,
                                                                                   max_workers=max_workers,
                                                                                   include_raw=True,
@@ -157,7 +157,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     print('\n')
     for i in range(len(X)):
         line_print('Writing loading preview: ' + str(i + 1) + '/' + str(len(X)), include_in_log=False)
-        current_x = X[i]
+        current_x: np.ndarray = X[i]
         j = random.randint(0, current_x.shape[0] - 1)
 
         preview_image_file_base = loading_preview_dir + 'preview_' + str(i) + '-' + str(j) + '_' + str(y[i])
@@ -220,7 +220,8 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     # Setting up bags for MIL
     if repack_percentage > 0:
         print_bag_metadata(X, y, y_tiles, file_name=out_dir + 'bags_pre-packed.csv')
-        X, X_raw, y, y_tiles = loader.repack_bags_merge(X, X_raw, y, y_tiles, repack_percentage=repack_percentage)
+        X, X_raw, y, y_tiles = loader.repack_bags_merge(X, X_raw, y, repack_percentage=repack_percentage,
+                                                        positive_bag_min_samples=positive_bag_min_samples)
         print_bag_metadata(X, y, y_tiles, file_name=out_dir + 'bags_repacked.csv')
     else:
         print_bag_metadata(X, y, y_tiles, file_name=out_dir + 'bags.csv')
@@ -384,7 +385,11 @@ def test_model(model, model_save_path_best, model_optimizer, data_loader, X_raw,
 
     # Get best saved model from this run
     model, model_optimizer, _, _ = models.load_checkpoint(model_save_path_best, model, model_optimizer)
-    y_hats, y_pred, y_true, _,_, _, _ = models.get_predictions(model, data_loader)
+    y_hats, y_pred, y_true, y_samples_pred, y_samples_true, _, _ = models.get_predictions(model, data_loader)
+
+    # Flattening sample predictions
+    y_samples_pred = [item for sublist in y_samples_pred for item in sublist]
+    y_samples_true = [item for sublist in y_samples_true for item in sublist]
 
     # Saving attention scores for every tile in every bag!
     log.write('Writing attention scores to: ' + attention_out_dir)
@@ -400,28 +405,52 @@ def test_model(model, model_save_path_best, model_optimizer, data_loader, X_raw,
         f.close()
     log.write('Finished writing attention scores.')
 
+    # Confidence Matrix
     try:
         log.write('Saving Confidence Matrix')
+        log.write(str(e))
         mil_metrics.plot_conf_matrix(y_true, y_pred, out_dir, target_names=['Control', 'Oligo Diff'],
                                      normalize=False)
         mil_metrics.plot_conf_matrix(y_true, y_pred, out_dir, target_names=['Control', 'Oligo Diff'], normalize=True)
     except Exception as e:
         log.write('Failed to save the Confidence Matrix!')
+        log.write(str(e))
         f = open(attention_out_dir + 'confidence-errors.txt', 'a')
         f.write('\nError: ' + str(e.__class__) + '\n' + str(e))
         f.close()
     log.write('Finished writing confidence Matrix.')
 
-    log.write('Computing and plotting binary ROC-Curve')
+    # ROC Curve
+    log.write('Computing and plotting binary ROC-Curve.')
     try:
-        fpr, tpr, _ = mil_metrics.binary_roc_curve(y_true, y_hats)
-        mil_metrics.plot_binary_roc_curve(fpr, tpr, out_dir)
+        fpr, tpr, thresholds = mil_metrics.binary_roc_curve(y_true, y_hats)
+        mil_metrics.plot_binary_roc_curve(fpr, tpr, thresholds, out_dir, 'Bags')
+
+        fpr, tpr, thresholds = mil_metrics.binary_roc_curve(y_samples_true, y_samples_pred)
+        mil_metrics.plot_binary_roc_curve(fpr, tpr, thresholds, out_dir, 'Samples')
     except Exception as e:
         log.write('Failed to save the ROC curve!')
-        f = open(attention_out_dir + 'roc-error.txt', 'a')
+        log.write(str(e))
+        f = open(out_dir + 'roc-error.txt', 'a')
         f.write('\nError: ' + str(e.__class__) + '\n' + str(e))
         f.close()
-    log.write('Finished writing confidence Matrix.')
+    log.write('Finished writing confidence binary ROC-Curve.')
+
+    # PR Curve
+    log.write('Computing and plotting binary PR-Curve.')
+    try:
+        precision, recall, thresholds = mil_metrics.binary_pr_curve(y_true, y_hats)
+        mil_metrics.plot_binary_pr_curve(precision, recall, thresholds, y_true, out_dir, 'Bags')
+
+        precision, recall, thresholds = mil_metrics.binary_pr_curve(y_samples_true, y_samples_pred)
+        mil_metrics.plot_binary_pr_curve(precision, recall, thresholds, y_samples_true, out_dir, 'Samples')
+    except Exception as e:
+        log.write('Failed to save the PR curve!')
+        log.write(str(e))
+        f = open(out_dir + 'pr-error.txt', 'a')
+        f.write('\nError: ' + str(e.__class__) + '\n' + str(e))
+        f.close()
+    log.write('Finished writing confidence binary PR-Curve.')
 
 
 def print_bag_metadata(X, y, y_tiles, file_name: str):
@@ -472,7 +501,7 @@ def main(debug: bool = False):
         current_global_log_dir = 'U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\'
         log.add_file('U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\all_logs.txt')
 
-        current_max_workers = 5
+        current_max_workers = 10
         current_sources_dir = [default_source_dir_win]
         default_out_dir_base = default_out_dir_win_base
         current_gpu_enabled = False
@@ -495,26 +524,10 @@ def main(debug: bool = False):
                     model_use_max=False,
                     model_enable_attention=True,
                     invert_bag_labels=False,
-                    loss_function='binary_cross_entropy',
+                    positive_bag_min_samples=0,
+                    loss_function='binary_cross_entropy'
                     )
     else:
-        # for m in [True, False]:
-        #     for a in [True, False]:
-        #         for i in [8, 7, 6, 5, 4, 0]:
-        #             train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
-        #                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
-        #                         normalize_enum=i,
-        #                         training_label='16-bit-normalize-' + str(i) + '-bcr-adadelta-useMax-' + str(
-        #                             m) + '-attention-fast-' + str(a),
-        #                         global_log_dir=current_global_log_dir,
-        #                         invert_bag_labels=False,
-        #                         loss_function='binary_cross_entropy',
-        #                         repack_percentage=0.1,
-        #                         optimizer='adadelta',
-        #                         model_enable_attention=a,
-        #                         model_use_max=m,
-        #                         device_ordinals=current_device_ordinals
-        #                         )
         for l in ['binary_cross_entropy', 'negative_log_bernoulli']:
             for o in ['adadelta', 'adam']:
                 for r in [0.15]:
@@ -522,7 +535,7 @@ def main(debug: bool = False):
                         train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                                     max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                                     normalize_enum=i,
-                                    training_label='constrained-attention-' + o + '-' + l + '-normalize-' + str(
+                                    training_label='strongly-constrained-attention-' + o + '-' + l + '-normalize-' + str(
                                         i) + 'repack-' + str(r),
                                     global_log_dir=current_global_log_dir,
                                     invert_bag_labels=False,
@@ -531,7 +544,8 @@ def main(debug: bool = False):
                                     optimizer=o,
                                     model_enable_attention=True,
                                     model_use_max=False,
-                                    tile_constraints_0=loader.tile_constraints_nuclei,
+                                    positive_bag_min_samples=5,
+                                    tile_constraints_0=loader.tile_constraints_oligos,
                                     tile_constraints_1=loader.tile_constraints_oligos,
                                     device_ordinals=current_device_ordinals
                                     )
