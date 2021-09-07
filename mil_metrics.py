@@ -275,6 +275,7 @@ def plot_binary_pr_curve(precision, recall, thresholds, y_true, save_path: str, 
     pr_no_skill = len(y_true[y_true == 1]) / len(y_true)
 
     filename_base = 'pr_curve-' + title
+    log.write('PR-Curve AUC: '+str(pr_auc))
     log.write('Saving "' + title + '" PR to: ' + save_path)
 
     plt.plot([0, 1], [pr_no_skill, pr_no_skill], linestyle='--')
@@ -335,6 +336,7 @@ def plot_binary_roc_curve(fpr, tpr, thresholds, save_path: str, title: str, dpi:
     # Writing ROC curve as image data
     filename_base = 'roc_curve-' + title
     log.write('Saving "' + title + '" ROC to: ' + save_path)
+    log.write('ROC-Curve AUC: ' + str(area))
     plt.savefig(save_path + os.sep + filename_base + '.pdf', dpi=dpi)
     plt.savefig(save_path + os.sep + filename_base + '.png', dpi=dpi)
     plt.savefig(save_path + os.sep + filename_base + '.svg', dpi=dpi)

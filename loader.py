@@ -48,20 +48,32 @@ normalize_enum_descriptions = [
 
 well_regex = '([A-Z]+)(\\d+)'
 
-tile_constraints_none = [0, 0, 0]
-tile_constraints_nuclei = [1, 0, 0]
-tile_constraints_oligos = [0, 1, 0]
-tile_constraints_neurons = [0, 0, 1]
+default_tile_constraints_none = [0, 0, 0]
+default_tile_constraints_nuclei = [1, 0, 0]
+default_tile_constraints_oligos = [0, 1, 0]
+default_tile_constraints_neurons = [0, 0, 1]
+
+default_well_indices_none = []
+default_well_indices_early = [0, 1, 2, 3]
+default_well_indices_late = [7, 8, 9]
 
 
 ####
 
 def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: int, include_raw: bool = True,
-                         constraints_0: [int] = tile_constraints_none, constraints_1: [int] = tile_constraints_none,
-                         label_0_well_indices: [int] = [0, 1, 2, 3, 4], label_1_well_indices: [int] = [7, 8, 9]):
+                         constraints_0: [int] = default_tile_constraints_none,
+                         constraints_1: [int] = default_tile_constraints_none,
+                         label_0_well_indices: [int] = default_well_indices_none, label_1_well_indices: [int] = default_well_indices_none):
     log.write('Looking for multiple source dirs to load json data from.')
     log.write('Batch dir: ' + str(batch_dirs))
     log.write('Normalization Protocol: ' + str(normalize_enum))
+
+    log.write('Well indices label 0: ' + str(label_0_well_indices))
+    log.write('Well indices label 1: ' + str(label_1_well_indices))
+
+    log.write('Tile constraints explained: Minimum number of x [Nuclei, Oligos, Neurons]')
+    log.write('Tile Constraints label 0: ' + str(constraints_0))
+    log.write('Tile Constraints label 1: ' + str(constraints_1))
 
     X_full = None
     X_raw_full = None

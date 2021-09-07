@@ -375,7 +375,8 @@ def choose_optimizer(model: OmniSpheroMil, selection: str) -> Optimizer:
 
 def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: OmniSpheroDataLoader,
         validation_data: OmniSpheroDataLoader, out_dir_base: str, callbacks: [BaseTorchCallback],
-        checkpoint_interval: int = 1, clamp_min: float = None, clamp_max: float = None):
+        checkpoint_interval: int = 1, clamp_min: float = None, clamp_max: float = None,
+        augment_training_data: bool = False, augment_validation_data: bool = False):
     """ Trains a model on the previously preprocessed train and val sets.
     Also calls evaluate in the validation phase of each epoch.
     """
@@ -444,6 +445,10 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         for batch_id, (data, label, tile_labels, bag_index) in enumerate(training_data):
             # torch.cuda.empty_cache()
 
+            # Applying data augmentation, if needed
+            if augment_training_data:
+                data = augment_bag(data)
+
             # Notifying Callbacks
             for i in range(len(callbacks)):
                 callback: BaseTorchCallback = callbacks[i]
@@ -479,7 +484,6 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                 loss = torch.clamp(loss, max=clamp_max)
 
             # https://github.com/yhenon/pytorch-retinanet/issues/3
-
             train_losses.append(float(loss))
             acc, acc_tiles, _, _ = model.compute_accuracy(data, bag_label, tile_labels)
             train_acc.append(float(acc))
@@ -499,7 +503,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
         # VALIDATION PHASE
         result, _, all_losses, all_tile_lists, _ = evaluate(model, validation_data, clamp_max=clamp_max,
-                                                            clamp_min=clamp_min)  # returns a results dict for metrics
+                                                            clamp_min=clamp_min,apply_data_augmentation=augment_validation_data)  # returns a results dict for metrics
         result['train_loss'] = sum(train_losses) / len(train_losses)  # torch.stack(train_losses).mean().item()
         result['train_acc'] = sum(train_acc) / len(train_acc)
         result['train_acc_tiles'] = sum(train_acc_tiles) / len(train_acc_tiles)
@@ -614,7 +618,8 @@ def get_predictions(model: OmniSpheroMil, data_loader: DataLoader):
         original_bag_indices.append(int(original_bag_index.cpu()))
 
         all_tiles_true.append(label_tiles.cpu().numpy()[0])
-        all_y_tiles.append(np.asarray([int(prediction_tiles_binarized[i].cpu()) for i in range(len(prediction_tiles_binarized))]))
+        all_y_tiles.append(
+            np.asarray([int(prediction_tiles_binarized[i].cpu()) for i in range(len(prediction_tiles_binarized))]))
 
         # log.write('Bag Label:' + str(bag_label))
         # log.write('Predicted Label:' + str(predictions.numpy().item()))
@@ -627,7 +632,7 @@ def get_predictions(model: OmniSpheroMil, data_loader: DataLoader):
 
 
 @torch.no_grad()
-def evaluate(model: OmniSpheroMil, data_loader: DataLoader, clamp_max: float = None, clamp_min: float = None):
+def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, clamp_max: float = None, clamp_min: float = None,apply_data_augmentation=False):
     ''' Evaluate model / validation operation
     Can be used for validation within fit as well as testing.
     '''
@@ -676,6 +681,10 @@ def evaluate(model: OmniSpheroMil, data_loader: DataLoader, clamp_max: float = N
     result['val_acc'] = sum(test_acc) / len(test_acc)
     result['val_acc_tiles'] = sum(test_acc_tiles) / len(test_acc_tiles)
     return result, attention_weights, test_losses, acc_tiles_list_list, tiles_prediction_list_list
+
+
+def augment_bag(data):
+    return data
 
 
 # deprecated

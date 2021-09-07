@@ -73,8 +73,11 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
                 shuffle_data_loaders: bool = True, model_enable_attention: bool = False, model_use_max: bool = True,
                 repack_percentage: float = 0.0, global_log_dir: str = None, optimizer: str = 'adadelta',
                 clamp_min: float = None, clamp_max: float = None, positive_bag_min_samples: int = None,
-                tile_constraints_0: [int] = loader.tile_constraints_none,
-                tile_constraints_1: [int] = loader.tile_constraints_none,
+                tile_constraints_0: [int] = loader.default_tile_constraints_none,
+                tile_constraints_1: [int] = loader.default_tile_constraints_none,
+                label_0_well_indices=loader.default_well_indices_none,
+                label_1_well_indices=loader.default_well_indices_none,
+                augment_train: bool = False, augment_validation: bool = False,
                 data_split_percentage_validation: float = 0.3, data_split_percentage_test: float = 0.15,
                 ):
     if out_dir is None:
@@ -103,11 +106,19 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     protocol_f.write('\nMax Loader Workers: ' + str(max_workers))
     protocol_f.write('\nNormalize Enum: ' + str(normalize_enum))
     protocol_f.write('\nGPU Enabled: ' + str(gpu_enabled))
+    protocol_f.write('\nClamp Min: ' + str(clamp_min))
+    protocol_f.write('\nClamp Max: ' + str(clamp_max))
+
+    protocol_f.write('\n\n == Loader Params ==')
     protocol_f.write('\nInvert Bag Labels: ' + str(invert_bag_labels))
     protocol_f.write('\nRepack: Percentage: ' + str(repack_percentage))
     protocol_f.write('\nRepack: Minimum Positive Samples: ' + str(positive_bag_min_samples))
-    protocol_f.write('\nClamp Min: ' + str(clamp_min))
-    protocol_f.write('\nClamp Max: ' + str(clamp_max))
+
+    protocol_f.write('\n\nWell indices label 0: ' + str(label_0_well_indices))
+    protocol_f.write('\nWell indices label 1: ' + str(label_1_well_indices))
+    protocol_f.write('\nTile constraints explained: Minimum number of x [Nuclei, Oligos, Neurons]')
+    protocol_f.write('\nTile Constraints label 0: ' + str(tile_constraints_0))
+    protocol_f.write('\nTile Constraints label 1: ' + str(tile_constraints_1))
 
     global_log_filename = None
     local_log_filename = out_dir + os.sep + 'log.txt'
@@ -133,12 +144,15 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     ################
     # LOADING START
     ################
+    # TODO Write well / label mapping to protocol file!
     loading_start_time = datetime.now()
     X, y, y_tiles, X_raw, errors, loaded_files_list = loader.load_bags_json_batch(batch_dirs=source_dirs,
                                                                                   max_workers=max_workers,
                                                                                   include_raw=True,
                                                                                   constraints_0=tile_constraints_0,
                                                                                   constraints_1=tile_constraints_1,
+                                                                                  label_0_well_indices=label_0_well_indices,
+                                                                                  label_1_well_indices=label_1_well_indices,
                                                                                   normalize_enum=normalize_enum)
     X = [np.einsum('bhwc->bchw', bag) for bag in X]
     X_raw = [np.einsum('bhwc->bchw', bag) for bag in X_raw]
@@ -288,15 +302,24 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     log.write('Finished loading data and model')
     log.write('Optimizer: ' + str(model_optimizer))
 
+    # Data Augmentation
+    f = open(out_dir + 'data_augmentation.txt', 'w')
+    f.write('## Augmentation Train:\n' + str(augment_train) + '\n\n')
+    f.write('## Augmentation Validation:\n' + str(augment_validation) + '\n\n')
+    f.close()
+
     ################
     # DATA START
     ################
     # Data Generators
     test_dl = None
-    train_dl = OmniSpheroDataLoader(training_data, batch_size=1, shuffle=shuffle_data_loaders, **loader_kwargs)
-    validation_dl = OmniSpheroDataLoader(validation_data, batch_size=1, shuffle=shuffle_data_loaders, **loader_kwargs)
+    train_dl = OmniSpheroDataLoader(training_data, batch_size=1, shuffle=shuffle_data_loaders,
+                                    transform_enabled=augment_train, transform_data_saver=False, **loader_kwargs)
+    validation_dl = OmniSpheroDataLoader(validation_data, batch_size=1, transform_enabled=augment_validation,
+                                         shuffle=shuffle_data_loaders, transform_data_saver=False, **loader_kwargs)
     if data_split_percentage_test is not None:
-        test_dl = OmniSpheroDataLoader(test_data, batch_size=1, shuffle=shuffle_data_loaders, **loader_kwargs)
+        test_dl = OmniSpheroDataLoader(test_data, batch_size=1, shuffle=shuffle_data_loaders,
+                                       transform_data_saver=False, **loader_kwargs, transform_enabled=False)
 
     del training_data, validation_data, test_data
     # test_dl = DataLoader(test_data, batch_size=1, shuffle=True, **loader_kwargs)
@@ -378,7 +401,8 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     # Noting more to do beyond this point
 
 
-def test_model(model, model_save_path_best, model_optimizer, data_loader, X_raw, y_tiles, out_dir):
+def test_model(model, model_save_path_best, model_optimizer, data_loader: OmniSpheroDataLoader, X_raw, y_tiles,
+               out_dir):
     attention_out_dir = out_dir + os.sep + 'attention' + os.sep
     os.makedirs(attention_out_dir, exist_ok=True)
     os.makedirs(out_dir, exist_ok=True)
@@ -390,6 +414,10 @@ def test_model(model, model_save_path_best, model_optimizer, data_loader, X_raw,
     # Flattening sample predictions
     y_samples_pred = [item for sublist in y_samples_pred for item in sublist]
     y_samples_true = [item for sublist in y_samples_true for item in sublist]
+
+    # Disabling data augmentation during testing
+    transform_cache = data_loader.transform_enabled
+    data_loader.transform_enabled = False
 
     # Saving attention scores for every tile in every bag!
     log.write('Writing attention scores to: ' + attention_out_dir)
@@ -408,7 +436,6 @@ def test_model(model, model_save_path_best, model_optimizer, data_loader, X_raw,
     # Confidence Matrix
     try:
         log.write('Saving Confidence Matrix')
-        log.write(str(e))
         mil_metrics.plot_conf_matrix(y_true, y_pred, out_dir, target_names=['Control', 'Oligo Diff'],
                                      normalize=False)
         mil_metrics.plot_conf_matrix(y_true, y_pred, out_dir, target_names=['Control', 'Oligo Diff'], normalize=True)
@@ -452,6 +479,9 @@ def test_model(model, model_save_path_best, model_optimizer, data_loader, X_raw,
         f.close()
     log.write('Finished writing confidence binary PR-Curve.')
 
+    # Resetting augmentation status
+    data_loader.transform_enabled = transform_cache
+
 
 def print_bag_metadata(X, y, y_tiles, file_name: str):
     f = open(file_name, 'w')
@@ -485,7 +515,7 @@ def main(debug: bool = False):
         debug = True
     print('Debug mode: ' + str(debug))
 
-    current_epochs = 800
+    current_epochs = 2500
     current_max_workers = 35
     default_out_dir_base = default_out_dir_unix_base
     current_sources_dir = default_source_dirs_unix
@@ -525,30 +555,44 @@ def main(debug: bool = False):
                     model_enable_attention=True,
                     invert_bag_labels=False,
                     positive_bag_min_samples=0,
+                    augment_validation=True,
+                    augment_train=True,
+                    label_1_well_indices=loader.default_well_indices_early,
+                    label_0_well_indices=loader.default_well_indices_late,
                     loss_function='binary_cross_entropy'
                     )
     else:
-        for l in ['binary_cross_entropy', 'negative_log_bernoulli']:
-            for o in ['adadelta', 'adam']:
+        for l in ['binary_cross_entropy']:
+            for o in ['adadelta']:
                 for r in [0.15]:
-                    for i in [5, 7, 6, 3, 4]:
-                        train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
-                                    max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
-                                    normalize_enum=i,
-                                    training_label='strongly-constrained-attention-' + o + '-' + l + '-normalize-' + str(
-                                        i) + 'repack-' + str(r),
-                                    global_log_dir=current_global_log_dir,
-                                    invert_bag_labels=False,
-                                    loss_function=l,
-                                    repack_percentage=r,
-                                    optimizer=o,
-                                    model_enable_attention=True,
-                                    model_use_max=False,
-                                    positive_bag_min_samples=5,
-                                    tile_constraints_0=loader.tile_constraints_oligos,
-                                    tile_constraints_1=loader.tile_constraints_oligos,
-                                    device_ordinals=current_device_ordinals
-                                    )
+                    for i in [5, 7, 6]:
+                        for aug in [[True, True]]:  # , [True, False], [False, True]]:
+                            augment_validation = aug[0]
+                            augment_train = aug[1]
+
+                            train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
+                                        max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
+                                        normalize_enum=i,
+                                        training_label='inverted-constrained-av-' + str(
+                                            augment_validation) + '-at-' + str(
+                                            augment_train) + '-attention-' + o + '-' + l + '-normalize-' + str(
+                                            i) + 'repack-' + str(r),
+                                        global_log_dir=current_global_log_dir,
+                                        invert_bag_labels=False,
+                                        loss_function=l,
+                                        repack_percentage=r,
+                                        optimizer=o,
+                                        model_enable_attention=True,
+                                        augment_validation=augment_validation,
+                                        augment_train=augment_train,
+                                        model_use_max=False,
+                                        positive_bag_min_samples=5,
+                                        tile_constraints_0=loader.default_tile_constraints_oligos,
+                                        tile_constraints_1=loader.default_tile_constraints_oligos,
+                                        label_1_well_indices=loader.default_well_indices_early,
+                                        label_0_well_indices=loader.default_well_indices_late,
+                                        device_ordinals=current_device_ordinals
+                                        )
     log.write('Finished every training!')
 
 
