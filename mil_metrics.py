@@ -275,7 +275,7 @@ def plot_binary_pr_curve(precision, recall, thresholds, y_true, save_path: str, 
     pr_no_skill = len(y_true[y_true == 1]) / len(y_true)
 
     filename_base = 'pr_curve-' + title
-    log.write('PR-Curve AUC: '+str(pr_auc))
+    log.write('PR-Curve AUC: ' + str(pr_auc))
     log.write('Saving "' + title + '" PR to: ' + save_path)
 
     plt.plot([0, 1], [pr_no_skill, pr_no_skill], linestyle='--')
@@ -415,7 +415,12 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
         for j in range(tile_count):
             current_tile = raw_bag[j]
             attention = tile_attentions[j]
-            normalized_attention = (attention - tile_attentions.min()) / (tile_attentions.max() - tile_attentions.min())
+
+            if tile_attentions.max() == 0:
+                normalized_attention = 0
+            else:
+                normalized_attention = (attention - tile_attentions.min()) / (
+                            tile_attentions.max() - tile_attentions.min())
 
             correct_tiles = float(correct_tiles + float(y_tile_predictions[j] == y_tile_predictions_true[j]))
 

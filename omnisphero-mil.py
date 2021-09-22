@@ -12,6 +12,7 @@ import hardware
 import loader
 import mil_metrics
 import models
+import omnisphero_mining
 import torch_callbacks
 from models import BaselineMIL
 from util import log
@@ -79,6 +80,8 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
                 label_1_well_indices=loader.default_well_indices_none,
                 augment_train: bool = False, augment_validation: bool = False,
                 data_split_percentage_validation: float = 0.3, data_split_percentage_test: float = 0.15,
+                use_hard_negative_mining: bool = True, hnm_magnitude: float = 5.0, hnm_mult=0.15,
+                writing_metrics_enabled: bool = True, testing_model_enabled: bool = True
                 ):
     if out_dir is None:
         out_dir = source_dirs[0] + os.sep + 'training_results'
@@ -92,6 +95,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
 
     print('Model classification - Use Max: ' + str(model_use_max))
     print('Model classification - Use Attention: ' + str(model_enable_attention))
+    print('Model classification - Use HNM: ' + str(use_hard_negative_mining))
 
     print('Saving logs and protocols to: ' + out_dir)
     # Logging params and args
@@ -106,6 +110,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     protocol_f.write('\nMax Loader Workers: ' + str(max_workers))
     protocol_f.write('\nNormalize Enum: ' + str(normalize_enum))
     protocol_f.write('\nGPU Enabled: ' + str(gpu_enabled))
+    protocol_f.write('\nHNM Enabled: ' + str(use_hard_negative_mining))
     protocol_f.write('\nClamp Min: ' + str(clamp_min))
     protocol_f.write('\nClamp Max: ' + str(clamp_max))
 
@@ -135,6 +140,9 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     protocol_f.write('\nOut dir: ' + str(out_dir))
     protocol_f.write('\nMetrics dir: ' + str(metrics_dir))
     protocol_f.write('\nPreview tiles: ' + str(loading_preview_dir))
+
+    print('==== List of Source Dirs: =====')
+    [print(str(p)) for p in source_dirs]
 
     protocol_f.write('\n\n == GPU Status ==')
     for line in hardware.print_gpu_status(silent=True):
@@ -248,7 +256,6 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     # Train-Test Split
     log.write('Shuffling and splitting data into train and val set')
     test_data = []
-    test_data_tiles = None
     training_data, validation_data = shuffle_and_split_data(dataset,
                                                             split_percentage=data_split_percentage_validation)
     if data_split_percentage_test is not None and data_split_percentage_test > 0:
@@ -321,7 +328,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         test_dl = OmniSpheroDataLoader(test_data, batch_size=1, shuffle=shuffle_data_loaders,
                                        transform_data_saver=False, **loader_kwargs, transform_enabled=False)
 
-    del training_data, validation_data, test_data
+    del validation_data, test_data
     # test_dl = DataLoader(test_data, batch_size=1, shuffle=True, **loader_kwargs)
 
     # Callbacks
@@ -365,26 +372,107 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
                                                              clamp_min=clamp_min, clamp_max=clamp_max,
                                                              callbacks=callbacks)
     log.write('Finished training!')
-    del train_dl
 
-    log.write('Plotting and saving loss and acc plots...')
-    mil_metrics.write_history(history, history_keys, metrics_dir)
-    mil_metrics.plot_losses(history, metrics_dir, include_raw=True, include_tikz=True, clamp=2.0)
-    mil_metrics.plot_accuracy(history, metrics_dir, include_raw=True, include_tikz=True)
-    mil_metrics.plot_accuracy_tiles(history, metrics_dir, include_raw=True, include_tikz=True)
-    mil_metrics.plot_accuracies(history, metrics_dir, include_tikz=True)
+    if not use_hard_negative_mining:
+        # Not mining, so we can delete the training data early to save on resources
+        del train_dl, training_data
+        training_data = None
+        train_dl = None
+
+    if writing_metrics_enabled:
+        log.write('Plotting and saving loss and acc plots...')
+        mil_metrics.write_history(history, history_keys, metrics_dir)
+        mil_metrics.plot_losses(history, metrics_dir, include_raw=True, include_tikz=True, clamp=2.0)
+        mil_metrics.plot_accuracy(history, metrics_dir, include_raw=True, include_tikz=True)
+        mil_metrics.plot_accuracy_tiles(history, metrics_dir, include_raw=True, include_tikz=True)
+        mil_metrics.plot_accuracies(history, metrics_dir, include_tikz=True)
 
     ##################
     # TESTING START
     ##################
-    log.write('Testing best model on validation and test data to determine performance')
-    test_dir = out_dir + 'metrics' + os.sep + 'performance-validation-data' + os.sep
-    test_model(model, model_save_path_best, model_optimizer, data_loader=validation_dl, out_dir=test_dir, X_raw=X_raw,
-               y_tiles=y_tiles)
-    if data_split_percentage_test > 0:
-        test_dir = out_dir + 'metrics' + os.sep + 'performance-test-data' + os.sep
-        test_model(model, model_save_path_best, model_optimizer, data_loader=test_dl, out_dir=test_dir, X_raw=X_raw,
+    if testing_model_enabled:
+        log.write('Testing best model on validation and test data to determine performance')
+        test_dir = out_dir + 'metrics' + os.sep + 'performance-validation-data' + os.sep
+        test_model(model, model_save_path_best, model_optimizer, data_loader=validation_dl, out_dir=test_dir,
+                   X_raw=X_raw,
                    y_tiles=y_tiles)
+        if data_split_percentage_test > 0:
+            test_dir = out_dir + 'metrics' + os.sep + 'performance-test-data' + os.sep
+            test_model(model, model_save_path_best, model_optimizer, data_loader=test_dl, out_dir=test_dir, X_raw=X_raw,
+                       y_tiles=y_tiles)
+
+    ########################
+    # HARD NEGATIVE MINING
+    ########################
+    if use_hard_negative_mining:
+        log.write('[0/4] Hard Negative Mining: Pre-Processing')
+        # Hard Negative Mining
+        # train_dl.transform_enabled = False
+
+        log.write('[1/4] Hard Negative Mining: Finding false positives')
+        false_positive_bags, attention_weights_list = omnisphero_mining.get_false_positive_bags(trained_model=model,
+                                                                                                train_dl=train_dl)
+
+        log.write('[2/4] Hard Negative Mining: Finding hard negatives')
+        hard_negative_instances = omnisphero_mining.determine_hard_negative_instances(
+            false_positive_bags=false_positive_bags, attention_weights=attention_weights_list, magnitude=hnm_magnitude)
+        if not len(hard_negative_instances):
+            log.write('[?/?] Hard Negative Mining: No hard negative instances found!')
+            return
+
+        log.write('[3/4] Hard Negative Mining: Creating new bags')
+        n_clusters = math.ceil(len(training_data * hnm_mult) + 1)
+        new_bags = omnisphero_mining.new_bag_generation(hard_negative_instances, training_data, n_clusters=n_clusters)
+
+        log.write('[4/4] Hard Negative Mining: Adding new bags to the dataset')
+        training_data = omnisphero_mining.add_back_to_dataset(training_data, new_bags)
+
+        # Fitting a new model with the mined bags
+        train_dl = OmniSpheroDataLoader(training_data, batch_size=1, shuffle=shuffle_data_loaders,
+                                        transform_enabled=augment_train, transform_data_saver=False, **loader_kwargs)
+
+        mined_out_dir = out_dir + os.sep + 'hnm' + os.sep
+        os.makedirs(mined_out_dir, exist_ok=True)
+        epochs = math.ceil(epochs * 1.5)
+
+        f = open(mined_out_dir + 'mining.txt')
+        f.write('Hard Negative Mining parameters:')
+        f.write('\nMining dir: ' + mined_out_dir)
+        f.write('\nEpochs: ' + str(epochs))
+        f.write('\nTraining data training bag mult: ' + str(hnm_mult))
+        f.write('\nTraining data new bag count: ' + str(n_clusters))
+        f.close()
+
+        history, history_keys, model_save_path_best = models.fit(model=model, optimizer=model_optimizer, epochs=epochs,
+                                                                 training_data=train_dl,
+                                                                 validation_data=validation_dl,
+                                                                 out_dir_base=mined_out_dir,
+                                                                 checkpoint_interval=None,
+                                                                 clamp_min=clamp_min, clamp_max=clamp_max,
+                                                                 callbacks=callbacks)
+
+        # Plotting HNM metrics
+        log.write('Plotting HNM and saving loss and acc plots...')
+        metrics_dir = mined_out_dir + os.sep + 'metrics' + os.sep
+        os.makedirs(metrics_dir, exist_ok=True)
+
+        mil_metrics.write_history(history, history_keys, metrics_dir)
+        mil_metrics.plot_losses(history, metrics_dir, include_raw=True, include_tikz=True, clamp=2.0)
+        mil_metrics.plot_accuracy(history, metrics_dir, include_raw=True, include_tikz=True)
+        mil_metrics.plot_accuracy_tiles(history, metrics_dir, include_raw=True, include_tikz=True)
+        mil_metrics.plot_accuracies(history, metrics_dir, include_tikz=True)
+
+        # Testing HNM models on test data
+        log.write('Testing HNM best model on validation and test data to determine performance')
+        test_dir = mined_out_dir + 'metrics' + os.sep + 'performance-validation-data' + os.sep
+        test_model(model, model_save_path_best, model_optimizer, data_loader=validation_dl, out_dir=test_dir,
+                   X_raw=X_raw, y_tiles=y_tiles)
+        if data_split_percentage_test > 0:
+            test_dir = mined_out_dir + 'metrics' + os.sep + 'performance-test-data' + os.sep
+            test_model(model, model_save_path_best, model_optimizer, data_loader=test_dl, out_dir=test_dir, X_raw=X_raw,
+                       y_tiles=y_tiles)
+
+    del train_dl, training_data
 
     ##################################
     # FINISHED TRAINING - Cleaning up
@@ -559,7 +647,9 @@ def main(debug: bool = False):
                     augment_train=True,
                     label_1_well_indices=loader.default_well_indices_early,
                     label_0_well_indices=loader.default_well_indices_late,
-                    loss_function='binary_cross_entropy'
+                    loss_function='binary_cross_entropy',
+                    testing_model_enabled=False,
+                    writing_metrics_enabled=False
                     )
     else:
         for l in ['binary_cross_entropy']:
@@ -573,7 +663,7 @@ def main(debug: bool = False):
                             train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                                         normalize_enum=i,
-                                        training_label='inverted-constrained-av-' + str(
+                                        training_label='hnm-inverted-constrained-av-' + str(
                                             augment_validation) + '-at-' + str(
                                             augment_train) + '-attention-' + o + '-' + l + '-normalize-' + str(
                                             i) + 'repack-' + str(r),
