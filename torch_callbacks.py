@@ -37,6 +37,9 @@ class BaseTorchCallback:
     def request_cancellation(self):
         self.__request_cancellation = True
 
+    def reset(self):
+        pass
+
     def __str__(self) -> str:
         return "Torch Callback: " + self._describe()
 
@@ -55,6 +58,11 @@ class EarlyStopping(BaseTorchCallback):
         self.metric: str = metric
         self.epoch_threshold: int = epoch_threshold
 
+        self.epochs_without_improvement = 0
+        self.best_metric = sys.float_info.max
+        self.reset()
+
+    def reset(self):
         self.epochs_without_improvement = 0
         self.best_metric = sys.float_info.max
 

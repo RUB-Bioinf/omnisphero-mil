@@ -333,8 +333,11 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
 
     # Callbacks
     callbacks = []
+    hnm_callbacks = []
     callbacks.append(torch_callbacks.EarlyStopping(epoch_threshold=int(epochs / 5 + 1)))
     callbacks.append(torch_callbacks.UnreasonableLossCallback(loss_max=40.0))
+    hnm_callbacks.append(torch_callbacks.EarlyStopping(epoch_threshold=int(epochs / 5 + 1)))
+    hnm_callbacks.append(torch_callbacks.UnreasonableLossCallback(loss_max=40.0))
 
     protocol_f.write('\n\n == Model Information==')
     protocol_f.write('\nDevice Ordinals: ' + str(device_ordinals))
@@ -410,22 +413,29 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         # train_dl.transform_enabled = False
 
         log.write('[1/4] Hard Negative Mining: Finding false positives')
-        false_positive_bags, attention_weights_list = omnisphero_mining.get_false_positive_bags(trained_model=model,
-                                                                                                train_dl=train_dl)
+        false_positive_bags, attention_weights_list, false_positive_bags_raw = omnisphero_mining.get_false_positive_bags(
+            trained_model=model,
+            train_dl=train_dl,
+            X_raw=X_raw)
 
         log.write('[2/4] Hard Negative Mining: Finding hard negatives')
-        hard_negative_instances = omnisphero_mining.determine_hard_negative_instances(
-            false_positive_bags=false_positive_bags, attention_weights=attention_weights_list, magnitude=hnm_magnitude)
+        hard_negative_instances, hard_negative_instances_raw = omnisphero_mining.determine_hard_negative_instances(
+            false_positive_bags=false_positive_bags, attention_weights=attention_weights_list,
+            false_positive_bags_raw=false_positive_bags_raw,
+            magnitude=hnm_magnitude)
         if not len(hard_negative_instances):
             log.write('[?/?] Hard Negative Mining: No hard negative instances found!')
             return
 
         log.write('[3/4] Hard Negative Mining: Creating new bags')
-        n_clusters = math.ceil(len(training_data * hnm_mult) + 1)
-        new_bags = omnisphero_mining.new_bag_generation(hard_negative_instances, training_data, n_clusters=n_clusters)
+        n_clusters = math.ceil(len(training_data) * hnm_mult + 1)
+        new_bags, new_bags_raw = omnisphero_mining.new_bag_generation(hard_negative_instances, training_data,
+                                                                      hard_negative_instances_raw=hard_negative_instances_raw,
+                                                                      n_clusters=n_clusters)
 
         log.write('[4/4] Hard Negative Mining: Adding new bags to the dataset')
-        training_data = omnisphero_mining.add_back_to_dataset(training_data, new_bags)
+        training_data, X_raw = omnisphero_mining.add_back_to_dataset(training_ds=training_data, new_bags=new_bags,
+                                                                     X_raw=X_raw, new_bags_raw=new_bags_raw)
 
         # Fitting a new model with the mined bags
         train_dl = OmniSpheroDataLoader(training_data, batch_size=1, shuffle=shuffle_data_loaders,
@@ -435,7 +445,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         os.makedirs(mined_out_dir, exist_ok=True)
         epochs = math.ceil(epochs * 1.5)
 
-        f = open(mined_out_dir + 'mining.txt')
+        f = open(mined_out_dir + 'mining.txt', 'w')
         f.write('Hard Negative Mining parameters:')
         f.write('\nMining dir: ' + mined_out_dir)
         f.write('\nEpochs: ' + str(epochs))
@@ -443,13 +453,14 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         f.write('\nTraining data new bag count: ' + str(n_clusters))
         f.close()
 
+        print('Fitting a new model using HNM bags!')
         history, history_keys, model_save_path_best = models.fit(model=model, optimizer=model_optimizer, epochs=epochs,
                                                                  training_data=train_dl,
                                                                  validation_data=validation_dl,
                                                                  out_dir_base=mined_out_dir,
                                                                  checkpoint_interval=None,
                                                                  clamp_min=clamp_min, clamp_max=clamp_max,
-                                                                 callbacks=callbacks)
+                                                                 callbacks=hnm_callbacks)
 
         # Plotting HNM metrics
         log.write('Plotting HNM and saving loss and acc plots...')
