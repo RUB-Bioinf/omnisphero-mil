@@ -7,6 +7,7 @@ from sys import getsizeof
 
 import numpy as np
 import torch
+from torch.optim import Optimizer
 
 import hardware
 import loader
@@ -154,14 +155,14 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     ################
     # TODO Write well / label mapping to protocol file!
     loading_start_time = datetime.now()
-    X, y, y_tiles, X_raw, errors, loaded_files_list = loader.load_bags_json_batch(batch_dirs=source_dirs,
-                                                                                  max_workers=max_workers,
-                                                                                  include_raw=True,
-                                                                                  constraints_0=tile_constraints_0,
-                                                                                  constraints_1=tile_constraints_1,
-                                                                                  label_0_well_indices=label_0_well_indices,
-                                                                                  label_1_well_indices=label_1_well_indices,
-                                                                                  normalize_enum=normalize_enum)
+    X, y, y_tiles, X_raw, bag_names, errors, loaded_files_list = loader.load_bags_json_batch(batch_dirs=source_dirs,
+                                                                                             max_workers=max_workers,
+                                                                                             include_raw=True,
+                                                                                             constraints_0=tile_constraints_0,
+                                                                                             constraints_1=tile_constraints_1,
+                                                                                             label_0_well_indices=label_0_well_indices,
+                                                                                             label_1_well_indices=label_1_well_indices,
+                                                                                             normalize_enum=normalize_enum)
     X = [np.einsum('bhwc->bchw', bag) for bag in X]
     X_raw = [np.einsum('bhwc->bchw', bag) for bag in X_raw]
     # Hint: Dim should be (xxx, 3, 150, 150)
@@ -181,8 +182,10 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         line_print('Writing loading preview: ' + str(i + 1) + '/' + str(len(X)), include_in_log=False)
         current_x: np.ndarray = X[i]
         j = random.randint(0, current_x.shape[0] - 1)
+        current_bag_name = bag_names[i]
+        preview_image_file_base = loading_preview_dir + 'preview_' + str(i) + '-' + current_bag_name + '-' + str(
+            j) + '_' + str(y[i])
 
-        preview_image_file_base = loading_preview_dir + 'preview_' + str(i) + '-' + str(j) + '_' + str(y[i])
         current_x = current_x[j]
         current_x: np.ndarray = np.einsum('abc->cba', current_x)
         if current_x.min() >= 0 and current_x.max() <= 1:
@@ -241,12 +244,13 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     # Printing Bag Shapes
     # Setting up bags for MIL
     if repack_percentage > 0:
-        print_bag_metadata(X, y, y_tiles, file_name=out_dir + 'bags_pre-packed.csv')
-        X, X_raw, y, y_tiles = loader.repack_bags_merge(X, X_raw, y, repack_percentage=repack_percentage,
-                                                        positive_bag_min_samples=positive_bag_min_samples)
-        print_bag_metadata(X, y, y_tiles, file_name=out_dir + 'bags_repacked.csv')
+        print_bag_metadata(X, y, y_tiles, bag_names, file_name=out_dir + 'bags_pre-packed.csv')
+        X, X_raw, y, y_tiles, bag_names = loader.repack_bags_merge(X, X_raw, y, bag_names,
+                                                                   repack_percentage=repack_percentage,
+                                                                   positive_bag_min_samples=positive_bag_min_samples)
+        print_bag_metadata(X, y, y_tiles, bag_names, file_name=out_dir + 'bags_repacked.csv')
     else:
-        print_bag_metadata(X, y, y_tiles, file_name=out_dir + 'bags.csv')
+        print_bag_metadata(X, y, y_tiles, bag_names, file_name=out_dir + 'bags.csv')
 
     # Setting up datasets
     dataset, input_dim = loader.convert_bag_to_batch(X, y, y_tiles)
@@ -279,7 +283,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         test_data_tiles: int = sum([test_data[i][0].shape[0] for i in range(len(test_data))])
         log.write('Test data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.')
         f.write('Test data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.\n')
-        protocol_f.write('Test data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.')
+        protocol_f.write('\nTest data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.')
     f.close()
 
     # Loading Hardware Device
@@ -302,7 +306,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     data_loader_cores = 0
     data_loader_pin_memory = False
     if torch.cuda.is_available():
-        #    #model.cuda()
+        # model.cuda()
         loader_kwargs = {'num_workers': data_loader_cores, 'pin_memory': data_loader_pin_memory}
 
     model_optimizer = models.choose_optimizer(model, selection=optimizer)
@@ -397,12 +401,11 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         log.write('Testing best model on validation and test data to determine performance')
         test_dir = out_dir + 'metrics' + os.sep + 'performance-validation-data' + os.sep
         test_model(model, model_save_path_best, model_optimizer, data_loader=validation_dl, out_dir=test_dir,
-                   X_raw=X_raw,
-                   y_tiles=y_tiles)
+                   bag_names=bag_names, X_raw=X_raw, y_tiles=y_tiles)
         if data_split_percentage_test > 0:
             test_dir = out_dir + 'metrics' + os.sep + 'performance-test-data' + os.sep
             test_model(model, model_save_path_best, model_optimizer, data_loader=test_dl, out_dir=test_dir, X_raw=X_raw,
-                       y_tiles=y_tiles)
+                       bag_names=bag_names, y_tiles=y_tiles)
 
     ########################
     # HARD NEGATIVE MINING
@@ -429,13 +432,17 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
 
         log.write('[3/4] Hard Negative Mining: Creating new bags')
         n_clusters = math.ceil(len(training_data) * hnm_mult + 1)
-        new_bags, new_bags_raw = omnisphero_mining.new_bag_generation(hard_negative_instances, training_data,
-                                                                      hard_negative_instances_raw=hard_negative_instances_raw,
-                                                                      n_clusters=n_clusters)
+        new_bags, new_bags_raw, new_bag_names = omnisphero_mining.new_bag_generation(hard_negative_instances,
+                                                                                     training_data,
+                                                                                     hard_negative_instances_raw=hard_negative_instances_raw,
+                                                                                     n_clusters=n_clusters)
 
         log.write('[4/4] Hard Negative Mining: Adding new bags to the dataset')
-        training_data, X_raw = omnisphero_mining.add_back_to_dataset(training_ds=training_data, new_bags=new_bags,
-                                                                     X_raw=X_raw, new_bags_raw=new_bags_raw)
+        training_data, X_raw, bag_names = omnisphero_mining.add_back_to_dataset(training_ds=training_data,
+                                                                                new_bags=new_bags,
+                                                                                new_bag_names=new_bag_names,
+                                                                                X_raw=X_raw, new_bags_raw=new_bags_raw,
+                                                                                bag_names=bag_names)
 
         # Fitting a new model with the mined bags
         train_dl = OmniSpheroDataLoader(training_data, batch_size=1, shuffle=shuffle_data_loaders,
@@ -477,11 +484,11 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         log.write('Testing HNM best model on validation and test data to determine performance')
         test_dir = mined_out_dir + 'metrics' + os.sep + 'performance-validation-data' + os.sep
         test_model(model, model_save_path_best, model_optimizer, data_loader=validation_dl, out_dir=test_dir,
-                   X_raw=X_raw, y_tiles=y_tiles)
+                   bag_names=bag_names, X_raw=X_raw, y_tiles=y_tiles)
         if data_split_percentage_test > 0:
             test_dir = mined_out_dir + 'metrics' + os.sep + 'performance-test-data' + os.sep
             test_model(model, model_save_path_best, model_optimizer, data_loader=test_dl, out_dir=test_dir, X_raw=X_raw,
-                       y_tiles=y_tiles)
+                       bag_names=bag_names, y_tiles=y_tiles)
 
     del train_dl, training_data
 
@@ -500,9 +507,10 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     # Noting more to do beyond this point
 
 
-def test_model(model, model_save_path_best, model_optimizer, data_loader: OmniSpheroDataLoader, X_raw, y_tiles,
-               out_dir):
-    attention_out_dir = out_dir + os.sep + 'attention' + os.sep
+def test_model(model: models.OmniSpheroMil, model_save_path_best: str, model_optimizer: Optimizer,
+               data_loader: OmniSpheroDataLoader, X_raw: [np.ndarray], y_tiles: [int],
+               bag_names: [str], out_dir: str):
+    attention_out_dir = out_dir + 'attention' + os.sep
     os.makedirs(attention_out_dir, exist_ok=True)
     os.makedirs(out_dir, exist_ok=True)
 
@@ -521,9 +529,9 @@ def test_model(model, model_save_path_best, model_optimizer, data_loader: OmniSp
     # Saving attention scores for every tile in every bag!
     log.write('Writing attention scores to: ' + attention_out_dir)
     try:
-        mil_metrics.save_tile_attention(out_dir=attention_out_dir, model=model, normalized=True,
+        mil_metrics.save_tile_attention(out_dir=attention_out_dir, model=model, normalized=True, bag_names=bag_names,
                                         dataset=data_loader, X_raw=X_raw, y_tiles=y_tiles)
-        mil_metrics.save_tile_attention(out_dir=attention_out_dir, model=model, normalized=False,
+        mil_metrics.save_tile_attention(out_dir=attention_out_dir, model=model, normalized=False, bag_names=bag_names,
                                         dataset=data_loader, X_raw=X_raw, y_tiles=y_tiles)
     except Exception as e:
         log.write('Failed to save the attention score for every tile!')
@@ -535,9 +543,9 @@ def test_model(model, model_save_path_best, model_optimizer, data_loader: OmniSp
     # Confidence Matrix
     try:
         log.write('Saving Confidence Matrix')
-        mil_metrics.plot_conf_matrix(y_true, y_pred, out_dir, target_names=['Control', 'Oligo Diff'],
+        mil_metrics.plot_conf_matrix(y_true, y_pred, out_dir, target_names=['Class 0', 'Class 1'],
                                      normalize=False)
-        mil_metrics.plot_conf_matrix(y_true, y_pred, out_dir, target_names=['Control', 'Oligo Diff'], normalize=True)
+        mil_metrics.plot_conf_matrix(y_true, y_pred, out_dir, target_names=['Class 0', 'class 1'], normalize=True)
     except Exception as e:
         log.write('Failed to save the Confidence Matrix!')
         log.write(str(e))
@@ -582,9 +590,9 @@ def test_model(model, model_save_path_best, model_optimizer, data_loader: OmniSp
     data_loader.transform_enabled = transform_cache
 
 
-def print_bag_metadata(X, y, y_tiles, file_name: str):
+def print_bag_metadata(X, y, y_tiles, bag_names, file_name: str):
     f = open(file_name, 'w')
-    f.write(';Bag;Label;Tile Labels (Sum);Memory Raw;Memory Formatted;Shape;Shape;Shape;Shape')
+    f.write(';Bag;Label;Tile Labels (Sum);Name;Memory Raw;Memory Formatted;Shape;Shape;Shape;Shape')
 
     y0 = len(np.where(np.asarray(y) == 0)[0])
     y1 = len(np.where(np.asarray(y) == 1)[0])
@@ -595,12 +603,13 @@ def print_bag_metadata(X, y, y_tiles, file_name: str):
         current_X = X[i]
         x_size = x_size + current_X.nbytes
         x_size_converted = utils.convert_size(current_X.nbytes)
+        bag_name = bag_names[i]
 
         shapes = ';'.join([str(s) for s in current_X.shape])
         bag_count = bag_count + current_X.shape[0]
 
         # print('Bag #' + str(i + 1) + ': ', shapes, ' -> label: ', str(y[i]))
-        f.write('\n;' + str(i) + ';' + str(y[i]) + ';' + str(sum(y_tiles[i])) + ';' + str(
+        f.write('\n;' + str(i) + ';' + str(y[i]) + ';' + str(sum(y_tiles[i])) + ';' + bag_name + ';' + str(
             current_X.nbytes) + ';' + x_size_converted + ';' + shapes)
 
     f.write('\n' + 'Sum;' + str(len(X)) + ';0: ' + str(y0) + ';' + str(x_size) + ';' + utils.convert_size(
@@ -659,14 +668,14 @@ def main(debug: bool = False):
                     label_1_well_indices=loader.default_well_indices_early,
                     label_0_well_indices=loader.default_well_indices_late,
                     loss_function='binary_cross_entropy',
-                    testing_model_enabled=False,
-                    writing_metrics_enabled=False
+                    testing_model_enabled=True,
+                    writing_metrics_enabled=True
                     )
     else:
         for l in ['binary_cross_entropy']:
             for o in ['adadelta']:
                 for r in [0.15]:
-                    for i in [5, 7, 6]:
+                    for i in [9, 10]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
                             augment_train = aug[1]
@@ -674,9 +683,7 @@ def main(debug: bool = False):
                             train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                                         normalize_enum=i,
-                                        training_label='hnm-inverted-constrained-av-' + str(
-                                            augment_validation) + '-at-' + str(
-                                            augment_train) + '-attention-' + o + '-' + l + '-normalize-' + str(
+                                        training_label='hnm-constrained-attention-' + l + '-normalize-' + str(
                                             i) + 'repack-' + str(r),
                                         global_log_dir=current_global_log_dir,
                                         invert_bag_labels=False,
@@ -688,10 +695,10 @@ def main(debug: bool = False):
                                         augment_train=augment_train,
                                         model_use_max=False,
                                         positive_bag_min_samples=5,
-                                        tile_constraints_0=loader.default_tile_constraints_oligos,
-                                        tile_constraints_1=loader.default_tile_constraints_oligos,
-                                        label_1_well_indices=loader.default_well_indices_early,
-                                        label_0_well_indices=loader.default_well_indices_late,
+                                        tile_constraints_0=loader.default_tile_constraints_nuclei,
+                                        tile_constraints_1=loader.default_tile_constraints_nuclei,
+                                        label_1_well_indices=loader.default_well_indices_late,
+                                        label_0_well_indices=loader.default_well_indices_early,
                                         device_ordinals=current_device_ordinals
                                         )
     log.write('Finished every training!')

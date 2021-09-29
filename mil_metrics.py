@@ -77,7 +77,7 @@ def plot_losses(history, save_path: str, include_raw: bool = False, include_tikz
     plot_metric(history, 'val_loss', save_path, 'train_loss', include_tikz=include_tikz, clamp=clamp)
 
 
-def plot_metric(history, metric_name: str, out_dir: str, second_metric_name: str = None, dpi: int = 600,
+def plot_metric(history, metric_name: str, out_dir: str, second_metric_name: str = None, dpi: int = 350,
                 include_tikz: bool = False, clamp: float = None):
     metric_values = [i[metric_name] for i in history]
     metric_title = _get_metric_title(metric_name)
@@ -380,7 +380,7 @@ def write_history(history: List[Dict[str, float]], history_keys: [str], metrics_
 
 
 def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X_raw: np.ndarray, y_tiles: np.ndarray,
-                        colormap_name: str = 'jet', dpi: int = 350, overlay_alpha: float = 0.65,
+                        bag_names: [str], colormap_name: str = 'jet', dpi: int = 350, overlay_alpha: float = 0.65,
                         normalized: bool = False):
     if not model.enable_attention:
         log.write('Not using attention. Scores skipped.')
@@ -405,6 +405,7 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
         y_bag_true = all_true[i]
 
         raw_bag = X_raw[original_bag_index]
+        bag_name = bag_names[original_bag_index]
 
         colored_tiles = []
         image_width = None
@@ -420,10 +421,9 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
                 normalized_attention = 0
             else:
                 normalized_attention = (attention - tile_attentions.min()) / (
-                            tile_attentions.max() - tile_attentions.min())
+                        tile_attentions.max() - tile_attentions.min())
 
             correct_tiles = float(correct_tiles + float(y_tile_predictions[j] == y_tile_predictions_true[j]))
-
             r = current_tile[0] / 255 * overlay_alpha
             g = current_tile[1] / 255 * overlay_alpha
             b = current_tile[2] / 255 * overlay_alpha
@@ -461,7 +461,6 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
         plt.imsave(filename_base + '.png', out_image)
 
         # Saving as annotated py plot
-        # Saving as annotated py plot
         plt.clf()
         colorbar_min = 0.0
         colorbar_max = 1.0
@@ -478,10 +477,6 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
             colorbar_title = 'Attention (Normalized)'
         c_bar.ax.set_ylabel(colorbar_title, rotation=270)
 
-        # fig, (ax1,ax2,ax3) = plt.subplots(1, 3)
-        # ax1.imshow(out_image)
-        # ax2.imshow(out_image)
-        # ax3.imshow(out_image)
         plt.imshow(out_image)
         plt.xticks([], [])
         plt.yticks([], [])
@@ -489,7 +484,7 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
         tile_accuracy_formatted = str("{:.4f}".format(tile_accuracy))
         plt.xlabel('Bag label: ' + str(int(y_bag_true)) + '. Prediction: ' + str(int(y_bag)))
         plt.ylabel('Tiles: ' + str(tile_count) + '. Tile Accuracy: ' + tile_accuracy_formatted)
-        plt.title('Attention Scores: Bag #' + str(original_bag_index))
+        plt.title('Attention Scores: Bag #' + str(original_bag_index)+' - '+bag_name)
 
         plt.tight_layout()
         plt.savefig(filename_base + '-detail.png', dpi=dpi)

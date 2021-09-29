@@ -13,9 +13,10 @@ from models import OmniSpheroMil
 from util import log
 from util.omnisphero_data_loader import OmniSpheroDataLoader
 
-
 # FUNCTIONS
 ###########
+from util.utils import line_print
+
 
 @torch.no_grad()
 def get_false_positive_bags(trained_model: OmniSpheroMil, train_dl: OmniSpheroDataLoader, X_raw: [np.ndarray]) -> (
@@ -126,8 +127,8 @@ def compute_bag_size(training_ds: [np.ndarray]) -> int:
 
 
 @torch.no_grad()
-def new_bag_generation(hard_negative_instances: [Tensor], training_ds, hard_negative_instances_raw: [np.ndarray],
-                       n_clusters: int = 10, random_seed: int = 1337) -> ([[np.ndarray]], [[np.ndarray]]):
+def new_bag_generation(hard_negative_instances: [Tensor], training_ds: OmniSpheroDataLoader,
+                       hard_negative_instances_raw: [np.ndarray], n_clusters: int = 10, random_seed: int = 1337) -> ([[np.ndarray]], [[np.ndarray]]):
     """ Use a pretrained CNN w/o last layer to extract feature vectors from
     the determined hard negative instances.
     These feature vectors are then clustered with k-Means to obtain feature clusters.
@@ -153,11 +154,13 @@ def new_bag_generation(hard_negative_instances: [Tensor], training_ds, hard_nega
     # TODO why?
     # model done
 
+    log.write('Mining VGG16 instances: ' + str(len(hard_negative_instances)))
+    print('')  # Printing an empty line, just to console, not to log.
     all_feature_vectors = []
     c = 0
     for instance in hard_negative_instances:
         c = c + 1
-        print('Mining VGG16 instance: ' + str(c) + '/' + str(len(hard_negative_instances)))
+        line_print('Mining VGG16 instance: ' + str(c) + '/' + str(len(hard_negative_instances)))
 
         instance = instance.unsqueeze(dim=0).cpu()
         instance_input = torch.cat((instance, instance, instance), dim=0)  # achieve faux-RGB
@@ -167,6 +170,9 @@ def new_bag_generation(hard_negative_instances: [Tensor], training_ds, hard_nega
         feature_vector = feature_extractor(instance)
         feature_vector = feature_vector.squeeze()
         all_feature_vectors.append(feature_vector)
+
+    print('')  # Printing an empty line, just to console, not to log.
+    log.write('Finished mining VGG16 instances: ' + str(len(hard_negative_instances)))
 
     # Feature Clustering with k-Means
     all_feature_vectors = np.vstack(all_feature_vectors)  # (n, 4096) array
@@ -180,16 +186,18 @@ def new_bag_generation(hard_negative_instances: [Tensor], training_ds, hard_nega
     # number of new_bags = n_clusters
     new_bags = []
     new_bags_raw = []
+    new_bag_names = []
     np_instances = np.asarray([np.asarray(i.cpu()) for i in hard_negative_instances])
 
     for i in range(n_clusters):
         new_bag = []
         new_bag_raw = []
         new_bag_size = compute_bag_size(training_ds)
+        print('')  # Printing an empty line, just to console, not to log.
 
         for sample in range(new_bag_size):
-            print('Repacking sample ' + str(sample+1) + '/' + str(new_bag_size) + ' from cluster ' + str(i+1) + '/' + str(
-                n_clusters))
+            line_print('Repacking sample ' + str(sample + 1) + '/' + str(new_bag_size) + ' from cluster ' + str(
+                i + 1) + '/' + str(n_clusters))
 
             chosen_cluster = np.random.choice(cluster_labels, size=1, replace=False, p=None)  # get a random cluster
             chosen_indexes = np.where(cluster_labels == chosen_cluster)[0]
@@ -207,18 +215,22 @@ def new_bag_generation(hard_negative_instances: [Tensor], training_ds, hard_nega
 
         new_bags.append(new_bag)
         new_bags_raw.append(new_bag_raw)
+        new_bag_names.append('hnm-' + str(i))
 
-    return new_bags, new_bags_raw
+    assert len(new_bags) == len(new_bags_raw)
+    assert len(new_bags) == len(new_bag_names)
+    return new_bags, new_bags_raw, new_bag_names
 
 
-def add_back_to_dataset(training_ds: [([np.ndarray])], new_bags: [[np.ndarray]], X_raw: [np.ndarray],
-                        new_bags_raw: [[np.ndarray]]) -> ([([np.ndarray])], [np.ndarray]):
+def add_back_to_dataset(training_ds: [([np.ndarray])], new_bags: [[np.ndarray]], X_raw: [np.ndarray], bag_names: [str],
+                        new_bag_names: [str], new_bags_raw: [[np.ndarray]]) -> ([([np.ndarray])], [np.ndarray], [str]):
     """ Add the constructed newly generated Hard Negative Bags to the original training dataset.
     """
     for i in range(len(new_bags)):
         # numpy_bag = [torch_tensor_cuda.unsqueeze(dim=0).cpu().numpy() for torch_tensor_cuda in bag]
         bag = new_bags[i]
         bag_raw = new_bags_raw[i]
+        new_bag_name = str(new_bag_names[i])
         numpy_bag = np.asarray(bag)
 
         new_label = 0  # [0,0,1] # (or 0) making it 'normal' or 'negative' in multiclass or binary setting
@@ -240,8 +252,9 @@ def add_back_to_dataset(training_ds: [([np.ndarray])], new_bags: [[np.ndarray]],
             # print(new_tile_label.shape)
             training_ds.append(new_ds)
             X_raw.append(new_bag_raw)
+            bag_names.append(new_bag_name)
 
-    return training_ds, X_raw
+    return training_ds, X_raw, bag_names
 
 
 if __name__ == '__main__':

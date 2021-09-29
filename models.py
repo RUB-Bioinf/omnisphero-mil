@@ -29,20 +29,6 @@ def save_model(state, save_path: str, verbose: bool = False):
     torch.save(state, save_path)
 
 
-####
-
-def load_checkpoint(load_path, model, optimizer):
-    ''' loads the model and its optimizer states from disk.
-    '''
-    checkpoint = torch.load(load_path)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optim_state_dict'])
-    epoch = checkpoint['epoch']
-    loss = checkpoint['loss']
-
-    return model, optimizer, epoch, loss
-
-
 # MODEL
 #######
 
@@ -79,6 +65,8 @@ class OmniSpheroMil(nn.Module):
     def compute_accuracy(self, X: Tensor, y: Tensor, y_tiles: Tensor):
         pass
 
+
+####
 
 class BaselineMIL(OmniSpheroMil):
     def __init__(self, input_dim, device, loss_function: str, accuracy_function: str, use_bias=True, use_max=True,
@@ -357,6 +345,23 @@ class BaselineMIL(OmniSpheroMil):
         return accuracy, accuracy_list, tile_hat_list
 
 
+####
+
+def load_checkpoint(load_path: str, model: OmniSpheroMil, optimizer: Optimizer) -> (
+        OmniSpheroMil, Optimizer, int, float):
+    ''' loads the model and its optimizer states from disk.
+    '''
+    checkpoint = torch.load(load_path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optim_state_dict'])
+    epoch = checkpoint['epoch']
+    loss = checkpoint['loss']
+
+    return model, optimizer, epoch, loss
+
+
+####
+
 def choose_optimizer(model: OmniSpheroMil, selection: str) -> Optimizer:
     """ Chooses an optimizer according to the string specifed in the model CLI argument and build with specified args
     """
@@ -503,7 +508,8 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
         # VALIDATION PHASE
         result, _, all_losses, all_tile_lists, _ = evaluate(model, validation_data, clamp_max=clamp_max,
-                                                            clamp_min=clamp_min,apply_data_augmentation=augment_validation_data)  # returns a results dict for metrics
+                                                            clamp_min=clamp_min,
+                                                            apply_data_augmentation=augment_validation_data)  # returns a results dict for metrics
         result['train_loss'] = sum(train_losses) / len(train_losses)  # torch.stack(train_losses).mean().item()
         result['train_acc'] = sum(train_acc) / len(train_acc)
         result['train_acc_tiles'] = sum(train_acc_tiles) / len(train_acc_tiles)
@@ -632,7 +638,8 @@ def get_predictions(model: OmniSpheroMil, data_loader: DataLoader):
 
 
 @torch.no_grad()
-def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, clamp_max: float = None, clamp_min: float = None,apply_data_augmentation=False):
+def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, clamp_max: float = None, clamp_min: float = None,
+             apply_data_augmentation=False):
     ''' Evaluate model / validation operation
     Can be used for validation within fit as well as testing.
     '''
