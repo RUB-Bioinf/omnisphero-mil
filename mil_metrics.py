@@ -68,6 +68,14 @@ def plot_accuracy_tiles(history, save_path: str, include_raw: bool = False, incl
     plot_metric(history, 'val_acc_tiles', save_path, 'train_acc_tiles', include_tikz=include_tikz)
 
 
+def plot_binary_roc_curves(history, save_path: str, include_raw: bool = False, include_tikz: bool = False,
+                           clamp: float = None):
+    if include_raw:
+        plot_metric(history, 'train_roc_auc', save_path, include_tikz=include_tikz, clamp=clamp)
+        plot_metric(history, 'val_roc_auc', save_path, include_tikz=include_tikz, clamp=clamp)
+    plot_metric(history, 'val_roc_auc', save_path, 'train_roc_auc', include_tikz=include_tikz, clamp=clamp)
+
+
 def plot_losses(history, save_path: str, include_raw: bool = False, include_tikz: bool = False, clamp: float = None):
     ''' takes a history object and plots the losses
     '''
@@ -188,6 +196,8 @@ def _get_metric_title(metric_name: str):
         metric_name = 'accuracy (Bags)'
     if metric_name == 'acc_tiles':
         metric_name = 'accuracy (Tiles)'
+    if metric_name == 'roc_auc':
+        metric_name = 'Binary ROC: AUC'
 
     return metric_name.capitalize()
 
@@ -386,33 +396,61 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
         log.write('Not using attention. Scores skipped.')
         return
 
+    image_width = None
+    image_height = None
     color_map = plt.get_cmap(colormap_name)
     os.makedirs(out_dir, exist_ok=True)
     y_hats, all_predictions, all_true, all_y_tiles, all_tiles_true, all_attentions, original_bag_indices = models.get_predictions(
         model, dataset)
 
-    # model.compute_accuracy(data, bag_label, tile_labels)
-
+    max_attention_tilesFP = []
+    max_attention_tilesTP = []
+    max_attention_tilesFN = []
+    max_attention_tilesTN = []
     print('')
     for i in range(len(y_hats)):
         line_print('Writing Attentions for Bag: ' + str(i + 1) + '/' + str(len(y_hats)), include_in_log=False)
         original_bag_index = original_bag_indices[i]
         tile_attentions = all_attentions[i]
 
+        # Extracting predictions for the current bag
         y_tile_predictions = all_y_tiles[i]
         y_tile_predictions_true = all_tiles_true[i]
         y_bag = all_predictions[i]
         y_bag_true = all_true[i]
-
         raw_bag = X_raw[original_bag_index]
         bag_name = bag_names[original_bag_index]
 
+        # Preparing parameters
         colored_tiles = []
-        image_width = None
-        image_height = None
         tile_count = raw_bag.shape[0]
         correct_tiles: float = 0.0
 
+        # Extracting the tiles with the most attentions
+        max_attention_indexes = np.where(tile_attentions == max(tile_attentions))
+        added_attention_tiles = 0
+        for current_index in max_attention_indexes[0]:
+            max_attention_tile = raw_bag[current_index]
+            max_attention_tile = max_attention_tile.astype('uint8')
+            max_attention_tile = outline_rgb_array(max_attention_tile, None, None, outline=2,
+                                                   override_colormap=[255, 255, 255])
+            if y_bag_true == 1:
+                if y_bag == 1:
+                    max_attention_tilesTP.append(max_attention_tile)
+                    added_attention_tiles = added_attention_tiles + 1
+                elif y_bag == 0:
+                    max_attention_tilesFP.append(max_attention_tile)
+                    added_attention_tiles = added_attention_tiles + 1
+            elif y_bag_true == 0:
+                if y_bag == 1:
+                    max_attention_tilesFN.append(max_attention_tile)
+                    added_attention_tiles = added_attention_tiles + 1
+                elif y_bag == 0:
+                    max_attention_tilesTN.append(max_attention_tile)
+                    added_attention_tiles = added_attention_tiles + 1
+        assert len(max_attention_indexes[0]) == added_attention_tiles
+
+        # Overlapping the bags with the attention and saving the files
         for j in range(tile_count):
             current_tile = raw_bag[j]
             attention = tile_attentions[j]
@@ -484,17 +522,27 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
         tile_accuracy_formatted = str("{:.4f}".format(tile_accuracy))
         plt.xlabel('Bag label: ' + str(int(y_bag_true)) + '. Prediction: ' + str(int(y_bag)))
         plt.ylabel('Tiles: ' + str(tile_count) + '. Tile Accuracy: ' + tile_accuracy_formatted)
-        plt.title('Attention Scores: Bag #' + str(original_bag_index)+' - '+bag_name)
+        plt.title('Attention Scores: Bag #' + str(original_bag_index) + ' - ' + bag_name)
 
         plt.tight_layout()
         plt.savefig(filename_base + '-detail.png', dpi=dpi)
         plt.savefig(filename_base + '-detail.pdf', dpi=dpi)
         plt.clf()
 
+        # Writing debug texts
         f = open(out_dir + os.sep + 'debug-bag-accuracy.txt', 'a')
         f.write('bag-' + str(original_bag_index) + ': Tile Accuracy: ' + str(tile_accuracy) + ', ' + str(
             correct_tiles) + ' out of ' + str(tile_count) + '.\n')
         f.close()
+
+    # Writing attention tiles
+    for (max_attention_tiles,metric_name) in zip([max_attention_tilesTP,max_attention_tilesFP,max_attention_tilesFN,max_attention_tilesTN], ['TP','FP','FN','TN']):
+        print('Saving '+str(len(max_attention_tiles))+' tiles for metric '+metric_name)
+
+        if len(max_attention_tiles) > 0:
+            out_image = fuse_image_tiles(images=max_attention_tiles, image_width=image_width, image_height=image_height)
+            max_attention_file = out_dir + 'max_attention_' + metric_name + '.png'
+            plt.imsave(max_attention_file, out_image)
 
 
 def fuse_image_tiles(images: [np.ndarray], image_width: int, image_height: int):
@@ -519,7 +567,11 @@ def fuse_image_tiles(images: [np.ndarray], image_width: int, image_height: int):
 
 def outline_rgb_array(image: [np.ndarray], true_value: float, prediction: float, outline: int = 3,
                       bright_mode: bool = True, override_colormap: [int, int, int] = None):
+    # This function assumes an input of shape: x, y, 3
     width, height, _ = image.shape
+
+    if width == 3 and width < height:
+        image = np.einsum('abc->bca', image)
 
     colormap: [int, int, int] = None
     if override_colormap is None:
@@ -528,8 +580,7 @@ def outline_rgb_array(image: [np.ndarray], true_value: float, prediction: float,
         colormap: [int, int, int] = [
             int(float(is_class0) * 255),
             int(float(is_hit) * 255),
-            int(float(bright_mode) * 255)
-        ]
+            int(float(bright_mode) * 255)]
     else:
         colormap = override_colormap
 

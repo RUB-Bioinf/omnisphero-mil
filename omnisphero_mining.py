@@ -30,15 +30,13 @@ def get_false_positive_bags(trained_model: OmniSpheroMil, train_dl: OmniSpheroDa
     false_positive_bags = []
     false_positive_bags_raw = []
 
+    print('')
     trained_model.eval()
     for batch_id, (data, label, tile_labels, bag_index) in enumerate(train_dl):
-        print(str(batch_id) + '/' + str(len(train_dl)))
-        # label = label.squeeze()
-        # bag_label = label[0]
+        line_print(str(batch_id) + '/' + str(len(train_dl)))
 
         bag_index = int(bag_index.cpu().numpy())
         label = label.squeeze()
-        # bag_label = label[0] //TODO this causes error
         bag_label = label
 
         # Moving to GPU if it's available
@@ -56,16 +54,17 @@ def get_false_positive_bags(trained_model: OmniSpheroMil, train_dl: OmniSpheroDa
 
         # check Ground Truth bag label and compare with model prediction ## BINARY CASE !!!
         # if predictions == bag_label:
-        if float(predictions) == float(bag_label) and not batch_id == 0:
+        if float(predictions) == float(bag_label):  # and not batch_id == 0:
             # TODO resolve this debug part
             continue
-        elif (predictions == 1 and bag_label == 0) or batch_id == 0:
+        elif (predictions == 1 and bag_label == 0):  # or batch_id == 0:
             # A false positive bag has been found!
             false_positive_bags.append(data.squeeze().cpu())
             attention_weights_list.append(attention.squeeze().cpu())
             false_positive_bags_raw.append(X_raw[bag_index])
 
         assert len(false_positive_bags) == len(attention_weights_list)
+    print('')
 
     log.write('Found {} false positive bags.'.format(len(false_positive_bags)))
     return false_positive_bags, attention_weights_list, false_positive_bags_raw
@@ -128,7 +127,8 @@ def compute_bag_size(training_ds: [np.ndarray]) -> int:
 
 @torch.no_grad()
 def new_bag_generation(hard_negative_instances: [Tensor], training_ds: OmniSpheroDataLoader,
-                       hard_negative_instances_raw: [np.ndarray], n_clusters: int = 10, random_seed: int = 1337) -> ([[np.ndarray]], [[np.ndarray]]):
+                       hard_negative_instances_raw: [np.ndarray], n_clusters: int = 10, random_seed: int = 1337) -> (
+[[np.ndarray]], [[np.ndarray]]):
     """ Use a pretrained CNN w/o last layer to extract feature vectors from
     the determined hard negative instances.
     These feature vectors are then clustered with k-Means to obtain feature clusters.

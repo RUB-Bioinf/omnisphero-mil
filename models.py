@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.metrics import auc
 from torch import Tensor
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
@@ -299,7 +300,7 @@ class BaselineMIL(OmniSpheroMil):
         # loss = loss_func(y_hat, y)
         return loss, attention
 
-    def compute_accuracy(self, X: Tensor, y: Tensor, y_tiles: Tensor) -> (Tensor, float, [float], [int]):
+    def compute_accuracy(self, X: Tensor, y: Tensor, y_tiles: Tensor) -> (Tensor, float, [float], [int], float):
         """ compute accuracy
         """
         y = y.float()
@@ -323,7 +324,7 @@ class BaselineMIL(OmniSpheroMil):
             tile_acc, tile_accuracy_list, tile_prediction_list = self.compute_accuracy_tiles(y_targets=y_tiles,
                                                                                              y_predictions=y_hat_tiles)
 
-        return bag_acc, tile_acc, tile_accuracy_list, tile_prediction_list
+        return bag_acc, tile_acc, tile_accuracy_list, tile_prediction_list, float(y_hat)
 
     def compute_accuracy_tiles(self, y_targets: Tensor, y_predictions: [Tensor]) -> (float, [float], [int]):
         accuracy_list = []
@@ -387,7 +388,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     """
     best_loss = sys.float_info.max
     history = []
-    history_keys = ['train_loss', 'train_acc', 'val_acc', 'val_loss']
+    history_keys = ['train_loss', 'train_acc', 'val_acc', 'val_loss','train_roc_auc','val_roc_auc']
 
     checkpoint_out_dir = out_dir_base + 'checkpoints' + os.sep
     metrics_dir_live = out_dir_base + 'metrics_live' + os.sep
@@ -444,15 +445,13 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         train_losses = []
         train_acc = []
         train_acc_tiles = []
+        all_labels = []
+        predicted_labels = []
         start_time_epoch = datetime.now()
         epochs_remaining = epochs - epoch
 
         for batch_id, (data, label, tile_labels, bag_index) in enumerate(training_data):
             # torch.cuda.empty_cache()
-
-            # Applying data augmentation, if needed
-            if augment_training_data:
-                data = augment_bag(data)
 
             # Notifying Callbacks
             for i in range(len(callbacks)):
@@ -460,7 +459,6 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                 callback.on_batch_start(model=model, batch_id=batch_id, data=data, label=label)
 
             label = label.squeeze()
-            # bag_label = label[0] //TODO this causes error
             bag_label = label
 
             # writing data from the batch
@@ -490,9 +488,11 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
             # https://github.com/yhenon/pytorch-retinanet/issues/3
             train_losses.append(float(loss))
-            acc, acc_tiles, _, _ = model.compute_accuracy(data, bag_label, tile_labels)
+            acc, acc_tiles, _, _, y_hat = model.compute_accuracy(data, bag_label, tile_labels)
             train_acc.append(float(acc))
             train_acc_tiles.append(float(acc_tiles))
+            predicted_labels.append(float(y_hat))
+            all_labels.append(float(bag_label))
 
             # Notifying Callbacks
             for i in range(len(callbacks)):
@@ -504,12 +504,21 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             optimizer.step()  # update parameters
             # optim.zero_grad() # reset gradients (alternative if all grads are contained in the optimizer)
             # for p in model.parameters(): p.grad=None # alternative for model.zero_grad() or optim.zero_grad()
-            del data, bag_label, label
+            del data, bag_label, label, y_hat
 
         # VALIDATION PHASE
         result, _, all_losses, all_tile_lists, _ = evaluate(model, validation_data, clamp_max=clamp_max,
                                                             clamp_min=clamp_min,
                                                             apply_data_augmentation=augment_validation_data)  # returns a results dict for metrics
+
+        fpr, tpr, thresholds = mil_metrics.binary_roc_curve(all_labels, predicted_labels)
+        roc_auc = float('NaN')
+        try:
+            roc_auc = auc(fpr, tpr)
+        except Exception as e:
+            log.write(str(e))
+        result['train_roc_auc'] = roc_auc
+
         result['train_loss'] = sum(train_losses) / len(train_losses)  # torch.stack(train_losses).mean().item()
         result['train_acc'] = sum(train_acc) / len(train_acc)
         result['train_acc_tiles'] = sum(train_acc_tiles) / len(train_acc_tiles)
@@ -526,9 +535,9 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         history.append(result)
         log.write(
             'Epoch {}/{}: Train Loss: {:.4f}, Train Acc (Bags): {:.4f}, Train Acc (Tiles): {:.4f}, Val Loss: {:.4f}, '
-            'Val Acc (Bags): {:.4f}, Val Acc (Tiles): {:.4f}. Duration: {}. ETA: {}'.format(
-                epoch, epochs, result['train_loss'], result['train_acc'], result['train_acc_tiles'],
-                result['val_loss'], result['val_acc'], result['val_acc_tiles'], time_diff,
+            'Val Acc (Bags): {:.4f}, Val Acc (Tiles): {:.4f}, Train AUC: {:.4f}, Val AUC: {:.4f}. Duration: {}. ETA: {}'.format(
+                epoch, epochs, result['train_loss'], result['train_acc'], result['train_acc_tiles'], result['val_loss'],
+                result['val_acc'], result['val_acc_tiles'], result['train_roc_auc'], result['val_roc_auc'], time_diff,
                 eta_timestamp))
 
         # Notifying Callbacks
@@ -553,6 +562,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         mil_metrics.plot_accuracy_tiles(history, metrics_dir_live, include_raw=False, include_tikz=False)
         mil_metrics.plot_losses(history, metrics_dir_live, include_raw=False, include_tikz=False)
         mil_metrics.plot_accuracies(history, metrics_dir_live, include_tikz=False)
+        mil_metrics.plot_binary_roc_curves(history, metrics_dir_live, include_tikz=False)
 
         # Printing each loss for every batch
         f = open(batch_losses_file, 'a')
@@ -649,20 +659,16 @@ def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, clamp_max:
     test_acc_tiles = []
     acc_tiles_list_list = []
     tiles_prediction_list_list = []
+
+    bag_label_list = []
+    y_hat_list = []
+
     result = {}
     attention_weights = None
 
     for batch_id, (data, label, tile_labels, original_bag_index) in enumerate(data_loader):
         label = label.squeeze()
-        # bag_label = label[0]
         bag_label = label
-
-        # instance_labels = label
-        # if torch.cuda.is_available():
-        #    data, bag_label = data.cuda(), bag_label.cuda()
-        # data, bag_label = torch.autograd.Variable(data), torch.autograd.Variable(bag_label)
-        # data = data.to(device=device)
-        # bag_label = bag_label.to(device=device)
 
         data = data.to(model.get_device_ordinal(0))
         bag_label = bag_label.to(model.get_device_ordinal(3))
@@ -676,22 +682,30 @@ def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, clamp_max:
 
         # https://github.com/yhenon/pytorch-retinanet/issues/3
         test_losses.append(float(loss))
-        acc, acc_tiles, acc_tiles_list, tiles_prediction_list = model.compute_accuracy(data, bag_label, tile_labels)
+        acc, acc_tiles, acc_tiles_list, tiles_prediction_list, y_hat = model.compute_accuracy(data, bag_label,
+                                                                                              tile_labels)
         test_acc_tiles.append(float(acc_tiles))
         acc_tiles_list_list.append(acc_tiles_list)
         tiles_prediction_list_list.append(tiles_prediction_list)
         test_acc.append(float(acc))
 
-        del data, bag_label, tile_labels, label
+        bag_label_list.append(float(label))
+        y_hat_list.append(float(y_hat))
 
+        del data, bag_label, tile_labels, label, y_hat
+
+    fpr, tpr, thresholds = mil_metrics.binary_roc_curve(bag_label_list, y_hat_list)
+    roc_auc = float('NaN')
+    try:
+        roc_auc = auc(fpr, tpr)
+    except Exception as e:
+        log.write(str(e))
+
+    result['val_roc_auc'] = roc_auc
     result['val_loss'] = sum(test_losses) / len(test_losses)  # torch.stack(test_losses).mean().item()
     result['val_acc'] = sum(test_acc) / len(test_acc)
     result['val_acc_tiles'] = sum(test_acc_tiles) / len(test_acc_tiles)
     return result, attention_weights, test_losses, acc_tiles_list_list, tiles_prediction_list_list
-
-
-def augment_bag(data):
-    return data
 
 
 # deprecated

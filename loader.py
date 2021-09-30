@@ -59,6 +59,9 @@ default_well_indices_none = []
 default_well_indices_early = [0, 1, 2, 3]
 default_well_indices_late = [7, 8, 9]
 
+default_well_indices_very_early = [0, 1, 2]
+default_well_indices_very_late = [8, 9]
+
 
 ####
 
@@ -83,8 +86,8 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
     y_full = None
     y_tiles_full = None
     error_list = []
-    loaded_files_list = []
-    bag_names = []
+    loaded_files_list_full = []
+    bag_names_full = []
 
     for i in range(len(batch_dirs)):
         current_dir = batch_dirs[i]
@@ -102,6 +105,8 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
                                                                                         gp_max=len(batch_dirs),
                                                                                         include_raw=include_raw)
 
+            loaded_files_list_full.extend(loaded_files_list)
+            bag_names_full.extend(bag_names)
             error_list.extend(errors)
             if X_full is None:
                 X_full = X
@@ -124,7 +129,18 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
                 else:
                     y_tiles_full = np.concatenate((y_tiles_full, y_tiles), axis=0)
 
-    return X_full, y_full, y_tiles_full, X_raw_full, bag_names, error_list, loaded_files_list
+    log.write('Debug list size "X_full": '+str(len(X_full)))
+    log.write('Debug list size "y_full": '+str(len(y_full)))
+    log.write('Debug list size "y_tiles_full": '+str(len(y_tiles_full)))
+    log.write('Debug list size "X_raw_full": '+str(len(X_raw_full)))
+    log.write('Debug list size "bag_names": '+str(len(bag_names_full)))
+
+    assert len(X_full) == len(y_full)
+    assert len(X_full) == len(y_tiles_full)
+    assert len(X_full) == len(X_raw_full)
+    assert len(X_full) == len(bag_names_full)
+
+    return X_full, y_full, y_tiles_full, X_raw_full, bag_names_full, error_list, loaded_files_list_full
 
 
 # Main Loading function
@@ -213,6 +229,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
     bag_names = []
     y_tiles = []
     error_list = []
+    log.write('Parallel execution resulted in '+str(len(future_list))+' futures.')
     print('\n')
 
     for i in range(len(future_list)):
@@ -237,11 +254,22 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
             error_list.append(e)
 
     print('\n')
-    log.write('\nFully Finished Loading Path.')
+    log.write('\nFully Finished Loading Path. Files: '+str(loaded_files_list))
 
     # Deleting the futures and the future list to immediately releasing the memory.
     del future_list[:]
     del future_list
+
+    log.write('Debug list size "X": '+str(len(X)))
+    log.write('Debug list size "y": '+str(len(y)))
+    log.write('Debug list size "y_tiles": '+str(len(y_tiles)))
+    log.write('Debug list size "X_raw": '+str(len(X_raw)))
+    log.write('Debug list size "bag_names": '+str(len(bag_names)))
+
+    assert len(X) == len(y)
+    assert len(X) == len(y_tiles)
+    assert len(X) == len(X_raw)
+    assert len(X) == len(bag_names)
 
     return X, y, y_tiles, X_raw, bag_names, error_list, loaded_files_list
 

@@ -65,7 +65,6 @@ default_out_dir_unix_base = "/mil/oligo-diff/models/linux"
 # 7 = z-score every cell individually with every color channel independent using all samples in the bag
 # 8 = z-score every cell individually with every color channel using the mean / std of all three from all samples in the bag
 normalize_enum_default = 3
-
 max_workers_default = 5
 
 
@@ -80,8 +79,8 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
                 label_0_well_indices=loader.default_well_indices_none,
                 label_1_well_indices=loader.default_well_indices_none,
                 augment_train: bool = False, augment_validation: bool = False,
-                data_split_percentage_validation: float = 0.3, data_split_percentage_test: float = 0.15,
-                use_hard_negative_mining: bool = True, hnm_magnitude: float = 5.0, hnm_mult=0.15,
+                data_split_percentage_validation: float = 0.35, data_split_percentage_test: float = 0.20,
+                use_hard_negative_mining: bool = True, hnm_magnitude: float = 5.0, hnm_new_bag_percentage=0.25,
                 writing_metrics_enabled: bool = True, testing_model_enabled: bool = True
                 ):
     if out_dir is None:
@@ -393,6 +392,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         mil_metrics.plot_accuracy(history, metrics_dir, include_raw=True, include_tikz=True)
         mil_metrics.plot_accuracy_tiles(history, metrics_dir, include_raw=True, include_tikz=True)
         mil_metrics.plot_accuracies(history, metrics_dir, include_tikz=True)
+        mil_metrics.plot_binary_roc_curves(history, metrics_dir, include_tikz=True)
 
     ##################
     # TESTING START
@@ -431,7 +431,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
             return
 
         log.write('[3/4] Hard Negative Mining: Creating new bags')
-        n_clusters = math.ceil(len(training_data) * hnm_mult + 1)
+        n_clusters = math.ceil(len(training_data) * hnm_new_bag_percentage + 1)
         new_bags, new_bags_raw, new_bag_names = omnisphero_mining.new_bag_generation(hard_negative_instances,
                                                                                      training_data,
                                                                                      hard_negative_instances_raw=hard_negative_instances_raw,
@@ -456,9 +456,12 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         f.write('Hard Negative Mining parameters:')
         f.write('\nMining dir: ' + mined_out_dir)
         f.write('\nEpochs: ' + str(epochs))
-        f.write('\nTraining data training bag mult: ' + str(hnm_mult))
+        f.write('\nTraining data training bag mult: ' + str(hnm_new_bag_percentage))
         f.write('\nTraining data new bag count: ' + str(n_clusters))
         f.close()
+
+        # Saving new bags to disk
+        sample_preview.save_hnm_bags(mined_out_dir + 'bags' + os.sep, new_bags, new_bags_raw, new_bag_names)
 
         print('Fitting a new model using HNM bags!')
         history, history_keys, model_save_path_best = models.fit(model=model, optimizer=model_optimizer, epochs=epochs,
@@ -479,6 +482,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         mil_metrics.plot_accuracy(history, metrics_dir, include_raw=True, include_tikz=True)
         mil_metrics.plot_accuracy_tiles(history, metrics_dir, include_raw=True, include_tikz=True)
         mil_metrics.plot_accuracies(history, metrics_dir, include_tikz=True)
+        mil_metrics.plot_binary_roc_curves(history, metrics_dir, include_tikz=True)
 
         # Testing HNM models on test data
         log.write('Testing HNM best model on validation and test data to determine performance')
@@ -675,7 +679,7 @@ def main(debug: bool = False):
         for l in ['binary_cross_entropy']:
             for o in ['adadelta']:
                 for r in [0.15]:
-                    for i in [9, 10]:
+                    for i in [5, 6]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
                             augment_train = aug[1]
@@ -683,7 +687,7 @@ def main(debug: bool = False):
                             train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                                         normalize_enum=i,
-                                        training_label='hnm-constrained-attention-' + l + '-normalize-' + str(
+                                        training_label='hnm-early_wells-normalize-' + str(
                                             i) + 'repack-' + str(r),
                                         global_log_dir=current_global_log_dir,
                                         invert_bag_labels=False,
@@ -694,11 +698,11 @@ def main(debug: bool = False):
                                         augment_validation=augment_validation,
                                         augment_train=augment_train,
                                         model_use_max=False,
-                                        positive_bag_min_samples=5,
+                                        positive_bag_min_samples=4,
                                         tile_constraints_0=loader.default_tile_constraints_nuclei,
                                         tile_constraints_1=loader.default_tile_constraints_nuclei,
-                                        label_1_well_indices=loader.default_well_indices_late,
-                                        label_0_well_indices=loader.default_well_indices_early,
+                                        label_1_well_indices=loader.default_well_indices_very_late,
+                                        label_0_well_indices=loader.default_well_indices_very_early,
                                         device_ordinals=current_device_ordinals
                                         )
     log.write('Finished every training!')
