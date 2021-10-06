@@ -86,6 +86,9 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     if out_dir is None:
         out_dir = source_dirs[0] + os.sep + 'training_results'
 
+    # This param is unused and should not be "True"!
+    assert invert_bag_labels == False
+
     out_dir = out_dir + os.sep + training_label + os.sep
     loading_preview_dir = out_dir + os.sep + 'loading_previews' + os.sep
     metrics_dir = out_dir + os.sep + 'metrics' + os.sep
@@ -195,7 +198,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
             sample_preview.save_z_scored_image(current_x, dim_x=150, dim_y=150,
                                                fig_titles=['r (Nuclei)', 'g (Oligos)', 'b (Neurites)'],
                                                filename=preview_image_file_base + '-z.png',
-                                               min=-3.0, max=3.0, normalize_enum=normalize_enum)
+                                               vmin=-3.0, vmax=3.0, normalize_enum=normalize_enum)
 
         del current_x
     print('\n')
@@ -392,6 +395,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         mil_metrics.plot_accuracy(history, metrics_dir, include_raw=True, include_tikz=True)
         mil_metrics.plot_accuracy_tiles(history, metrics_dir, include_raw=True, include_tikz=True)
         mil_metrics.plot_accuracies(history, metrics_dir, include_tikz=True)
+        mil_metrics.plot_dice_scores(history, metrics_dir, include_tikz=True)
         mil_metrics.plot_binary_roc_curves(history, metrics_dir, include_tikz=True)
 
     ##################
@@ -482,6 +486,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         mil_metrics.plot_accuracy(history, metrics_dir, include_raw=True, include_tikz=True)
         mil_metrics.plot_accuracy_tiles(history, metrics_dir, include_raw=True, include_tikz=True)
         mil_metrics.plot_accuracies(history, metrics_dir, include_tikz=True)
+        mil_metrics.plot_dice_scores(history, metrics_dir, include_tikz=True)
         mil_metrics.plot_binary_roc_curves(history, metrics_dir, include_tikz=True)
 
         # Testing HNM models on test data
@@ -678,8 +683,8 @@ def main(debug: bool = False):
     else:
         for l in ['binary_cross_entropy']:
             for o in ['adadelta']:
-                for r in [0.15]:
-                    for i in [5, 6]:
+                for r in [0.2]:
+                    for i in [4, 5, 6, 7, 8]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
                             augment_train = aug[1]
@@ -687,10 +692,15 @@ def main(debug: bool = False):
                             train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                                         normalize_enum=i,
-                                        training_label='hnm-early_wells-normalize-' + str(
+                                        training_label='hnm-early_inverted-wells-normalize-' + str(
                                             i) + 'repack-' + str(r),
                                         global_log_dir=current_global_log_dir,
                                         invert_bag_labels=False,
+                                        data_split_percentage_validation=0.2,
+                                        data_split_percentage_test=0.20,
+                                        use_hard_negative_mining=True,
+                                        hnm_magnitude=5.5,
+                                        hnm_new_bag_percentage=0.25,
                                         loss_function=l,
                                         repack_percentage=r,
                                         optimizer=o,
@@ -701,8 +711,8 @@ def main(debug: bool = False):
                                         positive_bag_min_samples=4,
                                         tile_constraints_0=loader.default_tile_constraints_nuclei,
                                         tile_constraints_1=loader.default_tile_constraints_nuclei,
-                                        label_1_well_indices=loader.default_well_indices_very_late,
-                                        label_0_well_indices=loader.default_well_indices_very_early,
+                                        label_1_well_indices=loader.default_well_indices_very_early,
+                                        label_0_well_indices=loader.default_well_indices_very_late,
                                         device_ordinals=current_device_ordinals
                                         )
     log.write('Finished every training!')

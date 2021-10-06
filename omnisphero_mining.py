@@ -33,7 +33,7 @@ def get_false_positive_bags(trained_model: OmniSpheroMil, train_dl: OmniSpheroDa
     print('')
     trained_model.eval()
     for batch_id, (data, label, tile_labels, bag_index) in enumerate(train_dl):
-        line_print(str(batch_id) + '/' + str(len(train_dl)))
+        line_print('Finding out if bag is a FP: '+str(batch_id) + '/' + str(len(train_dl)))
 
         bag_index = int(bag_index.cpu().numpy())
         label = label.squeeze()
@@ -119,9 +119,10 @@ def compute_bag_size(training_ds: [np.ndarray]) -> int:
     sigma = np.std(tile_amount)
 
     hard_negative_bag_size = np.random.normal(mu, sigma, size=1)
-    chosen_size = math.ceil(hard_negative_bag_size)
+    chosen_size = int(abs(math.ceil(hard_negative_bag_size)))
+
     log.write('Calculating negative bag size. Samples: ' + str(sum(tile_amount)) + ' Mean bag size: ' + str(
-        mu) + '. Std: ' + str(sigma) + '. Size: ' + str(chosen_size))
+        mu) + '. Std: ' + str(sigma) + '. Chosen size: ' + str(chosen_size))
     return chosen_size
 
 

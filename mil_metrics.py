@@ -76,6 +76,14 @@ def plot_binary_roc_curves(history, save_path: str, include_raw: bool = False, i
     plot_metric(history, 'val_roc_auc', save_path, 'train_roc_auc', include_tikz=include_tikz, clamp=clamp)
 
 
+def plot_dice_scores(history, save_path: str, include_raw: bool = False, include_tikz: bool = False,
+                     clamp: float = None):
+    if include_raw:
+        plot_metric(history, 'train_dice_score', save_path, include_tikz=include_tikz, clamp=clamp)
+        plot_metric(history, 'val_dice_score', save_path, include_tikz=include_tikz, clamp=clamp)
+    plot_metric(history, 'val_dice_score', save_path, 'train_dice_score', include_tikz=include_tikz, clamp=clamp)
+
+
 def plot_losses(history, save_path: str, include_raw: bool = False, include_tikz: bool = False, clamp: float = None):
     ''' takes a history object and plots the losses
     '''
@@ -193,13 +201,17 @@ def _get_metric_title(metric_name: str):
     metric_name = metric_name.replace('train_', '')
 
     if metric_name == 'acc':
-        metric_name = 'accuracy (Bags)'
+        metric_name = 'Accuracy (Bags)'
     if metric_name == 'acc_tiles':
-        metric_name = 'accuracy (Tiles)'
+        metric_name = 'Accuracy (Tiles)'
     if metric_name == 'roc_auc':
         metric_name = 'Binary ROC: AUC'
+    if metric_name == 'dice_score':
+        metric_name = 'Dice Score'
+    else:
+        metric_name = metric_name.capitalize()
 
-    return metric_name.capitalize()
+    return metric_name
 
 
 def plot_conf_matrix(y_true, y_pred, out_dir, target_names, title='Confusion Matrix', dpi=800, normalize=True):
@@ -455,7 +467,7 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
             current_tile = raw_bag[j]
             attention = tile_attentions[j]
 
-            if tile_attentions.max() == 0:
+            if tile_attentions.max() == 0 or (tile_attentions.max() - tile_attentions.min()) == 0:
                 normalized_attention = 0
             else:
                 normalized_attention = (attention - tile_attentions.min()) / (
@@ -500,20 +512,21 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
 
         # Saving as annotated py plot
         plt.clf()
-        colorbar_min = 0.0
-        colorbar_max = 1.0
+        color_bar_min = 0.0
+        color_bar_max = 1.0
         if normalized:
-            colorbar_min = tile_attentions.min()
-            colorbar_max = tile_attentions.max()
+            color_bar_min = tile_attentions.min()
+            color_bar_max = tile_attentions.max()
 
-        img = plt.imshow(np.array([[colorbar_min, colorbar_max]]), cmap=colormap_name)
+        # Creating a dummy image for the color bar to fit
+        img = plt.imshow(np.array([[color_bar_min, color_bar_max]]), cmap=colormap_name)
         img.set_visible(False)
         c_bar = plt.colorbar(orientation='vertical')
 
-        colorbar_title = 'Attention'
+        color_bar_title = 'Attention'
         if normalized:
-            colorbar_title = 'Attention (Normalized)'
-        c_bar.ax.set_ylabel(colorbar_title, rotation=270)
+            color_bar_title = 'Attention (Normalized)'
+        c_bar.ax.set_ylabel(color_bar_title, rotation=270)
 
         plt.imshow(out_image)
         plt.xticks([], [])
@@ -536,13 +549,23 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
         f.close()
 
     # Writing attention tiles
-    for (max_attention_tiles,metric_name) in zip([max_attention_tilesTP,max_attention_tilesFP,max_attention_tilesFN,max_attention_tilesTN], ['TP','FP','FN','TN']):
-        print('Saving '+str(len(max_attention_tiles))+' tiles for metric '+metric_name)
+    for (max_attention_tiles, metric_name) in zip(
+            [max_attention_tilesTP, max_attention_tilesFP, max_attention_tilesFN, max_attention_tilesTN],
+            ['TP', 'FP', 'FN', 'TN']):
+        log.write('Saving ' + str(len(max_attention_tiles)) + ' tiles for metric ' + metric_name)
 
         if len(max_attention_tiles) > 0:
             out_image = fuse_image_tiles(images=max_attention_tiles, image_width=image_width, image_height=image_height)
             max_attention_file = out_dir + 'max_attention_' + metric_name + '.png'
             plt.imsave(max_attention_file, out_image)
+
+
+def calculate_dice_score(TP: int, FP: int, FN: int):
+    TP = float(math.floor(TP))
+    FP = float(math.floor(FP))
+    FN = float(math.floor(FN))
+
+    return (2 * TP) / (2 * TP + FP + FN)
 
 
 def fuse_image_tiles(images: [np.ndarray], image_width: int, image_height: int):

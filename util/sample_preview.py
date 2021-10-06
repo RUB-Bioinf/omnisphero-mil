@@ -37,8 +37,9 @@ def save_rgb(img: np.ndarray, filename: str):
             traceback.print_exc()
 
 
-def save_z_scored_image(img: np.ndarray, filename: str, normalize_enum: int, min: float = -3.0, dim_x: int = 150,
-                        dim_y: int = 150, max: float = 3.0, dpi: int = 250, fig_titles: [str] = ['r', 'g', 'b']):
+def save_z_scored_image(img: np.ndarray, filename: str, normalize_enum: int, vmin: float = -3.0, dim_x: int = 150,
+                        dim_y: int = 150, vmax: float = 3.0, dpi: int = 250, fig_titles: [str] = ['r', 'g', 'b'],
+                        y_label: str = 'px', x_label: str = 'px'):
     x = np.arange(0, dim_x, 1)
     y = np.arange(0, dim_y, 1)
     j = cm.get_cmap('jet')
@@ -49,9 +50,9 @@ def save_z_scored_image(img: np.ndarray, filename: str, normalize_enum: int, min
         current_channel = img[:, :, i]
 
         plt.subplot(1, 3, i + 1, adjustable='box', aspect=1)
-        plt.pcolor(X, Y, current_channel, cmap=j, vmin=min, vmax=max)
-        plt.xlabel('px')
-        plt.ylabel('px')
+        plt.pcolor(X, Y, current_channel, cmap=j, vmin=vmin, vmax=vmax)
+        plt.xlabel(y_label)
+        plt.ylabel(x_label)
         plt.title(fig_titles[i])
 
         c_bar = plt.colorbar()
@@ -63,9 +64,25 @@ def save_z_scored_image(img: np.ndarray, filename: str, normalize_enum: int, min
     plt.savefig(filename, dpi=dpi)
 
 
+def z_score_to_rgb(img: np.ndarray, colormap: str = 'jet', a_min: float = -3.0, a_max=3.0) -> [np.ndarray]:
+    j = cm.get_cmap(colormap)
+
+    channels = []
+    for i in range(3):
+        current_channel = img[:, :, i]
+        current_channel = np.clip(current_channel, a_min=a_min, a_max=a_max)
+        current_channel = j(current_channel) * 255
+        current_channel = current_channel[:, :, 0:3]
+        current_channel = current_channel.astype('uint8')
+
+        channels.append(current_channel)
+
+    return channels
+
+
 def save_hnm_bags(out_dir: str, new_bags: [np.ndarray], new_bags_raw: [np.ndarray], new_bag_names: [str]):
     os.makedirs(out_dir, exist_ok=True)
-    log.write('Saving hnm bag previews to: '+out_dir)
+    log.write('Saving hnm bag previews to: ' + out_dir)
 
     print('')
     for i in range(len(new_bags)):
@@ -88,9 +105,10 @@ def save_hnm_bags(out_dir: str, new_bags: [np.ndarray], new_bags_raw: [np.ndarra
             rgb = mil_metrics.outline_rgb_array(rgb, None, None, outline=2, override_colormap=[255, 255, 255])
             colored_tiles.append(rgb)
 
-        out_image = mil_metrics.fuse_image_tiles(images=colored_tiles, image_width=image_width,
-                                                 image_height=image_height)
-        plt.imsave(filename, out_image)
+        if len(colored_tiles) > 0 and image_height is not None:
+            out_image = mil_metrics.fuse_image_tiles(images=colored_tiles, image_width=image_width,
+                                                     image_height=image_height)
+            plt.imsave(filename, out_image)
 
     log.write('Finished saving previews.')
 

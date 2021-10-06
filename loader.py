@@ -4,16 +4,23 @@ import json
 import os
 import random
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from sys import platform
 from typing import Union
 from zipfile import ZipFile
 
+from matplotlib import cm
+import matplotlib.pyplot as plt
 import numpy as np
 import traceback
 
+from mil_metrics import fuse_image_tiles
+from mil_metrics import outline_rgb_array
 from util import log
+from util.sample_preview import save_z_scored_image
+from util.sample_preview import z_score_to_rgb
 from util.utils import gct
 from util.utils import get_time_diff
 from util.utils import line_print
@@ -23,15 +30,18 @@ import math
 # Constants
 
 # normalize_enum is an enum to determine normalisation as follows:
-# 0 = no normalisation
-# 1 = normalize every cell between 0 and 255 (8 bit)
-# 2 = normalize every cell individually with every color channel independent
-# 3 = normalize every cell individually with every color channel using the min / max of all three
-# 4 = normalize every cell but with bounds determined by the brightest cell in the bag
-# 5 = z-score every cell individually with every color channel independent
-# 6 = z-score every cell individually with every color channel using the mean / std of all three
-# 7 = z-score every cell individually with every color channel independent using all samples in the bag
-# 8 = z-score every cell individually with every color channel using the mean / std of all three from all samples in the bag
+#  0 = no normalisation
+#  1 = normalize every cell between 0 and 255 (8 bit)
+#  2 = normalize every cell individually with every color channel independent
+#  3 = normalize every cell individually with every color channel using the min / max of all three
+#  4 = normalize every cell but with bounds determined by the brightest cell in the bag
+#  5 = z-score every cell individually with every color channel independent
+#  6 = z-score every cell individually with every color channel using the mean / std of all three
+#  7 = z-score every cell individually with every color channel independent using all samples in the bag
+#  8 = z-score every cell individually with every color channel using the mean / std of all three from all samples in the bag
+#  9: Normalizing first, according to [4] and z-scoring afterwards according to [5]
+# 10: Normalizing first, according to [4] and z-scoring afterwards according to [6]
+
 normalize_enum_default = 1
 
 normalize_enum_descriptions = [
@@ -62,8 +72,12 @@ default_well_indices_late = [7, 8, 9]
 default_well_indices_very_early = [0, 1, 2]
 default_well_indices_very_late = [8, 9]
 
-
 ####
+
+# Threading lock
+global thread_lock
+thread_lock = threading.Lock()
+
 
 def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: int, include_raw: bool = True,
                          constraints_0: [int] = default_tile_constraints_none,
@@ -129,11 +143,11 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
                 else:
                     y_tiles_full = np.concatenate((y_tiles_full, y_tiles), axis=0)
 
-    log.write('Debug list size "X_full": '+str(len(X_full)))
-    log.write('Debug list size "y_full": '+str(len(y_full)))
-    log.write('Debug list size "y_tiles_full": '+str(len(y_tiles_full)))
-    log.write('Debug list size "X_raw_full": '+str(len(X_raw_full)))
-    log.write('Debug list size "bag_names": '+str(len(bag_names_full)))
+    log.write('Debug list size "X_full": ' + str(len(X_full)))
+    log.write('Debug list size "y_full": ' + str(len(y_full)))
+    log.write('Debug list size "y_tiles_full": ' + str(len(y_tiles_full)))
+    log.write('Debug list size "X_raw_full": ' + str(len(X_raw_full)))
+    log.write('Debug list size "bag_names": ' + str(len(bag_names_full)))
 
     assert len(X_full) == len(y_full)
     assert len(X_full) == len(y_tiles_full)
@@ -229,7 +243,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
     bag_names = []
     y_tiles = []
     error_list = []
-    log.write('Parallel execution resulted in '+str(len(future_list))+' futures.')
+    log.write('Parallel execution resulted in ' + str(len(future_list)) + ' futures.')
     print('\n')
 
     for i in range(len(future_list)):
@@ -254,17 +268,17 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
             error_list.append(e)
 
     print('\n')
-    log.write('\nFully Finished Loading Path. Files: '+str(loaded_files_list))
+    log.write('\nFully Finished Loading Path. Files: ' + str(loaded_files_list))
 
     # Deleting the futures and the future list to immediately releasing the memory.
     del future_list[:]
     del future_list
 
-    log.write('Debug list size "X": '+str(len(X)))
-    log.write('Debug list size "y": '+str(len(y)))
-    log.write('Debug list size "y_tiles": '+str(len(y_tiles)))
-    log.write('Debug list size "X_raw": '+str(len(X_raw)))
-    log.write('Debug list size "bag_names": '+str(len(bag_names)))
+    log.write('Debug list size "X": ' + str(len(X)))
+    log.write('Debug list size "y": ' + str(len(y)))
+    log.write('Debug list size "y_tiles": ' + str(len(y_tiles)))
+    log.write('Debug list size "X_raw": ' + str(len(X_raw)))
+    log.write('Debug list size "bag_names": ' + str(len(bag_names)))
 
     assert len(X) == len(y)
     assert len(X) == len(y_tiles)
@@ -291,7 +305,8 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_i
     input_zip.close()
 
     data = json.loads(data)
-    X, y_bag, y_tiles, X_raw, bag_name = parse_JSON(str(zipped_data_name), data, worker_verbose, normalize_enum,
+    X, y_bag, y_tiles, X_raw, bag_name = parse_JSON(filepath, str(zipped_data_name), data, worker_verbose,
+                                                    normalize_enum,
                                                     label_0_well_indices=label_0_well_indices,
                                                     label_1_well_indices=label_1_well_indices,
                                                     constraints_1=constraints_1, constraints_0=constraints_0,
@@ -324,9 +339,9 @@ def read_JSON_file(filepath: str, worker_verbose: bool, normalize_enum: int, lab
 
 ####
 
-def parse_JSON(filepath: str, json_data, worker_verbose: bool, normalize_enum: int, label_0_well_indices: [int],
-               label_1_well_indices: [int], constraints_1: [int], constraints_0: [int],
-               include_raw: bool = True, ) -> (np.ndarray, int, [int], np.ndarray, str):
+def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: bool, normalize_enum: int,
+               label_0_well_indices: [int], label_1_well_indices: [int], constraints_1: [int], constraints_0: [int],
+               include_raw: bool = True) -> (np.ndarray, int, [int], np.ndarray, str):
     # Setting up arrays
     X = []
     X_raw = []
@@ -338,7 +353,7 @@ def parse_JSON(filepath: str, json_data, worker_verbose: bool, normalize_enum: i
     height = json_data['tileHeight']
     bit_depth = json_data['bit_depth']
     well = json_data['well']
-    experiment_name = filepath[:filepath.find('-')]
+    experiment_name = zipped_data_name[:zipped_data_name.find('-')]
     bag_name = experiment_name + '-' + well
 
     m = re.findall(well_regex, well)[0]
@@ -570,6 +585,7 @@ def parse_JSON(filepath: str, json_data, worker_verbose: bool, normalize_enum: i
             # Actually writing bag labels
             y_tiles.append(label)
 
+    # Checking if there is actually something loaded
     if len(X) == 0:
         X = None
         X_raw = None
@@ -581,7 +597,149 @@ def parse_JSON(filepath: str, json_data, worker_verbose: bool, normalize_enum: i
         X = np.asarray(X)
         X_raw = np.asarray(X_raw)
 
+        # Saving preview
+        preview_constraints = constraints_0
+        if label == 1:
+            preview_constraints = constraints_1
+
+        save_save_bag_preview(X=X, out_dir_base=filepath, experiment_name=experiment_name, well=well,
+                              normalize_enum=normalize_enum, preview_constraints=preview_constraints,
+                              bit_depth=bit_depth, X_raw=X_raw, verbose=worker_verbose)
+
     return X, y, y_tiles, X_raw, bag_name
+
+
+def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constraints, normalize_enum, bit_depth,
+                          X_raw, dpi: int = (1337 * 1.5), colormap_name: str = 'jet', vmin: float = -3.0, vmax=3.0,
+                          outline: int = 2, verbose: bool = False):
+    width = None
+    height = None
+    z_mode = normalize_enum > 4
+
+    if platform == "linux" or platform == "linux2":
+        # going one level up for linux dirs
+        out_dir_base = os.path.dirname(out_dir_base)
+
+    preview_constraints_label = str(preview_constraints).replace('[', '').replace(']', '').replace(',', '-').replace(
+        ' ', '')
+    out_dir = os.path.dirname(out_dir_base)
+    out_dir = out_dir + os.sep + 'bag_previews' + os.sep + 'normalize-' + str(
+        normalize_enum) + os.sep + preview_constraints_label + os.sep + experiment_name + os.sep
+    os.makedirs(out_dir, exist_ok=True)
+    bit_max = pow(2, bit_depth) - 1
+
+    out_file_name = out_dir + experiment_name + '-' + well + '.png'
+    out_file_name_raw = out_dir + experiment_name + '-' + well + '-raw.png'
+    # print('debug out fname: ' + out_file_name)
+    if os.path.exists(out_file_name):
+        # Preview already exists. Nothing to do.
+        if verbose:
+            log.write('Preview file already exists. Skipping: ' + out_file_name)
+        return
+
+    rgb_samples = []
+    rgb_samples_raw = []
+    z_r_samples = []
+    z_g_samples = []
+    z_b_samples = []
+    z_out_dir = out_dir + 'z_scores' + os.sep
+    z_out_file_name_r = z_out_dir + experiment_name + '-' + well + '_r.png'
+    z_out_file_name_g = z_out_dir + experiment_name + '-' + well + '_g.png'
+    z_out_file_name_b = z_out_dir + experiment_name + '-' + well + '_b.png'
+
+    # Collecting every samples in the bag to save them on the device
+    assert len(X) > 0
+    global thread_lock
+
+    for i in range(len(X)):
+        sample = X[i]
+        sample_raw = X_raw[i]
+        width, height, _ = sample.shape
+
+        # Storing raw samples
+        sample_raw = outline_rgb_array(sample_raw, None, None, outline=outline, override_colormap=[255, 255, 255])
+        rgb_samples_raw.append(sample_raw)
+
+        # Storing the actual sample, based if it's z-scored or normalized
+        if z_mode:
+            z_score_channels = z_score_to_rgb(img=sample, colormap=colormap_name, a_min=vmin, a_max=vmax)
+
+            sample_r = outline_rgb_array(z_score_channels[0], None, None, outline=outline,
+                                         override_colormap=[255, 255, 255])
+            sample_g = outline_rgb_array(z_score_channels[1], None, None, outline=outline,
+                                         override_colormap=[255, 255, 255])
+            sample_b = outline_rgb_array(z_score_channels[2], None, None, outline=outline,
+                                         override_colormap=[255, 255, 255])
+            z_r_samples.append(sample_r)
+            z_g_samples.append(sample_g)
+            z_b_samples.append(sample_b)
+        else:
+            if normalize_enum == 0:
+                sample = (sample / bit_max) * 255
+            else:
+                sample = sample * 255
+
+            sample = sample.astype(np.uint8)
+            sample = outline_rgb_array(sample, None, None, outline=outline, override_colormap=[255, 255, 255])
+            rgb_samples.append(sample)
+
+    # Saving the image
+    if z_mode:
+        os.makedirs(z_out_dir, exist_ok=True)
+        fused_image_r = fuse_image_tiles(images=z_r_samples, image_width=width, image_height=height)
+        fused_image_g = fuse_image_tiles(images=z_g_samples, image_width=width, image_height=height)
+        fused_image_b = fuse_image_tiles(images=z_b_samples, image_width=width, image_height=height)
+
+        # Saving single chanel z-score rgb images
+        fused_images = [fused_image_r, fused_image_g, fused_image_b]
+        fused_width, fused_height, _ = fused_image_r.shape
+        plt.imsave(z_out_file_name_r, fused_image_r)
+        plt.imsave(z_out_file_name_g, fused_image_g)
+        plt.imsave(z_out_file_name_b, fused_image_b)
+
+        # saving the raw included version
+        out_image_raw = fuse_image_tiles(images=rgb_samples_raw, image_width=width, image_height=height)
+        out_image_raw = fuse_image_tiles(images=[fused_image_r, fused_image_g, fused_image_b, out_image_raw],
+                                         image_width=fused_width, image_height=fused_height)
+        plt.imsave(out_file_name_raw, out_image_raw)
+
+        # Blocking all other threads so pyplot doesn't overwrite itself
+        thread_lock.acquire(blocking=True)
+
+        # saving a well formatted version
+        plt.clf()
+        for i in range(3):
+            current_channel = fused_images[i]
+            plt.subplot(1, 3, i + 1, adjustable='box', aspect=1)
+            plt.xticks([], [])
+            plt.yticks([], [])
+
+            # Creating a dummy image for the color bar to fit
+            img = plt.imshow(np.array([[vmin, vmax]]), cmap=colormap_name)
+            img.set_visible(False)
+            c_bar = plt.colorbar(orientation='vertical', fraction=0.046)
+            if i == 2:
+                c_bar.ax.set_ylabel('z-score', rotation=270)
+
+            plt.imshow(current_channel)
+            plt.title(['r', 'g', 'b'][i])
+
+            plt.suptitle(
+                'z-scores: ' + experiment_name + ' - ' + well + '\n\n' + normalize_enum_descriptions[normalize_enum])
+            plt.tight_layout()
+            plt.savefig(out_file_name, dpi=dpi)
+
+        # Releasing them other threads
+        thread_lock.release()
+    else:
+        out_image = fuse_image_tiles(images=rgb_samples, image_width=width, image_height=height)
+        plt.imsave(out_file_name, out_image)
+
+        fused_width, fused_height, _ = out_image.shape
+        out_image_raw = fuse_image_tiles(images=rgb_samples_raw, image_width=width, image_height=height)
+        out_image_raw = fuse_image_tiles(images=[out_image, out_image_raw], image_width=fused_width,
+                                         image_height=fused_height)
+        plt.imsave(out_file_name_raw, out_image_raw)
 
 
 def get_bag_mean(n: [np.ndarray], axis: int = None):

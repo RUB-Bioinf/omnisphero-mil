@@ -324,7 +324,7 @@ class BaselineMIL(OmniSpheroMil):
             tile_acc, tile_accuracy_list, tile_prediction_list = self.compute_accuracy_tiles(y_targets=y_tiles,
                                                                                              y_predictions=y_hat_tiles)
 
-        return bag_acc, tile_acc, tile_accuracy_list, tile_prediction_list, float(y_hat)
+        return bag_acc, tile_acc, tile_accuracy_list, tile_prediction_list, float(y_hat), y_hat_binarized
 
     def compute_accuracy_tiles(self, y_targets: Tensor, y_predictions: [Tensor]) -> (float, [float], [int]):
         accuracy_list = []
@@ -388,7 +388,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     """
     best_loss = sys.float_info.max
     history = []
-    history_keys = ['train_loss', 'train_acc', 'val_acc', 'val_loss','train_roc_auc','val_roc_auc']
+    history_keys = ['train_loss', 'train_acc', 'val_acc', 'val_loss', 'train_roc_auc', 'val_roc_auc','train_dice_score','val_dice_score']
 
     checkpoint_out_dir = out_dir_base + 'checkpoints' + os.sep
     metrics_dir_live = out_dir_base + 'metrics_live' + os.sep
@@ -447,6 +447,10 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         train_acc_tiles = []
         all_labels = []
         predicted_labels = []
+        train_FP = 0
+        train_TP = 0
+        train_FN = 0
+        train_TN = 0
         start_time_epoch = datetime.now()
         epochs_remaining = epochs - epoch
 
@@ -488,11 +492,25 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
             # https://github.com/yhenon/pytorch-retinanet/issues/3
             train_losses.append(float(loss))
-            acc, acc_tiles, _, _, y_hat = model.compute_accuracy(data, bag_label, tile_labels)
+            acc, acc_tiles, _, _, y_hat, y_hat_binarized = model.compute_accuracy(data, bag_label, tile_labels)
             train_acc.append(float(acc))
             train_acc_tiles.append(float(acc_tiles))
             predicted_labels.append(float(y_hat))
             all_labels.append(float(bag_label))
+
+            # Checking if prediction is TP / FP ... etc
+            binary_label = bool(label)
+            binary_prediction = bool(y_hat_binarized)
+            if binary_label:
+                if binary_prediction:
+                    train_TP += 1
+                else:
+                    train_FP += 1
+            else:
+                if binary_prediction:
+                    train_FN += 1
+                else:
+                    train_TN += 1
 
             # Notifying Callbacks
             for i in range(len(callbacks)):
@@ -519,6 +537,11 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             log.write(str(e))
         result['train_roc_auc'] = roc_auc
 
+        result['train_FP'] = train_FP
+        result['train_TP'] = train_TP
+        result['train_FN'] = train_FN
+        result['train_TN'] = train_TN
+        result['train_dice_score'] = mil_metrics.calculate_dice_score(TP=train_TP, FP=train_FP, FN=train_FN)
         result['train_loss'] = sum(train_losses) / len(train_losses)  # torch.stack(train_losses).mean().item()
         result['train_acc'] = sum(train_acc) / len(train_acc)
         result['train_acc_tiles'] = sum(train_acc_tiles) / len(train_acc_tiles)
@@ -562,6 +585,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         mil_metrics.plot_accuracy_tiles(history, metrics_dir_live, include_raw=False, include_tikz=False)
         mil_metrics.plot_losses(history, metrics_dir_live, include_raw=False, include_tikz=False)
         mil_metrics.plot_accuracies(history, metrics_dir_live, include_tikz=False)
+        mil_metrics.plot_dice_scores(history, metrics_dir_live, include_tikz=True)
         mil_metrics.plot_binary_roc_curves(history, metrics_dir_live, include_tikz=False)
 
         # Printing each loss for every batch
@@ -659,6 +683,10 @@ def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, clamp_max:
     test_acc_tiles = []
     acc_tiles_list_list = []
     tiles_prediction_list_list = []
+    val_FP = 0
+    val_TP = 0
+    val_FN = 0
+    val_TN = 0
 
     bag_label_list = []
     y_hat_list = []
@@ -682,12 +710,26 @@ def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, clamp_max:
 
         # https://github.com/yhenon/pytorch-retinanet/issues/3
         test_losses.append(float(loss))
-        acc, acc_tiles, acc_tiles_list, tiles_prediction_list, y_hat = model.compute_accuracy(data, bag_label,
+        acc, acc_tiles, acc_tiles_list, tiles_prediction_list, y_hat, y_hat_binarized = model.compute_accuracy(data, bag_label,
                                                                                               tile_labels)
         test_acc_tiles.append(float(acc_tiles))
         acc_tiles_list_list.append(acc_tiles_list)
         tiles_prediction_list_list.append(tiles_prediction_list)
         test_acc.append(float(acc))
+
+        # Checking if prediction is TP / FP ... etc
+        binary_label = bool(label)
+        binary_prediction = bool(y_hat_binarized)
+        if binary_label:
+            if binary_prediction:
+                val_TP += 1
+            else:
+                val_FP += 1
+        else:
+            if binary_prediction:
+                val_FN += 1
+            else:
+                val_TN += 1
 
         bag_label_list.append(float(label))
         y_hat_list.append(float(y_hat))
@@ -701,11 +743,18 @@ def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, clamp_max:
     except Exception as e:
         log.write(str(e))
 
+    result['val_dice_score'] = mil_metrics.calculate_dice_score(TP=val_TP, FP=val_FP, FN=val_FN)
+    result['val_FP'] = val_FP
+    result['val_TP'] = val_TP
+    result['val_FN'] = val_FN
+    result['val_TN'] = val_TN
     result['val_roc_auc'] = roc_auc
     result['val_loss'] = sum(test_losses) / len(test_losses)  # torch.stack(test_losses).mean().item()
     result['val_acc'] = sum(test_acc) / len(test_acc)
     result['val_acc_tiles'] = sum(test_acc_tiles) / len(test_acc_tiles)
+
     return result, attention_weights, test_losses, acc_tiles_list_list, tiles_prediction_list_list
+
 
 
 # deprecated
