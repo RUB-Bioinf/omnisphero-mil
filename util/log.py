@@ -1,5 +1,4 @@
 import os
-import sys
 from pathlib import Path
 
 from util.utils import gct
@@ -32,7 +31,7 @@ def set_file(filename: str):
     add_file(filename=filename)
 
 
-def write(output, print_to_console: bool = True, include_timestamp: bool = True,include_in_files:bool=True):
+def write(output, print_to_console: bool = True, include_timestamp: bool = True, include_in_files: bool = True):
     global _log_files
     output = str(output)
 

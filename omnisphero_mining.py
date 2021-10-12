@@ -2,17 +2,16 @@
 #########
 
 import math
+
 import numpy as np
 import torch
 import torchvision.models as model_zoo
 from sklearn.cluster import KMeans
 from torch import Tensor
-import random
 
 from models import OmniSpheroMil
 from util import log
 from util.omnisphero_data_loader import OmniSpheroDataLoader
-
 # FUNCTIONS
 ###########
 from util.utils import line_print
@@ -33,7 +32,7 @@ def get_false_positive_bags(trained_model: OmniSpheroMil, train_dl: OmniSpheroDa
     print('')
     trained_model.eval()
     for batch_id, (data, label, tile_labels, bag_index) in enumerate(train_dl):
-        line_print('Finding out if bag is a FP: '+str(batch_id) + '/' + str(len(train_dl)))
+        line_print('Finding out if bag is a FP: ' + str(batch_id) + '/' + str(len(train_dl)))
 
         bag_index = int(bag_index.cpu().numpy())
         label = label.squeeze()
@@ -129,7 +128,7 @@ def compute_bag_size(training_ds: [np.ndarray]) -> int:
 @torch.no_grad()
 def new_bag_generation(hard_negative_instances: [Tensor], training_ds: OmniSpheroDataLoader,
                        hard_negative_instances_raw: [np.ndarray], n_clusters: int = 10, random_seed: int = 1337) -> (
-[[np.ndarray]], [[np.ndarray]]):
+        [[np.ndarray]], [[np.ndarray]]):
     """ Use a pretrained CNN w/o last layer to extract feature vectors from
     the determined hard negative instances.
     These feature vectors are then clustered with k-Means to obtain feature clusters.

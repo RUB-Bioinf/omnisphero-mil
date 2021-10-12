@@ -5,6 +5,7 @@ import sys
 from datetime import datetime
 from sys import getsizeof
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch.optim import Optimizer
@@ -79,6 +80,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
                 label_0_well_indices=loader.default_well_indices_none,
                 label_1_well_indices=loader.default_well_indices_none,
                 augment_train: bool = False, augment_validation: bool = False,
+                channel_inclusions: [bool] = loader.default_channel_inclusions_all,
                 data_split_percentage_validation: float = 0.35, data_split_percentage_test: float = 0.20,
                 use_hard_negative_mining: bool = True, hnm_magnitude: float = 5.0, hnm_new_bag_percentage=0.25,
                 writing_metrics_enabled: bool = True, testing_model_enabled: bool = True
@@ -87,7 +89,9 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         out_dir = source_dirs[0] + os.sep + 'training_results'
 
     # This param is unused and should not be "True"!
-    assert invert_bag_labels == False
+    assert invert_bag_labels is False
+    assert len(label_0_well_indices) > 0
+    assert len(label_1_well_indices) > 0
 
     out_dir = out_dir + os.sep + training_label + os.sep
     loading_preview_dir = out_dir + os.sep + 'loading_previews' + os.sep
@@ -111,13 +115,14 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     protocol_f.write('\nEpochs: ' + str(epochs))
     protocol_f.write('\nShuffle data loader: ' + str(shuffle_data_loaders))
     protocol_f.write('\nMax Loader Workers: ' + str(max_workers))
-    protocol_f.write('\nNormalize Enum: ' + str(normalize_enum))
     protocol_f.write('\nGPU Enabled: ' + str(gpu_enabled))
     protocol_f.write('\nHNM Enabled: ' + str(use_hard_negative_mining))
     protocol_f.write('\nClamp Min: ' + str(clamp_min))
     protocol_f.write('\nClamp Max: ' + str(clamp_max))
 
     protocol_f.write('\n\n == Loader Params ==')
+    protocol_f.write('\nNormalization Enum: ' + str(normalize_enum))
+    protocol_f.write('\nNormalization Strategy: ' + loader.normalize_enum_descriptions[normalize_enum])
     protocol_f.write('\nInvert Bag Labels: ' + str(invert_bag_labels))
     protocol_f.write('\nRepack: Percentage: ' + str(repack_percentage))
     protocol_f.write('\nRepack: Minimum Positive Samples: ' + str(positive_bag_min_samples))
@@ -127,6 +132,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     protocol_f.write('\nTile constraints explained: Minimum number of x [Nuclei, Oligos, Neurons]')
     protocol_f.write('\nTile Constraints label 0: ' + str(tile_constraints_0))
     protocol_f.write('\nTile Constraints label 1: ' + str(tile_constraints_1))
+    protocol_f.write('\nchannel_inclusions: ' + str(channel_inclusions))
 
     global_log_filename = None
     local_log_filename = out_dir + os.sep + 'log.txt'
@@ -160,6 +166,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     X, y, y_tiles, X_raw, bag_names, errors, loaded_files_list = loader.load_bags_json_batch(batch_dirs=source_dirs,
                                                                                              max_workers=max_workers,
                                                                                              include_raw=True,
+                                                                                             channel_inclusions=channel_inclusions,
                                                                                              constraints_0=tile_constraints_0,
                                                                                              constraints_1=tile_constraints_1,
                                                                                              label_0_well_indices=label_0_well_indices,
@@ -217,7 +224,6 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
 
     X_s = utils.convert_size(X_size)
     y_s = utils.convert_size(getsizeof(y))
-
     log.write("X-size in memory: " + str(X_s))
     log.write("y-size in memory: " + str(y_s))
 
@@ -253,6 +259,37 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         print_bag_metadata(X, y, y_tiles, bag_names, file_name=out_dir + 'bags_repacked.csv')
     else:
         print_bag_metadata(X, y, y_tiles, bag_names, file_name=out_dir + 'bags.csv')
+
+    # Writing whole bags to the disc
+    preview_indexes_positive = list(np.where(np.asarray(y) == 1)[0])
+    preview_indexes_negative = list(np.where(np.asarray(y) == 0)[0])
+    random.shuffle(preview_indexes_positive)
+    random.shuffle(preview_indexes_negative)
+    preview_indexes_negative = preview_indexes_negative[0:math.ceil(len(preview_indexes_negative) * 0.13)]
+    preview_indexes_positive = preview_indexes_positive[0:math.ceil(len(preview_indexes_negative) * 0.13)]
+    preview_indexes = preview_indexes_negative
+    preview_indexes.extend(preview_indexes_positive)
+    preview_indexes.sort()
+    log.write('Number of whole preview bags to save: ' + str(len(preview_indexes)) + '. -> ' + str(preview_indexes))
+    del preview_indexes_positive, preview_indexes_negative
+    print('\n')
+    for i in range(len(X)):
+        line_print('Writing whole bag loading preview: ' + str(i + 1) + '/' + str(len(X)), include_in_log=False)
+        preview_image_file_base = loading_preview_dir + 'preview_' + str(i) + '-' + bag_names[i] + '_' + str(y[i])
+        colored_tiles = []
+        image_width = None
+        image_height = None
+        if i in preview_indexes:
+            for rgb in X_raw[i]:
+                image_width, image_height = rgb[0].shape
+                rgb = np.einsum('abc->bca', rgb)
+                rgb = mil_metrics.outline_rgb_array(rgb, None, None, outline=2, override_colormap=[255, 255, 255])
+                colored_tiles.append(rgb)
+
+        if len(colored_tiles) > 0 and image_height is not None:
+            out_image = mil_metrics.fuse_image_tiles(images=colored_tiles, image_width=image_width,
+                                                     image_height=image_height)
+            plt.imsave(preview_image_file_base + '_bag.png', out_image)
 
     # Setting up datasets
     dataset, input_dim = loader.convert_bag_to_batch(X, y, y_tiles)
@@ -333,7 +370,6 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     if data_split_percentage_test is not None:
         test_dl = OmniSpheroDataLoader(test_data, batch_size=1, shuffle=shuffle_data_loaders,
                                        transform_data_saver=False, **loader_kwargs, transform_enabled=False)
-
     del validation_data, test_data
     # test_dl = DataLoader(test_data, batch_size=1, shuffle=True, **loader_kwargs)
 
@@ -675,7 +711,7 @@ def main(debug: bool = False):
                     augment_validation=True,
                     augment_train=True,
                     label_1_well_indices=loader.default_well_indices_early,
-                    label_0_well_indices=loader.default_well_indices_late,
+                    label_0_well_indices=loader.default_well_indices_very_late,
                     loss_function='binary_cross_entropy',
                     testing_model_enabled=True,
                     writing_metrics_enabled=True
@@ -683,7 +719,7 @@ def main(debug: bool = False):
     else:
         for l in ['binary_cross_entropy']:
             for o in ['adadelta']:
-                for r in [0.2]:
+                for r in [0.45]:
                     for i in [4, 5, 6, 7, 8]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
@@ -692,26 +728,27 @@ def main(debug: bool = False):
                             train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                                         normalize_enum=i,
-                                        training_label='hnm-early_inverted-wells-normalize-' + str(
+                                        training_label='hnm-early_inverted-O1-NoNeuron2-wells-normalize-' + str(
                                             i) + 'repack-' + str(r),
                                         global_log_dir=current_global_log_dir,
                                         invert_bag_labels=False,
-                                        data_split_percentage_validation=0.2,
-                                        data_split_percentage_test=0.20,
+                                        data_split_percentage_validation=0.25,
+                                        data_split_percentage_test=0.15,
                                         use_hard_negative_mining=True,
                                         hnm_magnitude=5.5,
-                                        hnm_new_bag_percentage=0.25,
+                                        hnm_new_bag_percentage=0.15,
                                         loss_function=l,
                                         repack_percentage=r,
                                         optimizer=o,
+                                        channel_inclusions=loader.default_channel_inclusions_no_neurites,
                                         model_enable_attention=True,
                                         augment_validation=augment_validation,
                                         augment_train=augment_train,
                                         model_use_max=False,
                                         positive_bag_min_samples=4,
                                         tile_constraints_0=loader.default_tile_constraints_nuclei,
-                                        tile_constraints_1=loader.default_tile_constraints_nuclei,
-                                        label_1_well_indices=loader.default_well_indices_very_early,
+                                        tile_constraints_1=loader.default_tile_constraints_oligos,
+                                        label_1_well_indices=loader.default_well_indices_early,
                                         label_0_well_indices=loader.default_well_indices_very_late,
                                         device_ordinals=current_device_ordinals
                                         )

@@ -46,7 +46,7 @@ def to_file(filename: str):
         i = i + 1
         label = _label_map[key]
 
-        f.write('\n'+str(i) + ';' + str(key) + ';' + str(label))
+        f.write('\n' + str(i) + ';' + str(key) + ';' + str(label))
 
     f.close()
 

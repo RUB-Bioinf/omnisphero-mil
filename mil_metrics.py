@@ -25,7 +25,6 @@ import models
 from models import BaselineMIL
 from util import log
 from util import utils
-
 # matplotlib.use('Agg')
 # plt.style.use('ggplot')
 # FUNCTIONS
@@ -573,8 +572,21 @@ def fuse_image_tiles(images: [np.ndarray], image_width: int, image_height: int):
     # assert image_height is None
 
     image_count = len(images)
+    assert image_count > 0
+
+    if image_count == 1:
+        # Special case, if there is only 1 image in the list
+        return images[0].astype(np.uint8)
+
+    if image_count == 2:
+        # Special case, if there are only 2 images in the list
+        combined_img = np.zeros((image_height, image_width * 2, 3), dtype=np.uint8)
+        combined_img[0:image_width, 0:image_height] = images[0].astype(np.uint8)
+        combined_img[0:image_width, image_height:image_height * 2] = images[1].astype(np.uint8)
+        return combined_img
+
     out_image_bounds = math.ceil(math.sqrt(image_count))
-    combined_img = np.zeros((out_image_bounds * image_width, out_image_bounds * image_height, 3), dtype='uint8')
+    combined_img = np.zeros((out_image_bounds * image_width, out_image_bounds * image_height, 3), dtype=np.uint8)
     y = -1
     x = -1
     for i in range(image_count):

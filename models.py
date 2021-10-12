@@ -19,7 +19,6 @@ import mil_metrics
 from torch_callbacks import BaseTorchCallback
 from util import log
 from util import utils
-
 ####
 from util.omnisphero_data_loader import OmniSpheroDataLoader
 
@@ -388,7 +387,8 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     """
     best_loss = sys.float_info.max
     history = []
-    history_keys = ['train_loss', 'train_acc', 'val_acc', 'val_loss', 'train_roc_auc', 'val_roc_auc','train_dice_score','val_dice_score']
+    history_keys = ['train_loss', 'train_acc', 'val_acc', 'val_loss', 'train_roc_auc', 'val_roc_auc',
+                    'train_dice_score', 'val_dice_score']
 
     checkpoint_out_dir = out_dir_base + 'checkpoints' + os.sep
     metrics_dir_live = out_dir_base + 'metrics_live' + os.sep
@@ -557,10 +557,10 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
         history.append(result)
         log.write(
-            'Epoch {}/{}: Train Loss: {:.4f}, Train Acc (Bags): {:.4f}, Train Acc (Tiles): {:.4f}, Val Loss: {:.4f}, '
-            'Val Acc (Bags): {:.4f}, Val Acc (Tiles): {:.4f}, Train AUC: {:.4f}, Val AUC: {:.4f}. Duration: {}. ETA: {}'.format(
-                epoch, epochs, result['train_loss'], result['train_acc'], result['train_acc_tiles'], result['val_loss'],
-                result['val_acc'], result['val_acc_tiles'], result['train_roc_auc'], result['val_roc_auc'], time_diff,
+            'Epoch {}/{}: Train Loss: {:.4f}, Train Acc (Bags): {:.4f}, Val Loss: {:.4f}, '
+            'Val Acc (Bags): {:.4f}, Train AUC: {:.4f}, Val AUC: {:.4f}. Duration: {}. ETA: {}'.format(
+                epoch, epochs, result['train_loss'], result['train_acc'], result['val_loss'],
+                result['val_acc'], result['train_roc_auc'], result['val_roc_auc'], time_diff,
                 eta_timestamp))
 
         # Notifying Callbacks
@@ -710,8 +710,9 @@ def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, clamp_max:
 
         # https://github.com/yhenon/pytorch-retinanet/issues/3
         test_losses.append(float(loss))
-        acc, acc_tiles, acc_tiles_list, tiles_prediction_list, y_hat, y_hat_binarized = model.compute_accuracy(data, bag_label,
-                                                                                              tile_labels)
+        acc, acc_tiles, acc_tiles_list, tiles_prediction_list, y_hat, y_hat_binarized = model.compute_accuracy(data,
+                                                                                                               bag_label,
+                                                                                                               tile_labels)
         test_acc_tiles.append(float(acc_tiles))
         acc_tiles_list_list.append(acc_tiles_list)
         tiles_prediction_list_list.append(tiles_prediction_list)
@@ -754,7 +755,6 @@ def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, clamp_max:
     result['val_acc_tiles'] = sum(test_acc_tiles) / len(test_acc_tiles)
 
     return result, attention_weights, test_losses, acc_tiles_list_list, tiles_prediction_list_list
-
 
 
 # deprecated

@@ -1,30 +1,28 @@
 # IMPORTS
 
 import json
+import math
 import os
 import random
 import re
 import threading
 import time
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 from sys import platform
 from typing import Union
 from zipfile import ZipFile
 
-from matplotlib import cm
 import matplotlib.pyplot as plt
 import numpy as np
-import traceback
 
 from mil_metrics import fuse_image_tiles
 from mil_metrics import outline_rgb_array
 from util import log
-from util.sample_preview import save_z_scored_image
 from util.sample_preview import z_score_to_rgb
 from util.utils import gct
 from util.utils import get_time_diff
 from util.utils import line_print
-import math
 
 ####
 # Constants
@@ -66,11 +64,14 @@ default_tile_constraints_oligos = [0, 1, 0]
 default_tile_constraints_neurons = [0, 0, 1]
 
 default_well_indices_none = []
-default_well_indices_early = [0, 1, 2, 3]
+default_well_indices_early = [0, 1, 2, 3, 4]
 default_well_indices_late = [7, 8, 9]
 
-default_well_indices_very_early = [0, 1, 2]
+default_well_indices_very_early = [0, 1, 2, 3]
 default_well_indices_very_late = [8, 9]
+
+default_channel_inclusions_all = [True, True, True]
+default_channel_inclusions_no_neurites = [True, True, False]
 
 ####
 
@@ -80,6 +81,7 @@ thread_lock = threading.Lock()
 
 
 def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: int, include_raw: bool = True,
+                         channel_inclusions: [bool] = default_channel_inclusions_all,
                          constraints_0: [int] = default_tile_constraints_none,
                          constraints_1: [int] = default_tile_constraints_none,
                          label_0_well_indices: [int] = default_well_indices_none,
@@ -94,6 +96,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
     log.write('Tile constraints explained: Minimum number of x [Nuclei, Oligos, Neurons]')
     log.write('Tile Constraints label 0: ' + str(constraints_0))
     log.write('Tile Constraints label 1: ' + str(constraints_1))
+    log.write('Channel Inclusions: ' + str(channel_inclusions))
 
     X_full = None
     X_raw_full = None
@@ -112,6 +115,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
                                                                                         max_workers=max_workers,
                                                                                         normalize_enum=normalize_enum,
                                                                                         gp_current=i + 1,
+                                                                                        channel_inclusions=channel_inclusions,
                                                                                         label_0_well_indices=label_0_well_indices,
                                                                                         label_1_well_indices=label_1_well_indices,
                                                                                         constraints_0=constraints_0,
@@ -159,6 +163,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
 
 # Main Loading function
 def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label_0_well_indices: [int],
+                   channel_inclusions: [bool],
                    label_1_well_indices: [int], constraints_1: [int], constraints_0: [int], gp_current: int = 1,
                    gp_max: int = 1, include_raw: bool = True):
     files = os.listdir(source_dir)
@@ -189,8 +194,9 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
                                      normalize_enum,
                                      label_0_well_indices,
                                      label_1_well_indices,
-                                     constraints_1,
                                      constraints_0,
+                                     constraints_1,
+                                     channel_inclusions,
                                      include_raw
                                      )
             future_list.append(future)
@@ -207,8 +213,9 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
                                      normalize_enum,
                                      label_0_well_indices,
                                      label_1_well_indices,
-                                     constraints_1,
                                      constraints_0,
+                                     constraints_1,
+                                     channel_inclusions,
                                      include_raw
                                      )
             future_list.append(future)
@@ -243,6 +250,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
     bag_names = []
     y_tiles = []
     error_list = []
+    print('')
     log.write('Parallel execution resulted in ' + str(len(future_list)) + ' futures.')
     print('\n')
 
@@ -254,7 +262,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
         if e is None:
             X_f, y_f, y_f_tiles, y_f_raw, bag_name = future.result()
             if X_f is not None and y_f is not None and y_f_tiles is not None and y_f_raw is not None and len(
-                    X_f) is not 0:
+                    X_f) != 0:
                 X.append(X_f)
                 y.append(y_f)
                 y_tiles.append(y_f_tiles)
@@ -293,7 +301,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
 
 def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_indices: [int],
                         label_1_well_indices: [int], constraints_1: [int], constraints_0: [int],
-                        include_raw: bool = True) -> (np.array, int, [int], str):
+                        channel_inclusions: [bool], include_raw: bool = True) -> (np.array, int, [int], str):
     if worker_verbose:
         log.write('Unzipping and reading json: ' + filepath)
 
@@ -309,6 +317,7 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_i
                                                     normalize_enum,
                                                     label_0_well_indices=label_0_well_indices,
                                                     label_1_well_indices=label_1_well_indices,
+                                                    channel_inclusions=channel_inclusions,
                                                     constraints_1=constraints_1, constraints_0=constraints_0,
                                                     include_raw=include_raw)
 
@@ -324,7 +333,7 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_i
 
 def read_JSON_file(filepath: str, worker_verbose: bool, normalize_enum: int, label_0_well_indices: [int],
                    label_1_well_indices: [int], constraints_1: [int], constraints_0: [int],
-                   include_raw: bool = True) -> (np.ndarray, int, [int], np.ndarray, str):
+                   channel_inclusions: [bool], include_raw: bool = True) -> (np.ndarray, int, [int], np.ndarray, str):
     if worker_verbose:
         log.write('Reading json: ' + filepath)
 
@@ -334,6 +343,7 @@ def read_JSON_file(filepath: str, worker_verbose: bool, normalize_enum: int, lab
 
     return parse_JSON(filepath, data, worker_verbose, normalize_enum, label_0_well_indices=label_0_well_indices,
                       label_1_well_indices=label_1_well_indices, include_raw=include_raw,
+                      channel_inclusions=channel_inclusions,
                       constraints_1=constraints_1, constraints_0=constraints_0)
 
 
@@ -341,12 +351,17 @@ def read_JSON_file(filepath: str, worker_verbose: bool, normalize_enum: int, lab
 
 def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: bool, normalize_enum: int,
                label_0_well_indices: [int], label_1_well_indices: [int], constraints_1: [int], constraints_0: [int],
-               include_raw: bool = True) -> (np.ndarray, int, [int], np.ndarray, str):
+               channel_inclusions: [bool], include_raw: bool = True) -> (np.ndarray, int, [int], np.ndarray, str):
     # Setting up arrays
     X = []
     X_raw = []
     y = None
     y_tiles = None
+
+    assert len(channel_inclusions) == 3
+    assert len(constraints_1) == 3
+    assert len(constraints_0) == 3
+    inlcusions_count = sum([float(channel_inclusions[i]) for i in range(len(channel_inclusions))])
 
     # Reading meta data
     width = json_data['tileWidth']
@@ -366,6 +381,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     bit_max = pow(2, bit_depth) - 1
     has_label = False
     label = None
+    used_constraints = None
 
     # Reading label, if it exists
     if 'label' in json_data:
@@ -464,8 +480,20 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
         r_max = max(r)
         g_max = max(g)
         b_max = max(b)
-        rgb_min = min(r_min, g_min, b_min)
-        rgb_max = max(r_max, g_max, b_max)
+
+        min_list = []
+        max_list = []
+        if channel_inclusions[0]:
+            min_list.append(r_min)
+            max_list.append(r_max)
+        if channel_inclusions[1]:
+            min_list.append(g_min)
+            max_list.append(g_max)
+        if channel_inclusions[2]:
+            min_list.append(b_min)
+            max_list.append(b_max)
+        rgb_min = min(min_list)
+        rgb_max = max(max_list)
 
         # Updating 'best' min / max values
         best_well_min_r = min(best_well_min_r, r_min)
@@ -495,13 +523,21 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
 
         # 6 = z-score every cell individually with every color channel using the mean / std of all three
         if normalize_enum == 6:
-            rgb = np.concatenate((r, g, b), axis=0)
+            standardize_list = []
+            if channel_inclusions[0]:
+                standardize_list.append(r)
+            if channel_inclusions[1]:
+                standardize_list.append(g)
+            if channel_inclusions[2]:
+                standardize_list.append(b)
+
+            rgb = np.concatenate(standardize_list, axis=0)
             mean = np.mean(rgb)
             std = np_std(rgb, axis=0, mean=mean)
             r = z_score(r, axis=0, std=std, mean=mean)
             g = z_score(g, axis=0, std=std, mean=mean)
             b = z_score(b, axis=0, std=std, mean=mean)
-            del rgb, mean, std
+            del rgb, mean, std, standardize_list
 
         # Reshaping the color images to a 2 dimensional array
         r = np.reshape(r, (width, height))
@@ -532,7 +568,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
             bag_mean_g, bag_std_g = get_bag_mean(X, axis=1)
             bag_mean_b, bag_std_b = get_bag_mean(X, axis=2)
         if normalize_enum == 8:
-            bag_mean, bag_std = get_bag_mean(X)
+            bag_mean, bag_std = get_bag_mean(X, channel_inclusions=channel_inclusions)
 
         for i in range(len(X)):
             current_x = X[i]
@@ -550,13 +586,21 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
                     current_g = z_score(current_g, axis=0)
                     current_b = z_score(current_b, axis=0)
                 if normalize_enum == 10:
-                    rgb = np.concatenate((current_r, current_g, current_b), axis=0)
+                    standardize_list = []
+                    if channel_inclusions[0]:
+                        standardize_list.append(current_r)
+                    if channel_inclusions[1]:
+                        standardize_list.append(current_g)
+                    if channel_inclusions[2]:
+                        standardize_list.append(current_b)
+
+                    rgb = np.concatenate(standardize_list, axis=0)
                     mean = np.mean(rgb)
                     std = np_std(rgb, axis=0, mean=mean)
                     current_r = z_score(current_r, axis=0, std=std, mean=mean)
                     current_g = z_score(current_g, axis=0, std=std, mean=mean)
                     current_b = z_score(current_b, axis=0, std=std, mean=mean)
-                    del mean, std, rgb
+                    del mean, std, rgb, standardize_list
             if normalize_enum == 7:
                 current_r = z_score(current_r, mean=bag_mean_r, std=bag_std_r)
                 current_g = z_score(current_g, mean=bag_mean_g, std=bag_std_g)
@@ -573,15 +617,33 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
 
             X[i] = current_rgb
 
+    # Checking the well inclusions and setting all unwanted channels to 0
+    if inlcusions_count > 1:
+        for i in range(len(X)):
+            current_x = X[i]
+            current_r = current_x[:, :, 0]
+            current_g = current_x[:, :, 1]
+            current_b = current_x[:, :, 2]
+
+            # Checking if channels need to be removed
+            if not channel_inclusions[0]:
+                # r
+                current_r = np.array(np.zeros((current_g.shape[0], current_g.shape[1])))
+            if not channel_inclusions[1]:
+                # g
+                current_g = np.array(np.zeros((current_g.shape[0], current_g.shape[1])))
+            if not channel_inclusions[2]:
+                # b
+                current_b = np.array(np.zeros((current_b.shape[0], current_b.shape[1])))
+
+            current_rgb = np.dstack((current_r, current_g, current_b))
+            X[i] = current_rgb
+            del current_x, current_r, current_g, current_rgb
+
     # Hashing the tile for the label map
     if has_label:
         y_tiles = []
         for i in range(len(X)):
-            # Deprecated tile hashing
-            # current_x = X[i]
-            # current_x: np.ndarray = np.einsum('abc->cba', current_x)
-            # label_map.put_label(sample=current_x, label=label)
-
             # Actually writing bag labels
             y_tiles.append(label)
 
@@ -602,16 +664,24 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
         if label == 1:
             preview_constraints = constraints_1
 
-        save_save_bag_preview(X=X, out_dir_base=filepath, experiment_name=experiment_name, well=well,
-                              normalize_enum=normalize_enum, preview_constraints=preview_constraints,
-                              bit_depth=bit_depth, X_raw=X_raw, verbose=worker_verbose)
+        if used_constraints is not None:
+            save_save_bag_preview(X=X, out_dir_base=filepath, experiment_name=experiment_name, well=well,
+                                  normalize_enum=normalize_enum, preview_constraints=used_constraints,
+                                  channel_inclusions=channel_inclusions,
+                                  bit_depth=bit_depth, X_raw=X_raw, verbose=worker_verbose)
 
+        # Checking the 'tegredy of all bags
+        assert len(X) == len(X_raw)
+        assert len(X) == len(y_tiles)
+        assert (y == 0 or y == 1)
+
+    # All good. Returning.
     return X, y, y_tiles, X_raw, bag_name
 
 
 def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constraints, normalize_enum, bit_depth,
-                          X_raw, dpi: int = (1337 * 1.5), colormap_name: str = 'jet', vmin: float = -3.0, vmax=3.0,
-                          outline: int = 2, verbose: bool = False):
+                          channel_inclusions: [bool], X_raw, dpi: int = (1337 * 1.5), colormap_name: str = 'jet',
+                          vmin: float = -3.0, vmax=3.0, outline: int = 2, verbose: bool = False):
     width = None
     height = None
     z_mode = normalize_enum > 4
@@ -620,11 +690,14 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
         # going one level up for linux dirs
         out_dir_base = os.path.dirname(out_dir_base)
 
+    channel_inclusions_label = str(channel_inclusions).replace('[', '').replace(']', '').replace(',', '-').replace(
+        ' ', '').lower()
     preview_constraints_label = str(preview_constraints).replace('[', '').replace(']', '').replace(',', '-').replace(
         ' ', '')
+
     out_dir = os.path.dirname(out_dir_base)
     out_dir = out_dir + os.sep + 'bag_previews' + os.sep + 'normalize-' + str(
-        normalize_enum) + os.sep + preview_constraints_label + os.sep + experiment_name + os.sep
+        normalize_enum) + os.sep + 'channels-' + channel_inclusions_label + os.sep + 'constraints-' + preview_constraints_label + os.sep + experiment_name + os.sep
     os.makedirs(out_dir, exist_ok=True)
     bit_max = pow(2, bit_depth) - 1
 
@@ -742,7 +815,7 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
         plt.imsave(out_file_name_raw, out_image_raw)
 
 
-def get_bag_mean(n: [np.ndarray], axis: int = None):
+def get_bag_mean(n: [np.ndarray], axis: int = None, channel_inclusions=default_channel_inclusions_all):
     combined_x = np.zeros(0)
     for i in range(len(n)):
         current_x = n[i]
@@ -754,14 +827,18 @@ def get_bag_mean(n: [np.ndarray], axis: int = None):
             current_g = current_x[:, :, 1].reshape(dim_x * dim_y)
             current_b = current_x[:, :, 2].reshape(dim_x * dim_y)
 
-            combined_x = np.append(combined_x, current_r)
-            combined_x = np.append(combined_x, current_g)
-            combined_x = np.append(combined_x, current_b)
+            if channel_inclusions[0]:
+                combined_x = np.append(combined_x, current_r)
+            if channel_inclusions[1]:
+                combined_x = np.append(combined_x, current_g)
+            if channel_inclusions[2]:
+                combined_x = np.append(combined_x, current_b)
             del current_r, current_g, current_b
         else:
-            current_axis = current_x[:, :, axis].reshape(dim_x * dim_y)
-            combined_x = np.append(combined_x, current_axis)
-            del current_axis
+            if channel_inclusions[i]:
+                current_axis = current_x[:, :, axis].reshape(dim_x * dim_y)
+                combined_x = np.append(combined_x, current_axis)
+                del current_axis
 
     mean = np.mean(combined_x)
     std = np_std(n=combined_x, mean=mean)
@@ -922,40 +999,57 @@ def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], bag_names:
     positive_indices = np.where(np.asarray(y) == 1)[0]
     random.shuffle(negative_indices)
     random.shuffle(positive_indices)
+    assert len(positive_indices) > 0
+    assert len(negative_indices) > 0
 
     if positive_bag_min_samples is None:
         positive_bag_min_samples = 0
 
+    log.write(
+        'Starting to repack ' + str(len(X)) + ' bags. Positive: ' + str(len(positive_indices)) + '. Negative: ' + str(
+            len(negative_indices)))
+    log.write('Minimum positive sample size: ' + str(positive_bag_min_samples))
     k = 0
     for i in range(len(negative_indices)):
+        log.write('Trying to repack negative bag index ' + str(i + 1) + '/' + str(
+            len(negative_indices)) + ' and pairing it with positive bag index ' + str(k + 1) + '/' + str(
+            len(positive_indices)))
+        if k == len(positive_indices):
+            # cannot repack further, positive bags have been exhausted
+            log.write('Exhaustion continues. This bag is carried over.')
+            new_x.append(X[negative_indices[i]])
+            new_x_r.append(X_raw[negative_indices[i]])
+            new_y.append(0)
+            new_y_tiles.append([0 for i in range(X[negative_indices[i]].shape[0])])
+            new_bag_names.append(bag_names[negative_indices[i]])
+            continue
+
         # Setting up data, extracting bags and labels
-        current_bag = X[negative_indices[i]]
-        partner_bag = X[positive_indices[k]]
-        current_bag_raw = X_raw[negative_indices[i]]
-        partner_bag_raw = X_raw[positive_indices[k]]
         current_label = y[negative_indices[i]]
         partner_label = y[positive_indices[k]]
-        current_bag_name = bag_names[negative_indices[i]]
-        partner_bag_name = bag_names[positive_indices[k]]
 
         # Checking if labels match. If they do, we have no alternating inner-outer migration ring pattern!
         if current_label == partner_label:
             raise Exception('Bag partners hd the same label!')
 
-        negative_bag = current_bag
-        positive_bag = partner_bag
-        negative_bag_raw = current_bag_raw
-        positive_bag_raw = partner_bag_raw
-        negative_bag_name_raw = current_bag_name
-        positive_bag_name_raw = partner_bag_name
-        del current_bag, partner_bag, partner_label, current_label, current_bag_raw, partner_bag_raw, current_bag_name, partner_bag_name
+        negative_bag = X[negative_indices[i]]
+        positive_bag = X[positive_indices[k]]
+        negative_bag_raw = X_raw[negative_indices[i]]
+        positive_bag_raw = X_raw[positive_indices[k]]
+        negative_bag_name = bag_names[negative_indices[i]]
+        positive_bag_name = bag_names[positive_indices[k]]
+        line_print('Trying to repack negative bag "' + negative_bag_name + '" (Index ' + str(i + 1) + '/' + str(
+            len(negative_indices)) + ') and pairing it with positive bag "' + positive_bag_name + '" (Index ' + str(
+            k + 1) + '/' + str(len(positive_indices)) + ').')
+        print('')
+        del partner_label, current_label
 
         if i % 2 == 0:
             # This new entry is all label 0. Thus, nothing needs to change.
             new_x.append(negative_bag)
             new_x_r.append(negative_bag_raw)
             new_y.append(0)
-            new_bag_names.append(negative_bag_name_raw)
+            new_bag_names.append(negative_bag_name)
             new_y_tiles.append([0 for i in range(negative_bag.shape[0])])
         else:
             # This bag will have label 1.
@@ -1001,22 +1095,32 @@ def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], bag_names:
                 new_x.append(negative_bag)
                 new_x_r.append(negative_bag_raw)
                 new_y_tiles.append(current_tile_labels)
-                new_bag_names.append('[' + negative_bag_name_raw + ', ' + positive_bag_name_raw + ']')
+                new_bag_names.append('[' + negative_bag_name + ', ' + positive_bag_name + ']')
             else:
                 # Despite trying to repack the data, there were no tiles repacked actually!
                 # This bag is discarded, just to be safe!
-                log.write('Warning! Positive bag #' + str(k) + ' failed to repack! This bag is discarded!')
+                if repacked_tiles < positive_bag_min_samples:
+                    log.write('Wanted to repack ' + str(repacked_tiles) + ', but minimum positive tiles is ' + str(
+                        positive_bag_min_samples))
+
+                log.write('Warning! Positive bag #' + str(
+                    k) + ' ("' + positive_bag_name + '") failed to repack! This bag is discarded!')
 
                 # Yet, the (unchanged) negative bag can be appended to the list. Nice.
                 new_x.append(negative_bag_original)
                 new_x_r.append(negative_bag_raw_original)
                 new_y.append(0)
                 new_y_tiles.append([0 for i in range(negative_bag_original.shape[0])])
-                new_bag_names.append(negative_bag_name_raw)
+                new_bag_names.append(negative_bag_name)
 
             # incrementing k, so the next iteration can pick the next positive bag
             k = k + 1
+            if k == len(positive_indices):
+                # All positive bags exhausted. Returning.
+                log.write('All positive bags have been exhausted.')
+                break
 
+    log.write('Finished repacking. Repacked bags: ' + str(len(new_x)))
     # Checking if data is correctly packed
     assert len(new_x) == len(new_y)
     assert len(new_x) == len(new_x_r)

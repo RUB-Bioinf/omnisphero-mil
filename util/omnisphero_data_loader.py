@@ -88,7 +88,9 @@ class OmniSpheroDataLoader(DataLoader):
             base_iter._dataset[i] = (augmented_ds[i], y, y_samples, X_raw)
 
         debug_hash = hash(str(hash_list))
-        print('Data loader: Saver: '+str(self.transform_data_saver)+'. Size: '+str(len(iter_ds))+'. Hash: '+str(debug_hash))
+        print(
+            'Data loader: Saver: ' + str(self.transform_data_saver) + '. Size: ' + str(len(iter_ds)) + '. Hash: ' + str(
+                debug_hash))
 
         return base_iter
 
