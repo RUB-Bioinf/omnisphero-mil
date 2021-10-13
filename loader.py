@@ -300,7 +300,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
 
 
 def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_indices: [int],
-                        label_1_well_indices: [int], constraints_1: [int], constraints_0: [int],
+                        label_1_well_indices: [int], constraints_0: [int], constraints_1: [int],
                         channel_inclusions: [bool], include_raw: bool = True) -> (np.array, int, [int], str):
     if worker_verbose:
         log.write('Unzipping and reading json: ' + filepath)
@@ -332,7 +332,7 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_i
 ####
 
 def read_JSON_file(filepath: str, worker_verbose: bool, normalize_enum: int, label_0_well_indices: [int],
-                   label_1_well_indices: [int], constraints_1: [int], constraints_0: [int],
+                   label_1_well_indices: [int], constraints_0: [int], constraints_1: [int],
                    channel_inclusions: [bool], include_raw: bool = True) -> (np.ndarray, int, [int], np.ndarray, str):
     if worker_verbose:
         log.write('Reading json: ' + filepath)
@@ -355,7 +355,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     # Setting up arrays
     X = []
     X_raw = []
-    y = None
+    label = None
     y_tiles = None
 
     assert len(channel_inclusions) == 3
@@ -380,16 +380,9 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     # bit_max = np.info('uint' + str(bit_depth)).max
     bit_max = pow(2, bit_depth) - 1
     has_label = False
-    label = None
     used_constraints = None
 
-    # Reading label, if it exists
-    if 'label' in json_data:
-        label = json_data['label']
-        y = int(label)
-        has_label = True
-
-    # Overwriting label to match the param
+    # Setting label to match the param
     if well_number in label_1_well_indices:
         label = 1
     elif well_number in label_0_well_indices:
@@ -399,7 +392,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
         if worker_verbose:
             log.write('This bag has no label assigned. Removing.')
 
-        return X, y, y_tiles, X_raw, bag_name
+        return X, label, y_tiles, X_raw, bag_name
 
     if worker_verbose:
         log.write('Reading JSON: ' + str(width) + 'x' + str(height) + '. Bits: ' + str(bit_depth))
@@ -640,18 +633,17 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
             X[i] = current_rgb
             del current_x, current_r, current_g, current_rgb
 
-    # Hashing the tile for the label map
-    if has_label:
-        y_tiles = []
-        for i in range(len(X)):
-            # Actually writing bag labels
-            y_tiles.append(label)
+    # Placing sample tiles in a list
+    y_tiles = []
+    for i in range(len(X)):
+        # Actually writing bag labels
+        y_tiles.append(label)
 
     # Checking if there is actually something loaded
     if len(X) == 0:
         X = None
         X_raw = None
-        y = None
+        label = None
         y_tiles = None
 
         log.write('JSON file has no data: ' + str(filepath))
@@ -659,24 +651,21 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
         X = np.asarray(X)
         X_raw = np.asarray(X_raw)
 
-        # Saving preview
-        preview_constraints = constraints_0
-        if label == 1:
-            preview_constraints = constraints_1
-
+        # Saving preview (if it exists)
         if used_constraints is not None:
             save_save_bag_preview(X=X, out_dir_base=filepath, experiment_name=experiment_name, well=well,
                                   normalize_enum=normalize_enum, preview_constraints=used_constraints,
                                   channel_inclusions=channel_inclusions,
                                   bit_depth=bit_depth, X_raw=X_raw, verbose=worker_verbose)
 
-        # Checking the 'tegredy of all bags
+        # Checking the 'tegredy of the bag and its samples
         assert len(X) == len(X_raw)
         assert len(X) == len(y_tiles)
-        assert (y == 0 or y == 1)
+        assert (label == 0 or label == 1)
 
     # All good. Returning.
-    return X, y, y_tiles, X_raw, bag_name
+    label = int(label)
+    return X, label, y_tiles, X_raw, bag_name
 
 
 def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constraints, normalize_enum, bit_depth,
@@ -1001,6 +990,7 @@ def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], bag_names:
     random.shuffle(positive_indices)
     assert len(positive_indices) > 0
     assert len(negative_indices) > 0
+    assert repack_percentage > 0
 
     if positive_bag_min_samples is None:
         positive_bag_min_samples = 0
@@ -1009,11 +999,12 @@ def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], bag_names:
         'Starting to repack ' + str(len(X)) + ' bags. Positive: ' + str(len(positive_indices)) + '. Negative: ' + str(
             len(negative_indices)))
     log.write('Minimum positive sample size: ' + str(positive_bag_min_samples))
+    print('')
     k = 0
     for i in range(len(negative_indices)):
-        log.write('Trying to repack negative bag index ' + str(i + 1) + '/' + str(
+        line_print('Trying to repack negative bag index ' + str(i + 1) + '/' + str(
             len(negative_indices)) + ' and pairing it with positive bag index ' + str(k + 1) + '/' + str(
-            len(positive_indices)))
+            len(positive_indices)), include_in_log=True)
         if k == len(positive_indices):
             # cannot repack further, positive bags have been exhausted
             log.write('Exhaustion continues. This bag is carried over.')

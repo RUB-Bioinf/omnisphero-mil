@@ -71,9 +71,9 @@ max_workers_default = 5
 
 def train_model(training_label: str, source_dirs: [str], loss_function: str, device_ordinals: [int],
                 epochs: int = 3, max_workers: int = max_workers_default, normalize_enum: int = normalize_enum_default,
-                out_dir: str = None, gpu_enabled: bool = False, invert_bag_labels: bool = False,
+                out_dir: str = None, gpu_enabled: bool = False,
                 shuffle_data_loaders: bool = True, model_enable_attention: bool = False, model_use_max: bool = True,
-                repack_percentage: float = 0.0, global_log_dir: str = None, optimizer: str = 'adadelta',
+                repack_percentage: float = 0.0, global_log_dir: str = None, optimizer: str = 'adam',
                 clamp_min: float = None, clamp_max: float = None, positive_bag_min_samples: int = None,
                 tile_constraints_0: [int] = loader.default_tile_constraints_none,
                 tile_constraints_1: [int] = loader.default_tile_constraints_none,
@@ -89,16 +89,17 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         out_dir = source_dirs[0] + os.sep + 'training_results'
 
     # This param is unused and should not be "True"!
-    assert invert_bag_labels is False
     assert len(label_0_well_indices) > 0
     assert len(label_1_well_indices) > 0
 
     out_dir = out_dir + os.sep + training_label + os.sep
     loading_preview_dir = out_dir + os.sep + 'loading_previews' + os.sep
+    loading_preview_dir_whole_bag = loading_preview_dir + 'whole_bags' + os.sep
     metrics_dir = out_dir + os.sep + 'metrics' + os.sep
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(metrics_dir, exist_ok=True)
     os.makedirs(loading_preview_dir, exist_ok=True)
+    os.makedirs(loading_preview_dir_whole_bag, exist_ok=True)
 
     print('Model classification - Use Max: ' + str(model_use_max))
     print('Model classification - Use Attention: ' + str(model_enable_attention))
@@ -123,7 +124,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     protocol_f.write('\n\n == Loader Params ==')
     protocol_f.write('\nNormalization Enum: ' + str(normalize_enum))
     protocol_f.write('\nNormalization Strategy: ' + loader.normalize_enum_descriptions[normalize_enum])
-    protocol_f.write('\nInvert Bag Labels: ' + str(invert_bag_labels))
+    protocol_f.write('\nInvert Bag Labels: <deprecated>')
     protocol_f.write('\nRepack: Percentage: ' + str(repack_percentage))
     protocol_f.write('\nRepack: Minimum Positive Samples: ' + str(positive_bag_min_samples))
 
@@ -217,9 +218,6 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     for i in range(len(X)):
         X_size = X_size + X[i].nbytes
         X_size_raw = X_size_raw + X_raw[i].nbytes
-        if invert_bag_labels:
-            y[i] = int(not y[i])
-            y_tiles[i] = not y_tiles[i]
     f.close()
 
     X_s = utils.convert_size(X_size)
@@ -265,8 +263,8 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     preview_indexes_negative = list(np.where(np.asarray(y) == 0)[0])
     random.shuffle(preview_indexes_positive)
     random.shuffle(preview_indexes_negative)
-    preview_indexes_negative = preview_indexes_negative[0:math.ceil(len(preview_indexes_negative) * 0.13)]
-    preview_indexes_positive = preview_indexes_positive[0:math.ceil(len(preview_indexes_negative) * 0.13)]
+    preview_indexes_negative = preview_indexes_negative[0:math.ceil(len(preview_indexes_negative) * 0.15)]
+    preview_indexes_positive = preview_indexes_positive[0:math.ceil(len(preview_indexes_negative) * 0.25)]
     preview_indexes = preview_indexes_negative
     preview_indexes.extend(preview_indexes_positive)
     preview_indexes.sort()
@@ -274,8 +272,12 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     del preview_indexes_positive, preview_indexes_negative
     print('\n')
     for i in range(len(X)):
-        line_print('Writing whole bag loading preview: ' + str(i + 1) + '/' + str(len(X)), include_in_log=False)
-        preview_image_file_base = loading_preview_dir + 'preview_' + str(i) + '-' + bag_names[i] + '_' + str(y[i])
+        preview_image_filename = loading_preview_dir_whole_bag + 'preview_' + str(i) + '-' + bag_names[i] + '_' + str(
+            y[i]) + '_bag.png'
+        line_print(
+            'Writing whole bag loading preview: ' + str(i + 1) + '/' + str(len(X)) + ' -> ' + preview_image_filename,
+            include_in_log=False)
+
         colored_tiles = []
         image_width = None
         image_height = None
@@ -289,7 +291,8 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         if len(colored_tiles) > 0 and image_height is not None:
             out_image = mil_metrics.fuse_image_tiles(images=colored_tiles, image_width=image_width,
                                                      image_height=image_height)
-            plt.imsave(preview_image_file_base + '_bag.png', out_image)
+            plt.imsave(preview_image_filename, out_image)
+            line_print('Saved: ' + preview_image_filename)
 
     # Setting up datasets
     dataset, input_dim = loader.convert_bag_to_batch(X, y, y_tiles)
@@ -706,10 +709,11 @@ def main(debug: bool = False):
                     repack_percentage=0.1,
                     model_use_max=False,
                     model_enable_attention=True,
-                    invert_bag_labels=False,
                     positive_bag_min_samples=0,
                     augment_validation=True,
                     augment_train=True,
+                    tile_constraints_0=loader.default_tile_constraints_nuclei,
+                    tile_constraints_1=loader.default_tile_constraints_oligos,
                     label_1_well_indices=loader.default_well_indices_early,
                     label_0_well_indices=loader.default_well_indices_very_late,
                     loss_function='binary_cross_entropy',
@@ -718,9 +722,9 @@ def main(debug: bool = False):
                     )
     else:
         for l in ['binary_cross_entropy']:
-            for o in ['adadelta']:
-                for r in [0.45]:
-                    for i in [4, 5, 6, 7, 8]:
+            for o in ['adadelta', 'adam']:
+                for r in [0.55]:
+                    for i in [6, 7, 8, 4, 5]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
                             augment_train = aug[1]
@@ -728,10 +732,9 @@ def main(debug: bool = False):
                             train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                                         normalize_enum=i,
-                                        training_label='hnm-early_inverted-O1-NoNeuron2-wells-normalize-' + str(
+                                        training_label='hnm-early_inverted-O1-' + o + '-NoNeuron2-wells-normalize-' + str(
                                             i) + 'repack-' + str(r),
                                         global_log_dir=current_global_log_dir,
-                                        invert_bag_labels=False,
                                         data_split_percentage_validation=0.25,
                                         data_split_percentage_test=0.15,
                                         use_hard_negative_mining=True,

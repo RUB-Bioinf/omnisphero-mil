@@ -580,13 +580,17 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         }
 
         # Saving raw history
-        mil_metrics.write_history(history, history_keys, metrics_dir=metrics_dir_live)
-        mil_metrics.plot_accuracy(history, metrics_dir_live, include_raw=False, include_tikz=False)
-        mil_metrics.plot_accuracy_tiles(history, metrics_dir_live, include_raw=False, include_tikz=False)
-        mil_metrics.plot_losses(history, metrics_dir_live, include_raw=False, include_tikz=False)
-        mil_metrics.plot_accuracies(history, metrics_dir_live, include_tikz=False)
-        mil_metrics.plot_dice_scores(history, metrics_dir_live, include_tikz=True)
-        mil_metrics.plot_binary_roc_curves(history, metrics_dir_live, include_tikz=False)
+        try:
+            mil_metrics.write_history(history, history_keys, metrics_dir=metrics_dir_live)
+            mil_metrics.plot_accuracy(history, metrics_dir_live, include_raw=False, include_tikz=False)
+            mil_metrics.plot_accuracy_tiles(history, metrics_dir_live, include_raw=False, include_tikz=False)
+            mil_metrics.plot_losses(history, metrics_dir_live, include_raw=False, include_tikz=False)
+            mil_metrics.plot_accuracies(history, metrics_dir_live, include_tikz=False)
+            mil_metrics.plot_dice_scores(history, metrics_dir_live, include_tikz=True)
+            mil_metrics.plot_binary_roc_curves(history, metrics_dir_live, include_tikz=False)
+        except Exception as e:
+            print('Failed to write metrics for this epoch.')
+            print(str(e))
 
         # Printing each loss for every batch
         f = open(batch_losses_file, 'a')

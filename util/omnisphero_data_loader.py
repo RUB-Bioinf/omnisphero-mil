@@ -24,7 +24,7 @@ class OmniSpheroDataLoader(DataLoader):
                          drop_last, timeout, worker_init_fn, multiprocessing_context, generator,
                          prefetch_factor=prefetch_factor, persistent_workers=persistent_workers)
 
-        self.transform_enabled = transform_enabled is not None
+        self.transform_enabled = transform_enabled
         self.untransformed_data = None
         self.transform_data_saver = transform_data_saver
 
