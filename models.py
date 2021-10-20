@@ -21,6 +21,7 @@ from util import log
 from util import utils
 ####
 from util.omnisphero_data_loader import OmniSpheroDataLoader
+from util.utils import line_print
 
 
 def save_model(state, save_path: str, verbose: bool = False):
@@ -347,13 +348,16 @@ class BaselineMIL(OmniSpheroMil):
 
 ####
 
-def load_checkpoint(load_path: str, model: OmniSpheroMil, optimizer: Optimizer) -> (
+def load_checkpoint(load_path: str, model: OmniSpheroMil, optimizer: Optimizer = None,map_location=None) -> (
         OmniSpheroMil, Optimizer, int, float):
     ''' loads the model and its optimizer states from disk.
     '''
-    checkpoint = torch.load(load_path)
+    checkpoint = torch.load(load_path,map_location=map_location)
     model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optim_state_dict'])
+
+    if optimizer is not None:
+        optimizer.load_state_dict(checkpoint['optim_state_dict'])
+
     epoch = checkpoint['epoch']
     loss = checkpoint['loss']
 
@@ -622,7 +626,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
 
 @torch.no_grad()
-def get_predictions(model: OmniSpheroMil, data_loader: DataLoader):
+def get_predictions(model: OmniSpheroMil, data_loader: DataLoader, verbose: bool = False):
     """ takes a trained model and validation or test dataloader
     and applies the model on the data producing predictions
 
@@ -634,18 +638,26 @@ def get_predictions(model: OmniSpheroMil, data_loader: DataLoader):
     all_predictions = []
     all_true = []
     all_attentions = []
+    all_y_tiles_binarized = []
     all_y_tiles = []
     all_tiles_true = []
     original_bag_indices = []
 
+    if verbose:
+        log.write('Predicting bags. Count: ' + str(len(data_loader)))
+        print('')
+
     for batch_id, (data, label, label_tiles, original_bag_index) in enumerate(data_loader):
+        if verbose:
+            line_print('Predicting bag ' + str(batch_id + 1) + '/' + str(len(data_loader)), include_in_log=True)
+
         label = label.squeeze()
         # bag_label = label[0]
         bag_label = label
         bag_label = bag_label.cpu()
 
         data = data.to(model.get_device_ordinal(0))
-        y_hat, predictions, attention, _, prediction_tiles_binarized = model.forward(data)
+        y_hat, predictions, attention, prediction_tiles, prediction_tiles_binarized = model.forward(data)
 
         y_hat = y_hat.squeeze(dim=0)  # for binary setting
         y_hat = y_hat.cpu()
@@ -662,17 +674,22 @@ def get_predictions(model: OmniSpheroMil, data_loader: DataLoader):
         original_bag_indices.append(int(original_bag_index.cpu()))
 
         all_tiles_true.append(label_tiles.cpu().numpy()[0])
-        all_y_tiles.append(
+        all_y_tiles_binarized.append(
             np.asarray([int(prediction_tiles_binarized[i].cpu()) for i in range(len(prediction_tiles_binarized))]))
+        all_y_tiles.append(
+            np.asarray([float(prediction_tiles[i].cpu()) for i in range(len(prediction_tiles))]))
 
         # log.write('Bag Label:' + str(bag_label))
         # log.write('Predicted Label:' + str(predictions.numpy().item()))
         # log.write('attention scores (unique ones):')
         # log.write(attention_scores)
 
-        del data, bag_label, label, label_tiles
+        del data, bag_label, label, label_tiles, prediction_tiles_binarized, prediction_tiles
 
-    return all_y_hats, all_predictions, all_true, all_y_tiles, all_tiles_true, all_attentions, original_bag_indices
+    if verbose:
+        log.write('Predicting bags: Done.')
+
+    return all_y_hats, all_predictions, all_true, all_y_tiles, all_y_tiles_binarized, all_tiles_true, all_attentions, original_bag_indices
 
 
 @torch.no_grad()

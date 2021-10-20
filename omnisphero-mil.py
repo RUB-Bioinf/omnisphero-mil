@@ -164,15 +164,16 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     ################
     # TODO Write well / label mapping to protocol file!
     loading_start_time = datetime.now()
-    X, y, y_tiles, X_raw, bag_names, errors, loaded_files_list = loader.load_bags_json_batch(batch_dirs=source_dirs,
-                                                                                             max_workers=max_workers,
-                                                                                             include_raw=True,
-                                                                                             channel_inclusions=channel_inclusions,
-                                                                                             constraints_0=tile_constraints_0,
-                                                                                             constraints_1=tile_constraints_1,
-                                                                                             label_0_well_indices=label_0_well_indices,
-                                                                                             label_1_well_indices=label_1_well_indices,
-                                                                                             normalize_enum=normalize_enum)
+    X, y, y_tiles, X_raw, bag_names, _, _, errors, loaded_files_list = loader.load_bags_json_batch(
+        batch_dirs=source_dirs,
+        max_workers=max_workers,
+        include_raw=True,
+        channel_inclusions=channel_inclusions,
+        constraints_0=tile_constraints_0,
+        constraints_1=tile_constraints_1,
+        label_0_well_indices=label_0_well_indices,
+        label_1_well_indices=label_1_well_indices,
+        normalize_enum=normalize_enum)
     X = [np.einsum('bhwc->bchw', bag) for bag in X]
     X_raw = [np.einsum('bhwc->bchw', bag) for bag in X_raw]
     # Hint: Dim should be (xxx, 3, 150, 150)
@@ -218,7 +219,6 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     for i in range(len(X)):
         X_size = X_size + X[i].nbytes
         X_size_raw = X_size_raw + X_raw[i].nbytes
-    f.close()
 
     X_s = utils.convert_size(X_size)
     y_s = utils.convert_size(getsizeof(y))
@@ -295,7 +295,7 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
             line_print('Saved: ' + preview_image_filename)
 
     # Setting up datasets
-    dataset, input_dim = loader.convert_bag_to_batch(X, y, y_tiles)
+    dataset, input_dim = loader.convert_bag_to_batch(bags=X, labels=y, y_tiles=y_tiles)
     log.write('Detected input dim: ' + str(input_dim))
     del X, y
 
@@ -341,6 +341,10 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
                         device_ordinals=device_ordinals,
                         loss_function=loss_function,
                         accuracy_function=accuracy_function)
+
+    # Saving the raw version of this model
+    torch.save(model.state_dict(), out_dir + 'model.pt')
+    torch.save(model, out_dir + 'model.h5')
 
     # Loader args
     loader_kwargs = {}
@@ -564,7 +568,7 @@ def test_model(model: models.OmniSpheroMil, model_save_path_best: str, model_opt
 
     # Get best saved model from this run
     model, model_optimizer, _, _ = models.load_checkpoint(model_save_path_best, model, model_optimizer)
-    y_hats, y_pred, y_true, y_samples_pred, y_samples_true, _, _ = models.get_predictions(model, data_loader)
+    y_hats, y_pred, y_true, _, y_samples_pred, y_samples_true, _, _ = models.get_predictions(model, data_loader)
 
     # Flattening sample predictions
     y_samples_pred = [item for sublist in y_samples_pred for item in sublist]
@@ -577,8 +581,8 @@ def test_model(model: models.OmniSpheroMil, model_save_path_best: str, model_opt
     # Saving attention scores for every tile in every bag!
     log.write('Writing attention scores to: ' + attention_out_dir)
     try:
-        mil_metrics.save_tile_attention(out_dir=attention_out_dir, model=model, normalized=True, bag_names=bag_names,
-                                        dataset=data_loader, X_raw=X_raw, y_tiles=y_tiles)
+        # mil_metrics.save_tile_attention(out_dir=attention_out_dir, model=model, normalized=True, bag_names=bag_names,
+        #                                 dataset=data_loader, X_raw=X_raw, y_tiles=y_tiles)
         mil_metrics.save_tile_attention(out_dir=attention_out_dir, model=model, normalized=False, bag_names=bag_names,
                                         dataset=data_loader, X_raw=X_raw, y_tiles=y_tiles)
     except Exception as e:
@@ -703,7 +707,7 @@ def main(debug: bool = False):
         train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                     max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                     device_ordinals=current_device_ordinals,
-                    normalize_enum=0,
+                    normalize_enum=7,
                     training_label='debug',
                     global_log_dir=current_global_log_dir,
                     repack_percentage=0.1,
@@ -723,7 +727,7 @@ def main(debug: bool = False):
     else:
         for l in ['binary_cross_entropy']:
             for o in ['adadelta', 'adam']:
-                for r in [0.55]:
+                for r in [0.65]:
                     for i in [6, 7, 8, 4, 5]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
@@ -732,14 +736,14 @@ def main(debug: bool = False):
                             train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                                         normalize_enum=i,
-                                        training_label='hnm-early_inverted-O1-' + o + '-NoNeuron2-wells-normalize-' + str(
+                                        training_label='hnm-early_inverted-O3-' + o + '-NoNeuron2-wells-normalize-' + str(
                                             i) + 'repack-' + str(r),
                                         global_log_dir=current_global_log_dir,
                                         data_split_percentage_validation=0.25,
                                         data_split_percentage_test=0.15,
                                         use_hard_negative_mining=True,
                                         hnm_magnitude=5.5,
-                                        hnm_new_bag_percentage=0.15,
+                                        hnm_new_bag_percentage=0.25,
                                         loss_function=l,
                                         repack_percentage=r,
                                         optimizer=o,

@@ -64,6 +64,7 @@ default_tile_constraints_oligos = [0, 1, 0]
 default_tile_constraints_neurons = [0, 0, 1]
 
 default_well_indices_none = []
+default_well_indices_all = list(range(99))
 default_well_indices_early = [0, 1, 2, 3, 4]
 default_well_indices_late = [7, 8, 9]
 
@@ -105,27 +106,33 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
     error_list = []
     loaded_files_list_full = []
     bag_names_full = []
+    experiment_names_full = []
+    well_names_full = []
 
     for i in range(len(batch_dirs)):
         current_dir = batch_dirs[i]
         log.write('Considering source directory: ' + current_dir)
 
         if os.path.isdir(current_dir):
-            X, y, y_tiles, X_raw, bag_names, errors, loaded_files_list = load_bags_json(source_dir=current_dir,
-                                                                                        max_workers=max_workers,
-                                                                                        normalize_enum=normalize_enum,
-                                                                                        gp_current=i + 1,
-                                                                                        channel_inclusions=channel_inclusions,
-                                                                                        label_0_well_indices=label_0_well_indices,
-                                                                                        label_1_well_indices=label_1_well_indices,
-                                                                                        constraints_0=constraints_0,
-                                                                                        constraints_1=constraints_1,
-                                                                                        gp_max=len(batch_dirs),
-                                                                                        include_raw=include_raw)
+            X, y, y_tiles, X_raw, bag_names, experiment_names, well_names, errors, loaded_files_list = load_bags_json(
+                source_dir=current_dir,
+                max_workers=max_workers,
+                normalize_enum=normalize_enum,
+                gp_current=i + 1,
+                channel_inclusions=channel_inclusions,
+                label_0_well_indices=label_0_well_indices,
+                label_1_well_indices=label_1_well_indices,
+                constraints_0=constraints_0,
+                constraints_1=constraints_1,
+                gp_max=len(batch_dirs),
+                include_raw=include_raw)
 
             loaded_files_list_full.extend(loaded_files_list)
             bag_names_full.extend(bag_names)
             error_list.extend(errors)
+            well_names_full.extend(well_names)
+            experiment_names_full.extend(experiment_names)
+
             if X_full is None:
                 X_full = X
             else:
@@ -158,7 +165,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
     assert len(X_full) == len(X_raw_full)
     assert len(X_full) == len(bag_names_full)
 
-    return X_full, y_full, y_tiles_full, X_raw_full, bag_names_full, error_list, loaded_files_list_full
+    return X_full, y_full, y_tiles_full, X_raw_full, bag_names_full, experiment_names_full, well_names_full, error_list, loaded_files_list_full
 
 
 # Main Loading function
@@ -248,6 +255,8 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
     y = []
     X_raw = []
     bag_names = []
+    well_names = []
+    experiment_names = []
     y_tiles = []
     error_list = []
     print('')
@@ -260,13 +269,15 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
 
         e = future.exception()
         if e is None:
-            X_f, y_f, y_f_tiles, y_f_raw, bag_name = future.result()
+            X_f, y_f, y_f_tiles, y_f_raw, bag_name, experiment_name, well_name = future.result()
             if X_f is not None and y_f is not None and y_f_tiles is not None and y_f_raw is not None and len(
                     X_f) != 0:
                 X.append(X_f)
                 y.append(y_f)
                 y_tiles.append(y_f_tiles)
                 X_raw.append(y_f_raw)
+                experiment_names.append(experiment_name)
+                well_names.append(well_name)
                 bag_names.append(bag_name)
         else:
             log.write('\n' + gct() + 'Error extracting future results: ' + str(e) + '\n')
@@ -292,8 +303,10 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
     assert len(X) == len(y_tiles)
     assert len(X) == len(X_raw)
     assert len(X) == len(bag_names)
+    assert len(X) == len(experiment_names)
+    assert len(X) == len(well_names)
 
-    return X, y, y_tiles, X_raw, bag_names, error_list, loaded_files_list
+    return X, y, y_tiles, X_raw, bag_names, experiment_names, well_names, error_list, loaded_files_list
 
 
 ####
@@ -304,6 +317,7 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_i
                         channel_inclusions: [bool], include_raw: bool = True) -> (np.array, int, [int], str):
     if worker_verbose:
         log.write('Unzipping and reading json: ' + filepath)
+    threading.current_thread().setName('Unzipping & Reading JSON: '+filepath)
 
     # handling the case, if a json file has been zipped
     # The idea: Read the zip, unzip it in ram and parse the byte stream directly as a string!
@@ -313,20 +327,22 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_i
     input_zip.close()
 
     data = json.loads(data)
-    X, y_bag, y_tiles, X_raw, bag_name = parse_JSON(filepath, str(zipped_data_name), data, worker_verbose,
-                                                    normalize_enum,
-                                                    label_0_well_indices=label_0_well_indices,
-                                                    label_1_well_indices=label_1_well_indices,
-                                                    channel_inclusions=channel_inclusions,
-                                                    constraints_1=constraints_1, constraints_0=constraints_0,
-                                                    include_raw=include_raw)
+    X, y_bag, y_tiles, X_raw, bag_name, experiment_name, well_name = parse_JSON(filepath, str(zipped_data_name), data,
+                                                                                worker_verbose,
+                                                                                normalize_enum,
+                                                                                label_0_well_indices=label_0_well_indices,
+                                                                                label_1_well_indices=label_1_well_indices,
+                                                                                channel_inclusions=channel_inclusions,
+                                                                                constraints_1=constraints_1,
+                                                                                constraints_0=constraints_0,
+                                                                                include_raw=include_raw)
 
     if worker_verbose:
         log.write('File Shape: ' + filepath + ' -> ')
         log.write("X-shape: " + str(np.asarray(X).shape))
         log.write("y-shape: " + str(np.asarray(y_bag).shape))
 
-    return X, y_bag, y_tiles, X_raw, bag_name
+    return X, y_bag, y_tiles, X_raw, bag_name, experiment_name, well_name
 
 
 ####
@@ -337,13 +353,16 @@ def read_JSON_file(filepath: str, worker_verbose: bool, normalize_enum: int, lab
     if worker_verbose:
         log.write('Reading json: ' + filepath)
 
+    # Renaming the thread, so profilers can keep up
+    threading.current_thread().setName('Loading JSON: '+filepath)
     f = open(filepath)
     data = json.load(f)
     f.close()
 
-    return parse_JSON(filepath, data, worker_verbose, normalize_enum, label_0_well_indices=label_0_well_indices,
+    return parse_JSON(filepath=filepath, zipped_data_name=filepath, worker_verbose=worker_verbose,
+                      normalize_enum=normalize_enum, label_0_well_indices=label_0_well_indices,
                       label_1_well_indices=label_1_well_indices, include_raw=include_raw,
-                      channel_inclusions=channel_inclusions,
+                      channel_inclusions=channel_inclusions, json_data=data,
                       constraints_1=constraints_1, constraints_0=constraints_0)
 
 
@@ -358,10 +377,13 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     label = None
     y_tiles = None
 
+    # Renaming the thread, so profilers can keep up
+    threading.current_thread().setName('Parsing JSON: '+zipped_data_name)
+
     assert len(channel_inclusions) == 3
     assert len(constraints_1) == 3
     assert len(constraints_0) == 3
-    inlcusions_count = sum([float(channel_inclusions[i]) for i in range(len(channel_inclusions))])
+    inclusions_count = sum([float(channel_inclusions[i]) for i in range(len(channel_inclusions))])
 
     # Reading meta data
     width = json_data['tileWidth']
@@ -370,17 +392,10 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     well = json_data['well']
     experiment_name = zipped_data_name[:zipped_data_name.find('-')]
     bag_name = experiment_name + '-' + well
-
-    m = re.findall(well_regex, well)[0]
-    well_letter = m[0]
-    well_number = int(m[1])
-    if worker_verbose:
-        log.write('Reconstructing well: "' + well + '" -> "' + well_letter + str(well_number) + '".')
+    well_letter, well_number = extract_well_info(well, verbose=worker_verbose)
 
     # bit_max = np.info('uint' + str(bit_depth)).max
     bit_max = pow(2, bit_depth) - 1
-    has_label = False
-    used_constraints = None
 
     # Setting label to match the param
     if well_number in label_1_well_indices:
@@ -392,10 +407,15 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
         if worker_verbose:
             log.write('This bag has no label assigned. Removing.')
 
-        return X, label, y_tiles, X_raw, bag_name
+        return X, label, y_tiles, X_raw, bag_name, experiment_name, well
 
     if worker_verbose:
         log.write('Reading JSON: ' + str(width) + 'x' + str(height) + '. Bits: ' + str(bit_depth))
+
+    # Deciding on what constraints to use, based on label
+    used_constraints = constraints_0
+    if label == 1:
+        used_constraints = constraints_1
 
     # Initializing "best" min / max values for every cell in the tile
     best_well_min_r = bit_max
@@ -408,6 +428,11 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     # Reading tiles
     json_data = json_data['tiles']
     keys = list(json_data.keys())
+    if len(keys) == 0:
+        if worker_verbose:
+            print('The read bag is empty!')
+        return X, label, y_tiles, X_raw, bag_name, experiment_name, well
+
     for i in range(len(keys)):
         # print('Processing tile: ' + str(i + 1) + '/' + str(len(keys)))
         key = keys[i]
@@ -427,12 +452,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
             count_oligos = int(current_tile['oligos'])
             count_neurons = int(current_tile['neurons'])
 
-        # Deciding on what constraints to use, based on label
-        used_constraints = constraints_0
-        if label == 1:
-            used_constraints = constraints_1
-
-        # Checking the constrainints...
+        # Checking the constraints...
         if count_nuclei < used_constraints[0] or count_oligos < used_constraints[1] or count_neurons < used_constraints[
             2]:
             # The constraints were not met...
@@ -611,7 +631,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
             X[i] = current_rgb
 
     # Checking the well inclusions and setting all unwanted channels to 0
-    if inlcusions_count > 1:
+    if inclusions_count > 1:
         for i in range(len(X)):
             current_x = X[i]
             current_r = current_x[:, :, 0]
@@ -665,7 +685,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
 
     # All good. Returning.
     label = int(label)
-    return X, label, y_tiles, X_raw, bag_name
+    return X, label, y_tiles, X_raw, bag_name, experiment_name, well
 
 
 def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constraints, normalize_enum, bit_depth,
@@ -824,7 +844,7 @@ def get_bag_mean(n: [np.ndarray], axis: int = None, channel_inclusions=default_c
                 combined_x = np.append(combined_x, current_b)
             del current_r, current_g, current_b
         else:
-            if channel_inclusions[i]:
+            if channel_inclusions[axis]:
                 current_axis = current_x[:, :, axis].reshape(dim_x * dim_y)
                 combined_x = np.append(combined_x, current_axis)
                 del current_axis
@@ -834,7 +854,7 @@ def get_bag_mean(n: [np.ndarray], axis: int = None, channel_inclusions=default_c
     return mean, std[0]
 
 
-def convert_bag_to_batch(bags, labels, y_tiles):
+def convert_bag_to_batch(bags: [np.ndarray], labels: [int] = None, y_tiles: [[int]] = None):
     ''' Convert bag and label pairs into batch format
     Inputs:
         a list of bags and a list of bag-labels
@@ -844,6 +864,14 @@ def convert_bag_to_batch(bags, labels, y_tiles):
     '''
     dataset = []
     input_dim = None
+
+    if labels is None:
+        labels = [math.nan for i in range(len(bags))]
+    if y_tiles is None:
+        y_tiles = [[math.nan for i in range(bag.shape[0])] for bag in bags]
+        # y_tiles = []
+        # for bag in bags:
+        #    y_tiles.append([math.nan for i in range(bag.shape[0])])
 
     for index, (bag, bag_label, tile_labels) in enumerate(zip(bags, labels, y_tiles)):
         batch_data = np.asarray(bag, dtype='float32')
@@ -1119,6 +1147,16 @@ def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], bag_names:
 
     del X, X_raw, y
     return new_x, new_x_r, new_y, new_y_tiles, new_bag_names
+
+
+def extract_well_info(well: str, verbose: bool = False) -> (str, int):
+    m = re.findall(well_regex, well)[0]
+    well_letter = m[0]
+    well_number = int(m[1])
+    if verbose:
+        log.write('Reconstructing well: "' + well + '" -> "' + well_letter + str(well_number) + '".')
+
+    return well_letter, well_number
 
 
 def repack_bags(X: [np.array], y: [int], repack_percentage: float = 0.2):

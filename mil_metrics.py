@@ -411,7 +411,7 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
     image_height = None
     color_map = plt.get_cmap(colormap_name)
     os.makedirs(out_dir, exist_ok=True)
-    y_hats, all_predictions, all_true, all_y_tiles, all_tiles_true, all_attentions, original_bag_indices = models.get_predictions(
+    y_hats, all_predictions, all_true, _, all_y_tiles_binarized, all_tiles_true, all_attentions, original_bag_indices = models.get_predictions(
         model, dataset)
 
     max_attention_tilesFP = []
@@ -425,7 +425,7 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
         tile_attentions = all_attentions[i]
 
         # Extracting predictions for the current bag
-        y_tile_predictions = all_y_tiles[i]
+        y_tile_predictions = all_y_tiles_binarized[i]
         y_tile_predictions_true = all_tiles_true[i]
         y_bag = all_predictions[i]
         y_bag_true = all_true[i]
@@ -553,10 +553,16 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
             ['TP', 'FP', 'FN', 'TN']):
         log.write('Saving ' + str(len(max_attention_tiles)) + ' tiles for metric ' + metric_name)
 
+        # Writing as png images, if they exist
         if len(max_attention_tiles) > 0:
             out_image = fuse_image_tiles(images=max_attention_tiles, image_width=image_width, image_height=image_height)
             max_attention_file = out_dir + 'max_attention_' + metric_name + '.png'
             plt.imsave(max_attention_file, out_image)
+
+        # Writing as text files
+        f = open(out_dir + 'max_attention_' + metric_name + '.txt', 'w')
+        f.write('Tile count: ' + str(len(max_attention_tiles)))
+        f.close()
 
 
 def calculate_dice_score(TP: int, FP: int, FN: int):
