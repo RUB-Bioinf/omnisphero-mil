@@ -109,6 +109,18 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
     experiment_names_full = []
     well_names_full = []
 
+    # Checking if all the paths exist
+    # we do this first, as to avoid unnessesary loading just to see that a path does not exist later on
+    all_paths_exist = True
+    for i in range(len(batch_dirs)):
+        current_dir = batch_dirs[i]
+
+        if not os.path.exists(current_dir):
+            log.write('Error! Path to load does not exist: ' + current_dir)
+            all_paths_exist = False
+    assert all_paths_exist
+
+    # Now that we know that these paths do all exist, we can load them
     for i in range(len(batch_dirs)):
         current_dir = batch_dirs[i]
         log.write('Considering source directory: ' + current_dir)
@@ -153,6 +165,10 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
                     y_tiles_full = y_tiles
                 else:
                     y_tiles_full = np.concatenate((y_tiles_full, y_tiles), axis=0)
+
+    if X_full is None:
+        log.write('No files were loaded!')
+        assert False
 
     log.write('Debug list size "X_full": ' + str(len(X_full)))
     log.write('Debug list size "y_full": ' + str(len(y_full)))
@@ -317,7 +333,7 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_i
                         channel_inclusions: [bool], include_raw: bool = True) -> (np.array, int, [int], str):
     if worker_verbose:
         log.write('Unzipping and reading json: ' + filepath)
-    threading.current_thread().setName('Unzipping & Reading JSON: '+filepath)
+    threading.current_thread().setName('Unzipping & Reading JSON: ' + filepath)
 
     # handling the case, if a json file has been zipped
     # The idea: Read the zip, unzip it in ram and parse the byte stream directly as a string!
@@ -354,7 +370,7 @@ def read_JSON_file(filepath: str, worker_verbose: bool, normalize_enum: int, lab
         log.write('Reading json: ' + filepath)
 
     # Renaming the thread, so profilers can keep up
-    threading.current_thread().setName('Loading JSON: '+filepath)
+    threading.current_thread().setName('Loading JSON: ' + filepath)
     f = open(filepath)
     data = json.load(f)
     f.close()
@@ -378,7 +394,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     y_tiles = None
 
     # Renaming the thread, so profilers can keep up
-    threading.current_thread().setName('Parsing JSON: '+zipped_data_name)
+    threading.current_thread().setName('Parsing JSON: ' + zipped_data_name)
 
     assert len(channel_inclusions) == 3
     assert len(constraints_1) == 3
@@ -809,7 +825,8 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
             plt.suptitle(
                 'z-scores: ' + experiment_name + ' - ' + well + '\n\n' + normalize_enum_descriptions[normalize_enum])
             plt.tight_layout()
-            plt.savefig(out_file_name, dpi=dpi)
+            plt.autoscale()
+            plt.savefig(out_file_name, dpi=dpi, bbox_inches="tight")
 
         # Releasing them other threads
         thread_lock.release()

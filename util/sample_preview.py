@@ -61,7 +61,8 @@ def save_z_scored_image(img: np.ndarray, filename: str, normalize_enum: int, vmi
 
     plt.suptitle(loader.normalize_enum_descriptions[normalize_enum])
     plt.tight_layout()
-    plt.savefig(filename, dpi=dpi)
+    plt.autoscale()
+    plt.savefig(filename, dpi=dpi, bbox_inches='tight')
 
 
 def z_score_to_rgb(img: np.ndarray, colormap: str = 'jet', a_min: float = -3.0, a_max=3.0) -> [np.ndarray]:

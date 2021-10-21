@@ -5,11 +5,14 @@ import sys
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
 
 import hardware
 import loader
 import models
+from util import dose_response
 from util import log
+import util.dose_response
 from util.omnisphero_data_loader import OmniSpheroDataLoader
 
 model_debug_path = "U:\bioinfdata\work\OmniSphero\mil\oligo-diff\models\production\hnm-early_inverted-O1-adadelta-NoNeuron2-wells-normalize-6repack-0.55-BEST"
@@ -129,9 +132,19 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_path: str, norm
                             file_path=out_file_base + '-bags.csv',
                             prediction_dict_well_names=prediction_dict_well_names)
 
+        # Calculating sigmoid curve fitting
+
+        # plt.clf()
+        # plt.plot(xdata, ydata, 'o', label='data')
+        # plt.plot(x, y, label='fit')
+        # plt.plot(x, y2, label='ideal')
+        # plt.ylim(0, 1.05)
+        # plt.legend(loc='best')
+        # plt.savefig('test.png', dpi=450, bbox_inches='tight')
+
         # Saving preview dose response graph
-        x_ticks_angle = 10
-        x_ticks_font_size = 4
+        x_ticks_angle = 15
+        x_ticks_font_size = 10
         save_prediction_img(out_file_base + '-bags.png', prediction_dict=prediction_dict_bags,
                             title='Dose Response: ' + current_experiment + ': ' + 'Whole Well',
                             prediction_dict_well_names=prediction_dict_well_names,
@@ -143,6 +156,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_path: str, norm
 
 
 def save_prediction_img(file_path: str, title: str, prediction_dict: dict, prediction_dict_well_names: dict,
+                        include_curve_fit: bool = True, include_ideal_fit: bool = True,
                         dpi: int = 900, x_ticks_angle: int = 30, x_ticks_font_size: int = 4, verbose: bool = False):
     # Writing the results as dose-response png images
     if verbose:
@@ -155,19 +169,43 @@ def save_prediction_img(file_path: str, title: str, prediction_dict: dict, predi
 
     x = list(range(len(prediction_dict.keys())))
     y = [np.mean(prediction_dict[p]) for p in prediction_dict]
-    plt.plot(x, y)
 
     ax = plt.gca()
     ax.set_ylim([0, 1])
     plt.xlabel('Wells')
     plt.ylabel('Dose Response Predictions')
     plt.title(title)
-    plt.autoscale()
-    
-    fig, ax = plt.subplots()
-    fig.set_tight_layout(True)
 
-    plt.savefig(file_path, dpi=dpi, bbox_inches="tight")
+    if include_curve_fit or include_ideal_fit:
+        plt.plot(x, y, 'o', label='Predictions', color='red')
+        plt.legend(loc='best')
+    else:
+        plt.plot(x, y)
+
+    if include_ideal_fit:
+        y, x = dose_response.curve_fit_ideal(len(prediction_dict) - 1)
+        plt.plot(x, y, label='Ideal', color='lightgreen', linestyle='dotted')
+        plt.legend(loc='best')
+
+    if include_curve_fit:
+        y, x = dose_response.curve_fit_prediction(prediction_dict=prediction_dict)
+
+        if y is not None and x is not None:
+            legend_label = 'Sigmoid Fit'
+            if include_ideal_fit:
+                d, f = dose_response.curve_fit_prediction_accuracy(prediction_dict=prediction_dict)
+                legend_label = 'Sigmoid Fit (Frechet: {:.4f})'.format(f)
+
+            plt.plot(x, y, label=legend_label, color='darkblue')
+            plt.legend(loc='best')
+        else:
+            plt.plot([0, 0], [0, 1], label='Sigmoid fit: Failed', color='darkblue')
+            plt.legend(loc='best')
+
+    del x, y
+
+    plt.autoscale()
+    plt.savefig(file_path, dpi=dpi, bbox_inches='tight')
 
 
 def save_prediction_csv(experiment_name: str, file_path: str, all_well_letters: [str], prediction_dict: dict,
@@ -265,7 +303,7 @@ def predict_dose_response(experiment_holder: dict, experiment_name: str, model: 
 
 def main():
     print('Predicting and creating a Dose Response curve for a whole bag.')
-    debug = False
+    debug = True
     model = None
     if sys.platform == 'win32':
         model = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\'
@@ -274,7 +312,7 @@ def main():
         predict_path(
             model_save_path=model,
             checkpoint_file='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\hnm\\model_best.h5',
-            bag_path='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_win\\prediction',
+            bag_path='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_win\\',
             out_dir=model + 'predictions\\',
             gpu_enabled=False, normalize_enum=7, max_workers=4)
     elif sys.platform == 'win32':

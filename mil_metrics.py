@@ -132,8 +132,9 @@ def plot_metric(history, metric_name: str, out_dir: str, second_metric_name: str
     plt.tight_layout()
 
     os.makedirs(out_dir, exist_ok=True)
-    plt.savefig(out_dir + os.sep + out_file_name + '.pdf', dpi=dpi)
-    plt.savefig(out_dir + os.sep + out_file_name + '.png', dpi=dpi)
+    plt.autoscale()
+    plt.savefig(out_dir + os.sep + out_file_name + '.pdf', dpi=dpi, bbox_inches='tight')
+    plt.savefig(out_dir + os.sep + out_file_name + '.png', dpi=dpi, bbox_inches='tight')
     plt.clf()
 
     if include_tikz:
@@ -175,8 +176,9 @@ def plot_accuracies(history, out_dir: str, dpi: int = 600, include_tikz: bool = 
     plt.tight_layout()
 
     os.makedirs(out_dir, exist_ok=True)
-    plt.savefig(out_dir + os.sep + 'acc_combined.pdf', dpi=dpi)
-    plt.savefig(out_dir + os.sep + 'acc_combined.png', dpi=dpi)
+    plt.autoscale()
+    plt.savefig(out_dir + os.sep + 'acc_combined.pdf', dpi=dpi, bbox_inches='tight')
+    plt.savefig(out_dir + os.sep + 'acc_combined.png', dpi=dpi, bbox_inches='tight')
     plt.clf()
 
     if include_tikz:
@@ -264,8 +266,9 @@ def plot_conf_matrix(y_true, y_pred, out_dir, target_names, title='Confusion Mat
     if normalize:
         out_name = 'confusion_matrix_normalized'
 
-    plt.savefig(out_dir + out_name + '.pdf', dpi=dpi)
-    plt.savefig(out_dir + out_name + '.png', dpi=dpi)
+    plt.autoscale()
+    plt.savefig(out_dir + out_name + '.pdf', dpi=dpi, bbox_inches='tight')
+    plt.savefig(out_dir + out_name + '.png', dpi=dpi, bbox_inches='tight')
     plt.clf()
 
 
@@ -308,9 +311,10 @@ def plot_binary_pr_curve(precision, recall, thresholds, y_true, save_path: str, 
     plt.title('Precision-Recall Curve: ' + title)
     plt.legend(loc='best')
 
-    plt.savefig(save_path + os.sep + filename_base + '.png', dpi=dpi)
-    plt.savefig(save_path + os.sep + filename_base + '.pdf', dpi=dpi, transparent=True)
-    plt.savefig(save_path + os.sep + filename_base + '.svg', dpi=dpi, transparent=True)
+    plt.autoscale()
+    plt.savefig(save_path + os.sep + filename_base + '.png', bbox_inches='tight', dpi=dpi)
+    plt.savefig(save_path + os.sep + filename_base + '.pdf', bbox_inches='tight', dpi=dpi, transparent=True)
+    plt.savefig(save_path + os.sep + filename_base + '.svg', bbox_inches='tight', dpi=dpi, transparent=True)
     plt.clf()
 
     # Writing PR as .tex
@@ -358,9 +362,11 @@ def plot_binary_roc_curve(fpr, tpr, thresholds, save_path: str, title: str, dpi:
     filename_base = 'roc_curve-' + title
     log.write('Saving "' + title + '" ROC to: ' + save_path)
     log.write('ROC-Curve AUC: ' + str(area))
-    plt.savefig(save_path + os.sep + filename_base + '.pdf', dpi=dpi)
-    plt.savefig(save_path + os.sep + filename_base + '.png', dpi=dpi)
-    plt.savefig(save_path + os.sep + filename_base + '.svg', dpi=dpi)
+
+    plt.autoscale()
+    plt.savefig(save_path + os.sep + filename_base + '.pdf', dpi=dpi, bbox_inches='tight')
+    plt.savefig(save_path + os.sep + filename_base + '.png', dpi=dpi, bbox_inches='tight')
+    plt.savefig(save_path + os.sep + filename_base + '.svg', dpi=dpi, bbox_inches='tight')
     plt.clf()
 
     # Writing ROC as .tex
@@ -537,8 +543,9 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
         plt.title('Attention Scores: Bag #' + str(original_bag_index) + ' - ' + bag_name)
 
         plt.tight_layout()
-        plt.savefig(filename_base + '-detail.png', dpi=dpi)
-        plt.savefig(filename_base + '-detail.pdf', dpi=dpi)
+        plt.autoscale()
+        plt.savefig(filename_base + '-detail.png', dpi=dpi, bbox_inches='tight')
+        plt.savefig(filename_base + '-detail.pdf', dpi=dpi, bbox_inches='tight')
         plt.clf()
 
         # Writing debug texts
