@@ -16,8 +16,7 @@ from zipfile import ZipFile
 import matplotlib.pyplot as plt
 import numpy as np
 
-from mil_metrics import fuse_image_tiles
-from mil_metrics import outline_rgb_array
+import mil_metrics
 from util import log
 from util.sample_preview import z_score_to_rgb
 from util.utils import gct
@@ -755,19 +754,19 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
         width, height, _ = sample.shape
 
         # Storing raw samples
-        sample_raw = outline_rgb_array(sample_raw, None, None, outline=outline, override_colormap=[255, 255, 255])
+        sample_raw = mil_metrics.outline_rgb_array(sample_raw, None, None, outline=outline, override_colormap=[255, 255, 255])
         rgb_samples_raw.append(sample_raw)
 
         # Storing the actual sample, based if it's z-scored or normalized
         if z_mode:
             z_score_channels = z_score_to_rgb(img=sample, colormap=colormap_name, a_min=vmin, a_max=vmax)
 
-            sample_r = outline_rgb_array(z_score_channels[0], None, None, outline=outline,
-                                         override_colormap=[255, 255, 255])
-            sample_g = outline_rgb_array(z_score_channels[1], None, None, outline=outline,
-                                         override_colormap=[255, 255, 255])
-            sample_b = outline_rgb_array(z_score_channels[2], None, None, outline=outline,
-                                         override_colormap=[255, 255, 255])
+            sample_r = mil_metrics.outline_rgb_array(z_score_channels[0], None, None, outline=outline,
+                                                     override_colormap=[255, 255, 255])
+            sample_g = mil_metrics.outline_rgb_array(z_score_channels[1], None, None, outline=outline,
+                                                     override_colormap=[255, 255, 255])
+            sample_b = mil_metrics.outline_rgb_array(z_score_channels[2], None, None, outline=outline,
+                                                     override_colormap=[255, 255, 255])
             z_r_samples.append(sample_r)
             z_g_samples.append(sample_g)
             z_b_samples.append(sample_b)
@@ -778,15 +777,16 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
                 sample = sample * 255
 
             sample = sample.astype(np.uint8)
-            sample = outline_rgb_array(sample, None, None, outline=outline, override_colormap=[255, 255, 255])
+            sample = mil_metrics.outline_rgb_array(sample, None, None, outline=outline,
+                                                   override_colormap=[255, 255, 255])
             rgb_samples.append(sample)
 
     # Saving the image
     if z_mode:
         os.makedirs(z_out_dir, exist_ok=True)
-        fused_image_r = fuse_image_tiles(images=z_r_samples, image_width=width, image_height=height)
-        fused_image_g = fuse_image_tiles(images=z_g_samples, image_width=width, image_height=height)
-        fused_image_b = fuse_image_tiles(images=z_b_samples, image_width=width, image_height=height)
+        fused_image_r = mil_metrics.fuse_image_tiles(images=z_r_samples, image_width=width, image_height=height)
+        fused_image_g = mil_metrics.fuse_image_tiles(images=z_g_samples, image_width=width, image_height=height)
+        fused_image_b = mil_metrics.fuse_image_tiles(images=z_b_samples, image_width=width, image_height=height)
 
         # Saving single chanel z-score rgb images
         fused_images = [fused_image_r, fused_image_g, fused_image_b]
@@ -796,9 +796,10 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
         plt.imsave(z_out_file_name_b, fused_image_b)
 
         # saving the raw included version
-        out_image_raw = fuse_image_tiles(images=rgb_samples_raw, image_width=width, image_height=height)
-        out_image_raw = fuse_image_tiles(images=[fused_image_r, fused_image_g, fused_image_b, out_image_raw],
-                                         image_width=fused_width, image_height=fused_height)
+        out_image_raw = mil_metrics.fuse_image_tiles(images=rgb_samples_raw, image_width=width, image_height=height)
+        out_image_raw = mil_metrics.fuse_image_tiles(
+            images=[fused_image_r, fused_image_g, fused_image_b, out_image_raw],
+            image_width=fused_width, image_height=fused_height)
         plt.imsave(out_file_name_raw, out_image_raw)
 
         # Blocking all other threads so pyplot doesn't overwrite itself
@@ -831,13 +832,13 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
         # Releasing them other threads
         thread_lock.release()
     else:
-        out_image = fuse_image_tiles(images=rgb_samples, image_width=width, image_height=height)
+        out_image = mil_metrics.fuse_image_tiles(images=rgb_samples, image_width=width, image_height=height)
         plt.imsave(out_file_name, out_image)
 
         fused_width, fused_height, _ = out_image.shape
-        out_image_raw = fuse_image_tiles(images=rgb_samples_raw, image_width=width, image_height=height)
-        out_image_raw = fuse_image_tiles(images=[out_image, out_image_raw], image_width=fused_width,
-                                         image_height=fused_height)
+        out_image_raw = mil_metrics.fuse_image_tiles(images=rgb_samples_raw, image_width=width, image_height=height)
+        out_image_raw = mil_metrics.fuse_image_tiles(images=[out_image, out_image_raw], image_width=fused_width,
+                                                     image_height=fused_height)
         plt.imsave(out_file_name_raw, out_image_raw)
 
 

@@ -15,12 +15,13 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 
 import hardware
+import loader
 import mil_metrics
-from torch_callbacks import BaseTorchCallback
+import torch_callbacks
 from util import log
 from util import utils
-####
 from util.omnisphero_data_loader import OmniSpheroDataLoader
+from util.paths import training_metrics_live_dir_name
 from util.utils import line_print
 
 
@@ -348,11 +349,11 @@ class BaselineMIL(OmniSpheroMil):
 
 ####
 
-def load_checkpoint(load_path: str, model: OmniSpheroMil, optimizer: Optimizer = None,map_location=None) -> (
+def load_checkpoint(load_path: str, model: OmniSpheroMil, optimizer: Optimizer = None, map_location=None) -> (
         OmniSpheroMil, Optimizer, int, float):
     ''' loads the model and its optimizer states from disk.
     '''
-    checkpoint = torch.load(load_path,map_location=map_location)
+    checkpoint = torch.load(load_path, map_location=map_location)
     model.load_state_dict(checkpoint['model_state_dict'])
 
     if optimizer is not None:
@@ -383,7 +384,7 @@ def choose_optimizer(model: OmniSpheroMil, selection: str) -> Optimizer:
 
 
 def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: OmniSpheroDataLoader,
-        validation_data: OmniSpheroDataLoader, out_dir_base: str, callbacks: [BaseTorchCallback],
+        validation_data: OmniSpheroDataLoader, out_dir_base: str, callbacks: [torch_callbacks.BaseTorchCallback],
         checkpoint_interval: int = 1, clamp_min: float = None, clamp_max: float = None,
         augment_training_data: bool = False, augment_validation_data: bool = False):
     """ Trains a model on the previously preprocessed train and val sets.
@@ -395,7 +396,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                     'train_dice_score', 'val_dice_score']
 
     checkpoint_out_dir = out_dir_base + 'checkpoints' + os.sep
-    metrics_dir_live = out_dir_base + 'metrics_live' + os.sep
+    metrics_dir_live = out_dir_base + training_metrics_live_dir_name + os.sep
     epoch_data_dir_live = metrics_dir_live + 'epochs_live' + os.sep
     os.makedirs(checkpoint_out_dir, exist_ok=True)
     os.makedirs(metrics_dir_live, exist_ok=True)
@@ -437,7 +438,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
     # Notifying callbacks
     for i in range(len(callbacks)):
-        callback: BaseTorchCallback = callbacks[i]
+        callback: torch_callbacks.BaseTorchCallback = callbacks[i]
         callback.on_training_start(model=model)
 
     epoch = 0
@@ -463,7 +464,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
             # Notifying Callbacks
             for i in range(len(callbacks)):
-                callback: BaseTorchCallback = callbacks[i]
+                callback: torch_callbacks.BaseTorchCallback = callbacks[i]
                 callback.on_batch_start(model=model, batch_id=batch_id, data=data, label=label)
 
             label = label.squeeze()
@@ -518,7 +519,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
             # Notifying Callbacks
             for i in range(len(callbacks)):
-                callback: BaseTorchCallback = callbacks[i]
+                callback: torch_callbacks.BaseTorchCallback = callbacks[i]
                 callback.on_batch_finished(model=model, batch_id=batch_id, data=data, label=label, batch_acc=float(acc),
                                            batch_loss=float(loss))
 
@@ -569,7 +570,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
         # Notifying Callbacks
         for i in range(len(callbacks)):
-            callback: BaseTorchCallback = callbacks[i]
+            callback: torch_callbacks.BaseTorchCallback = callbacks[i]
             callback.on_epoch_finished(model=model, epoch=epoch, epoch_result=result, history=history)
             cancel_requested = cancel_requested or callback.is_cancel_requested()
 
@@ -619,7 +620,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
     # Notifying callbacks
     for i in range(len(callbacks)):
-        callback: BaseTorchCallback = callbacks[i]
+        callback: torch_callbacks.BaseTorchCallback = callbacks[i]
         callback.on_training_finished(model=model, was_canceled=cancel_requested, history=history)
 
     return history, history_keys, model_save_path_best
@@ -806,6 +807,75 @@ def debug_all_models(gpu_enabled: bool = True):
     print('Checking the baseline model')
     m = BaselineMIL()
     print(m)
+
+
+def predict_dose_response(experiment_holder: dict, experiment_name: str, model,
+                          max_workers: int = 1, verbose: bool = False):
+    if verbose:
+        log.write('Predicting experiment: ' + experiment_name)
+    well_indices = list(experiment_holder.keys())
+    well_indices.sort()
+
+    prediction_dict_bags = {}
+    prediction_dict_samples = {}
+    prediction_dict_well_names = {}
+    all_wells = []
+
+    # Iterating over all well numbers
+    for current_well_index in well_indices:
+        well_letters = list(experiment_holder[current_well_index])
+        well_letters.sort()
+
+        if verbose:
+            log.write(
+                experiment_name + ' - Discovered ' + str(len(well_letters)) + ' replicas(s) for well index ' + str(
+                    current_well_index) + ': ' + str(well_letters))
+
+        replica_predictions_bags = []
+        replica_predictions_samples = []
+        replica_well_names = []
+
+        # Iterating over all replcas for this concentration and adding raw predictions to the list
+        for current_well_letter in well_letters:
+            current_well = current_well_letter + str(current_well_index)
+            if verbose:
+                log.write('Predicting: ' + experiment_name + ' - ' + current_well)
+
+            if current_well not in all_wells:
+                all_wells.append(current_well)
+
+            current_x = [experiment_holder[current_well_index][current_well_letter]]
+            dataset, bag_input_dim = loader.convert_bag_to_batch(bags=current_x, labels=None, y_tiles=None)
+            predict_dl = OmniSpheroDataLoader(dataset, batch_size=1, shuffle=False, pin_memory=False,
+                                              num_workers=max_workers,
+                                              transform_enabled=False, transform_data_saver=False)
+            del current_x, dataset
+            if verbose:
+                log.write('Model input dim: ' + str(model.input_dim))
+                log.write('Loaded data input dim: ' + str(bag_input_dim))
+            assert bag_input_dim == model.input_dim
+
+            all_y_hats, all_predictions, all_true, all_y_tiles, all_y_tiles_binarized, all_tiles_true, all_attentions, original_bag_indices = get_predictions(
+                model, predict_dl, verbose=False)
+            del predict_dl
+
+            if verbose:
+                log.write('Finished predicting: ' + experiment_name + ' - ' + current_well)
+
+            # Taking the means of the predictions and adding them to the list
+            replica_predictions_bags.append(np.mean(all_y_hats))
+            replica_predictions_samples.append(np.mean(all_y_tiles))
+            replica_well_names.append(current_well)
+            del all_y_hats, all_predictions, all_true, all_y_tiles, all_y_tiles_binarized, all_tiles_true, all_attentions, original_bag_indices
+
+        # Adding the lists to the dict, so the dict will include means of the replicas
+        prediction_dict_bags[current_well_index] = replica_predictions_bags
+        prediction_dict_samples[current_well_index] = replica_predictions_samples
+        prediction_dict_well_names[current_well_index] = replica_well_names
+    del experiment_holder
+    all_wells.sort()
+
+    return all_wells, prediction_dict_bags, prediction_dict_samples, prediction_dict_well_names
 
 
 if __name__ == "__main__":

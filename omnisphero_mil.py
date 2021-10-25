@@ -16,11 +16,13 @@ import mil_metrics
 import models
 import omnisphero_mining
 import torch_callbacks
-from models import BaselineMIL
+import predict_batch
 from util import log
 from util import sample_preview
 from util import utils
 from util.omnisphero_data_loader import OmniSpheroDataLoader
+from util.paths import default_out_dir_unix_base
+from util.paths import training_metrics_live_dir_name
 from util.utils import line_print
 from util.utils import shuffle_and_split_data
 
@@ -28,32 +30,50 @@ from util.utils import shuffle_and_split_data
 # https://github.com/Spandan-Madan/Pytorch_fine_tuning_Tutorial/issues/10
 
 
-default_source_dir_win = "U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_win"
-default_out_dir_win_base = "U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\win"
+default_source_dir_win = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_win'
+default_out_dir_win_base = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\win'
 
 default_source_dirs_unix = [
     # New CNN
-    "/mil/oligo-diff/training_data/curated_linux/EFB18",
-    "/mil/oligo-diff/training_data/curated_linux/ESM36",
-    "/mil/oligo-diff/training_data/curated_linux/ELS411",
-    "/mil/oligo-diff/training_data/curated_linux/ELS517",
-    "/mil/oligo-diff/training_data/curated_linux/ELS637",
-    "/mil/oligo-diff/training_data/curated_linux/ELS681",
-    "/mil/oligo-diff/training_data/curated_linux/ELS682",
-    "/mil/oligo-diff/training_data/curated_linux/ELS719",
-    "/mil/oligo-diff/training_data/curated_linux/ELS744"
+    '/mil/oligo-diff/training_data/curated_linux/EFB18',
+    '/mil/oligo-diff/training_data/curated_linux/ESM36',
+    '/mil/oligo-diff/training_data/curated_linux/ELS411',
+    '/mil/oligo-diff/training_data/curated_linux/ELS517',
+    '/mil/oligo-diff/training_data/curated_linux/ELS637',
+    '/mil/oligo-diff/training_data/curated_linux/ELS681',
+    '/mil/oligo-diff/training_data/curated_linux/ELS682',
+    '/mil/oligo-diff/training_data/curated_linux/ELS719',
+    '/mil/oligo-diff/training_data/curated_linux/ELS744'
+]
+
+all_source_dirs_win = [
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\EFB18',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ESM36',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS411',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS517',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS637',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS681',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS682',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS719',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS744'
+]
+default_sigmoid_validation_dirs_unix = [
+    '/mil/oligo-diff/training_data/curated_linux/ELS681',
+    '/mil/oligo-diff/training_data/curated_linux/ELS682'
+]
+default_sigmoid_validation_dirs_win = [
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS517',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS411'
 ]
 
 ideal_source_dirs_unix = [
     # New CNN
-    "/mil/oligo-diff/training_data/curated_linux/ESM36",
-    "/mil/oligo-diff/training_data/curated_linux/ELS517",
-    "/mil/oligo-diff/training_data/curated_linux/ELS637",
-    "/mil/oligo-diff/training_data/curated_linux/ELS681",
-    "/mil/oligo-diff/training_data/curated_linux/ELS682"
+    '/mil/oligo-diff/training_data/curated_linux/ESM36',
+    '/mil/oligo-diff/training_data/curated_linux/ELS517',
+    '/mil/oligo-diff/training_data/curated_linux/ELS637',
+    '/mil/oligo-diff/training_data/curated_linux/ELS681',
+    '/mil/oligo-diff/training_data/curated_linux/ELS682'
 ]
-
-default_out_dir_unix_base = "/mil/oligo-diff/models/linux"
 
 # normalize_enum is an enum to determine normalisation as follows:
 # 0 = no normalisation
@@ -69,37 +89,63 @@ normalize_enum_default = 3
 max_workers_default = 5
 
 
-def train_model(training_label: str, source_dirs: [str], loss_function: str, device_ordinals: [int],
-                epochs: int = 3, max_workers: int = max_workers_default, normalize_enum: int = normalize_enum_default,
-                out_dir: str = None, gpu_enabled: bool = False,
-                shuffle_data_loaders: bool = True, model_enable_attention: bool = False, model_use_max: bool = True,
-                repack_percentage: float = 0.0, global_log_dir: str = None, optimizer: str = 'adam',
-                clamp_min: float = None, clamp_max: float = None, positive_bag_min_samples: int = None,
-                tile_constraints_0: [int] = loader.default_tile_constraints_none,
-                tile_constraints_1: [int] = loader.default_tile_constraints_none,
-                label_0_well_indices=loader.default_well_indices_none,
-                label_1_well_indices=loader.default_well_indices_none,
-                augment_train: bool = False, augment_validation: bool = False,
-                channel_inclusions: [bool] = loader.default_channel_inclusions_all,
-                data_split_percentage_validation: float = 0.35, data_split_percentage_test: float = 0.20,
-                use_hard_negative_mining: bool = True, hnm_magnitude: float = 5.0, hnm_new_bag_percentage=0.25,
-                writing_metrics_enabled: bool = True, testing_model_enabled: bool = True
-                ):
+def train_model(
+        # Basic training data params
+        training_label: str, source_dirs: [str],
+        # Model fitting params
+        loss_function: str, device_ordinals: [int],
+        epochs: int = 3, max_workers: int = max_workers_default, normalize_enum: int = normalize_enum_default,
+        out_dir: str = None, gpu_enabled: bool = False,
+        shuffle_data_loaders: bool = True, model_enable_attention: bool = False, model_use_max: bool = True,
+        global_log_dir: str = None, optimizer: str = 'adam',
+        # Clamp Loss function
+        clamp_min: float = None, clamp_max: float = None,
+        # Tile shuffling
+        repack_percentage: float = 0.0,
+        positive_bag_min_samples: int = None,
+        # Tile Constraints (How many Nuclei / Oligos / Neurons must be at least in a sample?)
+        tile_constraints_0: [int] = loader.default_tile_constraints_none,
+        tile_constraints_1: [int] = loader.default_tile_constraints_none,
+        # Well indices for labels. When a bag is loaded from a specific well index, the corresponding label is applied
+        label_0_well_indices=loader.default_well_indices_none,
+        label_1_well_indices=loader.default_well_indices_none,
+        # Enable data augmentation?
+        augment_train: bool = False, augment_validation: bool = False,
+        # What channels are enabled during loading?
+        channel_inclusions: [bool] = loader.default_channel_inclusions_all,
+        # Training / Validation Split percentages
+        data_split_percentage_validation: float = 0.35, data_split_percentage_test: float = 0.20,
+        # HNM Params
+        use_hard_negative_mining: bool = True, hnm_magnitude: float = 5.0, hnm_new_bag_percentage=0.25,
+        writing_metrics_enabled: bool = True,
+        # Test the model on the test data, after training?
+        testing_model_enabled: bool = True,
+        # Sigmoid validation dirs
+        sigmoid_validation_dirs: [str] = []
+):
     if out_dir is None:
         out_dir = source_dirs[0] + os.sep + 'training_results'
+    if not testing_model_enabled:
+        data_split_percentage_test = 0
 
     # This param is unused and should not be "True"!
     assert len(label_0_well_indices) > 0
     assert len(label_1_well_indices) > 0
 
+    data_loader_cores = math.ceil(os.cpu_count() * 0.5 + 1)
+    data_loader_cores = int(min(data_loader_cores, 4))
+
+    # Setting up directories
     out_dir = out_dir + os.sep + training_label + os.sep
     loading_preview_dir = out_dir + os.sep + 'loading_previews' + os.sep
     loading_preview_dir_whole_bag = loading_preview_dir + 'whole_bags' + os.sep
     metrics_dir = out_dir + os.sep + 'metrics' + os.sep
+    sigmoid_validation_dir = out_dir + os.sep + training_metrics_live_dir_name + os.sep + 'sigmoid_live' + os.sep
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(metrics_dir, exist_ok=True)
     os.makedirs(loading_preview_dir, exist_ok=True)
     os.makedirs(loading_preview_dir_whole_bag, exist_ok=True)
+    os.makedirs(sigmoid_validation_dir, exist_ok=True)
 
     print('Model classification - Use Max: ' + str(model_use_max))
     print('Model classification - Use Attention: ' + str(model_enable_attention))
@@ -115,7 +161,8 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     protocol_f.write('\nDevice ordinals: ' + str(device_ordinals))
     protocol_f.write('\nEpochs: ' + str(epochs))
     protocol_f.write('\nShuffle data loader: ' + str(shuffle_data_loaders))
-    protocol_f.write('\nMax Loader Workers: ' + str(max_workers))
+    protocol_f.write('\nMax File-Loader Workers: ' + str(max_workers))
+    protocol_f.write('\nMax "DataLoader" Workers: ' + str(data_loader_cores))
     protocol_f.write('\nGPU Enabled: ' + str(gpu_enabled))
     protocol_f.write('\nHNM Enabled: ' + str(use_hard_negative_mining))
     protocol_f.write('\nClamp Min: ' + str(clamp_min))
@@ -332,15 +379,46 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     device = hardware.get_hardware_device(gpu_preferred=gpu_enabled)
     log.write('Selected device: ' + str(device))
 
+    #######################
+    # Loading sigmoid data
+    #######################
+    spc: torch_callbacks.SigmoidPredictionCallback = None
+    f = open(out_dir + 'sigmoid_validation.txt', 'w')
+    if len(sigmoid_validation_dirs) > 0:
+        X_sigmoid, _, _, _, _, experiment_names_sigmoid, well_names_sigmoid, errors_sigmoid, loaded_files_list_sigmoid = loader.load_bags_json_batch(
+            batch_dirs=sigmoid_validation_dirs,
+            max_workers=max_workers,
+            include_raw=True,
+            channel_inclusions=channel_inclusions,
+            constraints_0=tile_constraints_0,
+            constraints_1=tile_constraints_1,
+            label_0_well_indices=loader.default_well_indices_all,
+            label_1_well_indices=loader.default_well_indices_all,
+            normalize_enum=normalize_enum)
+        X_sigmoid = [np.einsum('bhwc->bchw', bag) for bag in X_sigmoid]
+        experiment_holders_sigmoid, all_well_letters_sigmoid, all_well_numbers_sigmoid, experiment_names_unique_sigmoid = predict_batch.generate_experiment_prediction_holders(
+            X=X_sigmoid, experiment_names=experiment_names_sigmoid, well_names=well_names_sigmoid)
+
+        spc = torch_callbacks.SigmoidPredictionCallback(out_dir=sigmoid_validation_dir, epoch_interval=2,
+                                                        experiment_holders=experiment_holders_sigmoid,
+                                                        all_well_letters=all_well_letters_sigmoid,
+                                                        all_well_numbers=all_well_numbers_sigmoid,
+                                                        workers=data_loader_cores,
+                                                        verbose=True,
+                                                        experiment_names_unique=experiment_names_unique_sigmoid)
+    else:
+        f.write('Not validating.')
+    f.close()
+
     # Setting up Model
     log.write('Setting up model...')
     accuracy_function = 'binary'
-    model = BaselineMIL(input_dim=input_dim, device=device,
-                        use_max=model_use_max,
-                        enable_attention=model_enable_attention,
-                        device_ordinals=device_ordinals,
-                        loss_function=loss_function,
-                        accuracy_function=accuracy_function)
+    model = models.BaselineMIL(input_dim=input_dim, device=device,
+                               use_max=model_use_max,
+                               enable_attention=model_enable_attention,
+                               device_ordinals=device_ordinals,
+                               loss_function=loss_function,
+                               accuracy_function=accuracy_function)
 
     # Saving the raw version of this model
     torch.save(model.state_dict(), out_dir + 'model.pt')
@@ -348,8 +426,6 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
 
     # Loader args
     loader_kwargs = {}
-    data_loader_cores = math.ceil(os.cpu_count() * 0.5 + 1)
-    data_loader_cores = 0
     data_loader_pin_memory = False
     if torch.cuda.is_available():
         # model.cuda()
@@ -371,12 +447,15 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     # Data Generators
     test_dl = None
     train_dl = OmniSpheroDataLoader(training_data, batch_size=1, shuffle=shuffle_data_loaders,
-                                    transform_enabled=augment_train, transform_data_saver=False, **loader_kwargs)
+                                    transform_enabled=augment_train,
+                                    transform_data_saver=False, **loader_kwargs)
     validation_dl = OmniSpheroDataLoader(validation_data, batch_size=1, transform_enabled=augment_validation,
-                                         shuffle=shuffle_data_loaders, transform_data_saver=False, **loader_kwargs)
+                                         shuffle=shuffle_data_loaders,
+                                         transform_data_saver=False, **loader_kwargs)
     if data_split_percentage_test is not None:
         test_dl = OmniSpheroDataLoader(test_data, batch_size=1, shuffle=shuffle_data_loaders,
-                                       transform_data_saver=False, **loader_kwargs, transform_enabled=False)
+                                       transform_data_saver=False, **loader_kwargs,
+                                       transform_enabled=False)
     del validation_data, test_data
     # test_dl = DataLoader(test_data, batch_size=1, shuffle=True, **loader_kwargs)
 
@@ -387,6 +466,9 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
     callbacks.append(torch_callbacks.UnreasonableLossCallback(loss_max=40.0))
     hnm_callbacks.append(torch_callbacks.EarlyStopping(epoch_threshold=int(epochs / 5 + 1)))
     hnm_callbacks.append(torch_callbacks.UnreasonableLossCallback(loss_max=40.0))
+    if spc is not None:
+        callbacks.append(spc)
+        hnm_callbacks.append(spc)
 
     protocol_f.write('\n\n == Model Information==')
     protocol_f.write('\nDevice Ordinals: ' + str(device_ordinals))
@@ -498,6 +580,11 @@ def train_model(training_label: str, source_dirs: [str], loss_function: str, dev
         mined_out_dir = out_dir + os.sep + 'hnm' + os.sep
         os.makedirs(mined_out_dir, exist_ok=True)
         epochs = math.ceil(epochs * 1.5)
+
+        if spc is not None:
+            sigmoid_validation_dir = mined_out_dir + 'sigmoid_live'
+            os.makedirs(sigmoid_validation_dir, exist_ok=True)
+            spc.out_dir = sigmoid_validation_dir
 
         f = open(mined_out_dir + 'mining.txt', 'w')
         f.write('Hard Negative Mining parameters:')
@@ -691,7 +778,7 @@ def main(debug: bool = False):
         current_global_log_dir = 'U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\'
         log.add_file('U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\all_logs.txt')
 
-        current_max_workers = 10
+        current_max_workers = 6
         current_sources_dir = [default_source_dir_win]
         default_out_dir_base = default_out_dir_win_base
         current_gpu_enabled = False
@@ -722,13 +809,14 @@ def main(debug: bool = False):
                     label_0_well_indices=loader.default_well_indices_very_late,
                     loss_function='binary_cross_entropy',
                     testing_model_enabled=True,
-                    writing_metrics_enabled=True
+                    writing_metrics_enabled=True,
+                    sigmoid_validation_dirs=default_sigmoid_validation_dirs_win
                     )
     else:
         for l in ['binary_cross_entropy']:
             for o in ['adadelta', 'adam']:
-                for r in [0.65]:
-                    for i in [6, 7, 8, 4, 5]:
+                for r in [0.25]:
+                    for i in [6, 7, 8]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
                             augment_train = aug[1]
@@ -757,7 +845,8 @@ def main(debug: bool = False):
                                         tile_constraints_1=loader.default_tile_constraints_oligos,
                                         label_1_well_indices=loader.default_well_indices_early,
                                         label_0_well_indices=loader.default_well_indices_very_late,
-                                        device_ordinals=current_device_ordinals
+                                        device_ordinals=current_device_ordinals,
+                                        sigmoid_validation_dirs=default_sigmoid_validation_dirs_unix
                                         )
     log.write('Finished every training!')
 

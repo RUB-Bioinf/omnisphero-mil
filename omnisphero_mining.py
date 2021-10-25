@@ -1,6 +1,3 @@
-# IMPORTS
-#########
-
 import math
 
 import numpy as np
@@ -9,16 +6,13 @@ import torchvision.models as model_zoo
 from sklearn.cluster import KMeans
 from torch import Tensor
 
-from models import OmniSpheroMil
 from util import log
 from util.omnisphero_data_loader import OmniSpheroDataLoader
-# FUNCTIONS
-###########
 from util.utils import line_print
 
 
 @torch.no_grad()
-def get_false_positive_bags(trained_model: OmniSpheroMil, train_dl: OmniSpheroDataLoader, X_raw: [np.ndarray]) -> (
+def get_false_positive_bags(trained_model, train_dl: OmniSpheroDataLoader, X_raw: [np.ndarray]) -> (
         [Tensor], [Tensor], [np.ndarray]):
     """ After training access all bags falsely classified by DeepAttentionMIL as positive
     (= false positive bags).

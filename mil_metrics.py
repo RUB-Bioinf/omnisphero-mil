@@ -12,9 +12,9 @@ import os
 from typing import Dict
 from typing import List
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from matplotlib import pyplot as plt
 from sklearn.metrics import auc
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import precision_recall_curve
@@ -23,12 +23,9 @@ from torch.utils.data import DataLoader
 
 import models
 from models import BaselineMIL
+from util import dose_response
 from util import log
 from util import utils
-# matplotlib.use('Agg')
-# plt.style.use('ggplot')
-# FUNCTIONS
-###########
 from util.utils import get_plt_as_tex
 from util.utils import line_print
 
@@ -577,6 +574,9 @@ def calculate_dice_score(TP: int, FP: int, FN: int):
     FP = float(math.floor(FP))
     FN = float(math.floor(FN))
 
+    if (2 * TP + FP + FN) == 0:
+        return math.nan
+
     return (2 * TP) / (2 * TP + FP + FN)
 
 
@@ -639,3 +639,81 @@ def outline_rgb_array(image: [np.ndarray], true_value: float, prediction: float,
     image = image.astype('uint8')
 
     return image
+
+
+def save_sigmoid_prediction_csv(experiment_name: str, file_path: str, all_well_letters: [str], prediction_dict: dict,
+                                prediction_dict_well_names: dict, verbose: bool = False):
+    if verbose:
+        log.write('Writing prediction CSV: ' + file_path)
+
+    # Saving the results to a CSV file
+    f = open(file_path, 'w')
+    f.write(experiment_name + ';')
+    [f.write(letter + ';') for letter in all_well_letters]
+    f.write('Mean')
+    for well_index in prediction_dict.keys():
+        f.write('\n' + str(well_index) + ';')
+        current_prediction = prediction_dict[well_index]
+        current_well_names = prediction_dict_well_names[well_index]
+
+        for letter in all_well_letters:
+            for (prediction_value, predicted_well) in zip(current_prediction, current_well_names):
+                if predicted_well == letter + str(well_index):
+                    f.write(str(prediction_value))
+            f.write(';')
+        f.write(str(np.mean(current_prediction)))
+    f.close()
+
+
+def save_sigmoid_prediction_img(file_path: str, title: str, prediction_dict: dict, prediction_dict_well_names: dict,
+                                include_curve_fit: bool = True, include_ideal_fit: bool = True,
+                                dpi: int = 900, x_ticks_angle: int = 30, x_ticks_font_size: int = 4,
+                                verbose: bool = False):
+    # Writing the results as dose-response png images
+    if verbose:
+        log.write('Rendering dose response curve: "' + title + '" at ' + file_path)
+
+    plt.clf()
+    x_labels = [str(l) for l in prediction_dict_well_names.values()]
+    ticks = list(range(len(x_labels)))
+    plt.xticks(ticks=ticks, labels=x_labels, rotation=x_ticks_angle, fontsize=x_ticks_font_size)
+
+    x = list(range(len(prediction_dict.keys())))
+    y = [np.mean(prediction_dict[p]) for p in prediction_dict]
+
+    ax = plt.gca()
+    ax.set_ylim([0, 1])
+    plt.xlabel('Wells')
+    plt.ylabel('Dose Response Predictions')
+    plt.title(title)
+
+    if include_curve_fit or include_ideal_fit:
+        plt.plot(x, y, 'o', label='Predictions', color='red')
+        plt.legend(loc='best')
+    else:
+        plt.plot(x, y)
+
+    if include_ideal_fit:
+        y, x = dose_response.curve_fit_ideal(len(prediction_dict) - 1)
+        plt.plot(x, y, label='Ideal', color='lightgreen', linestyle='dotted')
+        plt.legend(loc='best')
+
+    if include_curve_fit:
+        y, x = dose_response.curve_fit_prediction(prediction_dict=prediction_dict)
+
+        if y is not None and x is not None:
+            legend_label = 'Sigmoid Fit'
+            if include_ideal_fit:
+                d, f = dose_response.curve_fit_prediction_accuracy(prediction_dict=prediction_dict)
+                legend_label = 'Sigmoid Fit (Frechet: {:.4f})'.format(f)
+
+            plt.plot(x, y, label=legend_label, color='darkblue')
+            plt.legend(loc='best')
+        else:
+            plt.plot([0, len(prediction_dict) - 1], [0, 0], label='Sigmoid fit: Failed', color='darkblue')
+            plt.legend(loc='best')
+
+    del x, y
+
+    plt.autoscale()
+    plt.savefig(file_path, dpi=dpi, bbox_inches='tight')
