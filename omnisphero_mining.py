@@ -50,7 +50,7 @@ def get_false_positive_bags(trained_model, train_dl: OmniSpheroDataLoader, X_raw
         if float(predictions) == float(bag_label):  # and not batch_id == 0:
             # TODO resolve this debug part
             continue
-        elif (predictions == 1 and bag_label == 0):  # or batch_id == 0:
+        elif predictions == 1 and bag_label == 0:  # or batch_id == 0:
             # A false positive bag has been found!
             false_positive_bags.append(data.squeeze().cpu())
             attention_weights_list.append(attention.squeeze().cpu())

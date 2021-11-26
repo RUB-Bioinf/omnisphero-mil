@@ -421,6 +421,11 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
     max_attention_tilesTP = []
     max_attention_tilesFN = []
     max_attention_tilesTN = []
+    min_attention_tilesFP = []
+    min_attention_tilesTP = []
+    min_attention_tilesFN = []
+    min_attention_tilesTN = []
+
     print('')
     for i in range(len(y_hats)):
         line_print('Writing Attentions for Bag: ' + str(i + 1) + '/' + str(len(y_hats)), include_in_log=False)
@@ -442,7 +447,10 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
 
         # Extracting the tiles with the most attentions
         max_attention_indexes = np.where(tile_attentions == max(tile_attentions))
-        added_attention_tiles = 0
+        min_attention_indexes = np.where(tile_attentions == min(tile_attentions))
+        max_attention_tile = None
+        min_attention_tile = None
+        added_attention_tiles_count = 0
         for current_index in max_attention_indexes[0]:
             max_attention_tile = raw_bag[current_index]
             max_attention_tile = max_attention_tile.astype('uint8')
@@ -451,18 +459,43 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
             if y_bag_true == 1:
                 if y_bag == 1:
                     max_attention_tilesTP.append(max_attention_tile)
-                    added_attention_tiles = added_attention_tiles + 1
+                    added_attention_tiles_count = added_attention_tiles_count + 1
                 elif y_bag == 0:
                     max_attention_tilesFP.append(max_attention_tile)
-                    added_attention_tiles = added_attention_tiles + 1
+                    added_attention_tiles_count = added_attention_tiles_count + 1
             elif y_bag_true == 0:
                 if y_bag == 1:
                     max_attention_tilesFN.append(max_attention_tile)
-                    added_attention_tiles = added_attention_tiles + 1
+                    added_attention_tiles_count = added_attention_tiles_count + 1
                 elif y_bag == 0:
                     max_attention_tilesTN.append(max_attention_tile)
-                    added_attention_tiles = added_attention_tiles + 1
-        assert len(max_attention_indexes[0]) == added_attention_tiles
+                    added_attention_tiles_count = added_attention_tiles_count + 1
+        del max_attention_tile
+
+        # Also extracting the minimum attention tiles
+        for current_index in min_attention_indexes[0]:
+            min_attention_tile = raw_bag[current_index]
+            min_attention_tile = min_attention_tile.astype('uint8')
+            min_attention_tile = outline_rgb_array(min_attention_tile, None, None, outline=2,
+                                                   override_colormap=[255, 255, 255])
+            if y_bag_true == 1:
+                if y_bag == 1:
+                    minattention_tilesTP.append(min_attention_tile)
+                    added_attention_tiles_count = added_attention_tiles_count + 1
+                elif y_bag == 0:
+                    min_attention_tilesFP.append(min_attention_tile)
+                    added_attention_tiles_count = added_attention_tiles_count + 1
+            elif y_bag_true == 0:
+                if y_bag == 1:
+                    min_attention_tilesFN.append(min_attention_tile)
+                    added_attention_tiles_count = added_attention_tiles_count + 1
+                elif y_bag == 0:
+                    min_attention_tilesTN.append(min_attention_tile)
+                    added_attention_tiles_count = added_attention_tiles_count + 1
+
+        del min_attention_tile
+        assert len(max_attention_indexes[0]) + len(min_attention_indexes[0]) == added_attention_tiles_count
+        del added_attention_tiles_count
 
         # Overlapping the bags with the attention and saving the files
         for j in range(tile_count):
@@ -552,10 +585,12 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
         f.close()
 
     # Writing attention tiles
-    for (max_attention_tiles, metric_name) in zip(
+    for (max_attention_tiles, min_attention_tiles, metric_name) in zip(
             [max_attention_tilesTP, max_attention_tilesFP, max_attention_tilesFN, max_attention_tilesTN],
+            [min_attention_tilesTP, min_attention_tilesFP, min_attention_tilesFN, min_attention_tilesTN],
             ['TP', 'FP', 'FN', 'TN']):
-        log.write('Saving ' + str(len(max_attention_tiles)) + ' tiles for metric ' + metric_name)
+        log.write('Saving ' + str(len(max_attention_tiles)) + ' max and ' + str(
+            len(min_attention_tiles)) + ' min tiles for metric ' + metric_name)
 
         # Writing as png images, if they exist
         if len(max_attention_tiles) > 0:
@@ -563,9 +598,18 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
             max_attention_file = out_dir + 'max_attention_' + metric_name + '.png'
             plt.imsave(max_attention_file, out_image)
 
+        if len(min_attention_tiles) > 0:
+            out_image = fuse_image_tiles(images=min_attention_tiles, image_width=image_width, image_height=image_height)
+            min_attention_file = out_dir + 'min_attention_' + metric_name + '.png'
+            plt.imsave(min_attention_file, out_image)
+
         # Writing as text files
         f = open(out_dir + 'max_attention_' + metric_name + '.txt', 'w')
         f.write('Tile count: ' + str(len(max_attention_tiles)))
+        f.close()
+
+        f = open(out_dir + 'min_attention_' + metric_name + '.txt', 'w')
+        f.write('Tile count: ' + str(len(min_attention_tiles)))
         f.close()
 
 

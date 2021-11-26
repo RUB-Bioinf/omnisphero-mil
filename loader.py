@@ -22,10 +22,6 @@ from util.sample_preview import z_score_to_rgb
 from util.utils import gct
 from util.utils import get_time_diff
 from util.utils import line_print
-
-####
-# Constants
-
 # normalize_enum is an enum to determine normalisation as follows:
 #  0 = no normalisation
 #  1 = normalize every cell between 0 and 255 (8 bit)
@@ -38,6 +34,10 @@ from util.utils import line_print
 #  8 = z-score every cell individually with every color channel using the mean / std of all three from all samples in the bag
 #  9: Normalizing first, according to [4] and z-scoring afterwards according to [5]
 # 10: Normalizing first, according to [4] and z-scoring afterwards according to [6]
+from util.well_metadata import TileMetadata
+
+####
+# Constants
 
 normalize_enum_default = 1
 
@@ -407,7 +407,24 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     well = json_data['well']
     experiment_name = zipped_data_name[:zipped_data_name.find('-')]
     bag_name = experiment_name + '-' + well
+
+    # Reading position if it exists
+    pos_x = math.nan
+    pos_y = math.nan
+    if 'x' in json_data and 'y' in json_data:
+        pos_x = int(json_data['x'])
+        pos_y = int(json_data['y'])
+
+    well_image_width: int = 5520
+    well_image_height: int = 5520
+    if 'w' in json_data and 'h' in json_data:
+        well_image_width = int(json_data['w'])
+        well_image_height = int(json_data['h'])
+
     well_letter, well_number = extract_well_info(well, verbose=worker_verbose)
+    metadata = TileMetadata(experiment_name=experiment_name, well_letter=well_letter, well_number=well_number,
+                            pos_x=pos_x, pos_y=pos_y, well_image_width=well_image_width,
+                            well_image_height=well_image_height, read_from_source=True)
 
     # bit_max = np.info('uint' + str(bit_depth)).max
     bit_max = pow(2, bit_depth) - 1
@@ -754,7 +771,8 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
         width, height, _ = sample.shape
 
         # Storing raw samples
-        sample_raw = mil_metrics.outline_rgb_array(sample_raw, None, None, outline=outline, override_colormap=[255, 255, 255])
+        sample_raw = mil_metrics.outline_rgb_array(sample_raw, None, None, outline=outline,
+                                                   override_colormap=[255, 255, 255])
         rgb_samples_raw.append(sample_raw)
 
         # Storing the actual sample, based if it's z-scored or normalized

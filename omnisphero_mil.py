@@ -15,8 +15,8 @@ import loader
 import mil_metrics
 import models
 import omnisphero_mining
-import torch_callbacks
 import predict_batch
+import torch_callbacks
 from util import log
 from util import sample_preview
 from util import utils
@@ -75,6 +75,18 @@ ideal_source_dirs_unix = [
     '/mil/oligo-diff/training_data/curated_linux/ELS682'
 ]
 
+curated_overlapping_source_dirs_unix = [
+    # New CNN
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EFB18',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS517',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS637',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS719',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS744',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ESM36',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS681',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS682'
+]
+
 # normalize_enum is an enum to determine normalisation as follows:
 # 0 = no normalisation
 # 1 = normalize every cell between 0 and 255 (8 bit)
@@ -121,12 +133,14 @@ def train_model(
         # Test the model on the test data, after training?
         testing_model_enabled: bool = True,
         # Sigmoid validation dirs
-        sigmoid_validation_dirs: [str] = []
+        sigmoid_validation_dirs: [str] = None
 ):
     if out_dir is None:
         out_dir = source_dirs[0] + os.sep + 'training_results'
     if not testing_model_enabled:
         data_split_percentage_test = 0
+    if sigmoid_validation_dirs is None:
+        sigmoid_validation_dirs = []
 
     # This param is unused and should not be "True"!
     assert len(label_0_well_indices) > 0
@@ -269,8 +283,8 @@ def train_model(
 
     X_s = utils.convert_size(X_size)
     y_s = utils.convert_size(getsizeof(y))
-    log.write("X-size in memory: " + str(X_s))
-    log.write("y-size in memory: " + str(y_s))
+    log.write("X-size in memory (after loading all data): " + str(X_s))
+    log.write("y-size in memory (after loading all data): " + str(y_s))
 
     protocol_f.write('\n\n == Loaded Data ==')
     protocol_f.write('\nNumber of Bags: ' + str(len(X)))
@@ -496,7 +510,9 @@ def train_model(
     ################
     # TRAINING START
     ################
-    log.write('Start of training for ' + str(epochs) + ' epochs.')
+    log.write(
+        'Start of training for ' + str(epochs) + ' epochs. Devices: ' + str(device_ordinals) + '. GPU enableD: ' + str(
+            gpu_enabled))
     log.write('Training: "' + training_label + '"!')
     history, history_keys, model_save_path_best = models.fit(model=model, optimizer=model_optimizer, epochs=epochs,
                                                              training_data=train_dl,
@@ -640,6 +656,7 @@ def train_model(
     log.remove_file(local_log_filename)
     if global_log_dir is not None:
         log.remove_file(global_log_filename)
+    log.clear_files()
     del f
 
     # Run finished
@@ -668,10 +685,10 @@ def test_model(model: models.OmniSpheroMil, model_save_path_best: str, model_opt
     # Saving attention scores for every tile in every bag!
     log.write('Writing attention scores to: ' + attention_out_dir)
     try:
-        # mil_metrics.save_tile_attention(out_dir=attention_out_dir, model=model, normalized=True, bag_names=bag_names,
-        #                                 dataset=data_loader, X_raw=X_raw, y_tiles=y_tiles)
-        mil_metrics.save_tile_attention(out_dir=attention_out_dir, model=model, normalized=False, bag_names=bag_names,
+        mil_metrics.save_tile_attention(out_dir=attention_out_dir, model=model, normalized=True, bag_names=bag_names,
                                         dataset=data_loader, X_raw=X_raw, y_tiles=y_tiles)
+        # mil_metrics.save_tile_attention(out_dir=attention_out_dir, model=model, normalized=False, bag_names=bag_names,
+        #                                 dataset=data_loader, X_raw=X_raw, y_tiles=y_tiles)
     except Exception as e:
         log.write('Failed to save the attention score for every tile!')
         f = open(attention_out_dir + 'attention-error.txt', 'a')
@@ -762,10 +779,10 @@ def main(debug: bool = False):
         debug = True
     print('Debug mode: ' + str(debug))
 
-    current_epochs = 2500
+    current_epochs = 800
     current_max_workers = 35
     default_out_dir_base = default_out_dir_unix_base
-    current_sources_dir = default_source_dirs_unix
+    current_sources_dir = curated_overlapping_source_dirs_unix
     current_gpu_enabled = True
     if debug:
         current_sources_dir = [current_sources_dir[0]]
@@ -816,7 +833,7 @@ def main(debug: bool = False):
         for l in ['binary_cross_entropy']:
             for o in ['adadelta', 'adam']:
                 for r in [0.25]:
-                    for i in [6, 7, 8]:
+                    for i in [4, 6, 7, 8]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
                             augment_train = aug[1]
@@ -824,14 +841,14 @@ def main(debug: bool = False):
                             train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                                         normalize_enum=i,
-                                        training_label='hnm-early_inverted-O3-' + o + '-NoNeuron2-wells-normalize-' + str(
+                                        training_label='hnm-early_inverted-overlap-' + o + '-NoNeuron2-wells-normalize-' + str(
                                             i) + 'repack-' + str(r),
                                         global_log_dir=current_global_log_dir,
                                         data_split_percentage_validation=0.25,
                                         data_split_percentage_test=0.15,
                                         use_hard_negative_mining=True,
                                         hnm_magnitude=5.5,
-                                        hnm_new_bag_percentage=0.25,
+                                        hnm_new_bag_percentage=0.35,
                                         loss_function=l,
                                         repack_percentage=r,
                                         optimizer=o,
@@ -846,7 +863,7 @@ def main(debug: bool = False):
                                         label_1_well_indices=loader.default_well_indices_early,
                                         label_0_well_indices=loader.default_well_indices_very_late,
                                         device_ordinals=current_device_ordinals,
-                                        sigmoid_validation_dirs=default_sigmoid_validation_dirs_unix
+                                        sigmoid_validation_dirs=None
                                         )
     log.write('Finished every training!')
 
