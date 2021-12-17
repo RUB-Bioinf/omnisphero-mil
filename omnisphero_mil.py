@@ -225,7 +225,8 @@ def train_model(
     ################
     # TODO Write well / label mapping to protocol file!
     loading_start_time = datetime.now()
-    X, y, y_tiles, X_raw, bag_names, _, _, errors, loaded_files_list = loader.load_bags_json_batch(
+    # X_full, y_full, y_tiles_full, X_raw_full, X_metadata, bag_names_full, experiment_names_full, well_names_full, error_list, loaded_files_list_full
+    X, y, y_tiles, X_raw, X_metadata, bag_names, _, _, errors, loaded_files_list = loader.load_bags_json_batch(
         batch_dirs=source_dirs,
         max_workers=max_workers,
         include_raw=True,
@@ -399,7 +400,7 @@ def train_model(
     spc: torch_callbacks.SigmoidPredictionCallback = None
     f = open(out_dir + 'sigmoid_validation.txt', 'w')
     if len(sigmoid_validation_dirs) > 0:
-        X_sigmoid, _, _, _, _, experiment_names_sigmoid, well_names_sigmoid, errors_sigmoid, loaded_files_list_sigmoid = loader.load_bags_json_batch(
+        X_sigmoid, _, _, _, X_raw_sigmoid, X_metadata_sigmoid, experiment_names_sigmoid, well_names_sigmoid, errors_sigmoid, loaded_files_list_sigmoid = loader.load_bags_json_batch(
             batch_dirs=sigmoid_validation_dirs,
             max_workers=max_workers,
             include_raw=True,

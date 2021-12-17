@@ -1,4 +1,10 @@
 import math
+import re
+
+# A regex to extract well info
+from util import log
+
+well_regex = '([A-Z]+)(\\d+)'
 
 
 class TileMetadata:
@@ -20,11 +26,11 @@ class TileMetadata:
             self.well_image_height = well_image_height
         else:
             # But not for generated images
-            self.well_letter = 'Auto'
+            self.well_letter = '<runtime metadata>'
 
     def get_formatted_well(self, long: bool = True):
         if self.read_from_source:
-            return '<unknown>'
+            return '<runtime tile>'
 
         if len(self.well_letter) == 1 and long:
             return self.well_letter + '0' + str(self.well_number)
@@ -35,7 +41,22 @@ class TileMetadata:
         return self.experiment_name + ' - ' + self.get_formatted_well()
 
     def __str__(self) -> str:
-        return "Well Metadata: " + super().__str__()
+        if self.read_from_source:
+            return "Tile from bag: " + self.get_bag_name() + " at well " + str(self.well_letter) + str(
+                self.well_number) + ". Pos: x: " + str(self.pos_x) + ' y: ' + str(
+                self.pos_y) + '. Original image size: ' + str(self.well_image_width) + 'x' + str(self.well_image_height)
+        else:
+            return 'Unknown tile, created at runtime.'
+
+
+def extract_well_info(well: str, verbose: bool = False) -> (str, int):
+    m = re.findall(well_regex, well)[0]
+    well_letter = m[0]
+    well_number = int(m[1])
+    if verbose:
+        log.write('Reconstructing well: "' + well + '" -> "' + well_letter + str(well_number) + '".')
+
+    return well_letter, well_number
 
 
 def main():

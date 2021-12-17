@@ -325,5 +325,84 @@ def shuffle_and_split_data(dataset, split_percentage: float, _recursion_depth: i
     return training_ds, validation_ds
 
 
+def lecture_otsu(n: np.ndarray) -> int:
+    if len(n.shape) == 1:
+        pixel_number = n.shape[0]
+    else:
+        pixel_number = n.shape[0] * n.shape[1]
+    mean_weight = 1.0 / pixel_number
+
+    n = n.astype(np.float64)
+    p = n / max(n)
+
+    indices = list(range(len(n)))
+    best_std = float("inf")
+    best_k = float("nan")
+    for k in indices[1:-1]:
+        weight_0 = sum(p[indices[:k]])
+        mean_0 = (1 / weight_0) * sum([i * p[i] for i in indices[0:k]])
+        variance_0 = (1 / weight_0) * sum([(i - mean_0) ** 2 * p[i] for i in indices[0:k]])
+
+        weight_1 = sum(p[indices[k + 1:]])
+        mean_1 = (1 / weight_1) * sum([i * p[i] for i in indices[k + 1:]])
+        variance_1 = (1 / weight_1) * sum([(i - mean_1) ** 2 * p[i] for i in indices[k + 1:]])
+
+        weighted_std = weight_0 * variance_0 + weight_1 * variance_1
+        if weighted_std < best_std:
+            best_std = weighted_std
+            best_k = k
+
+    return best_k
+
+
+def sparse_hist(a: np.ndarray) -> ([np.float32], [int]):
+    x = np.copy(a)
+    x.astype(np.float64)
+    x.sort()
+
+    h = {}
+    for i in range(len(x)):
+        current_value = x[i]
+
+        if current_value not in h.keys():
+            h[current_value] = 0
+
+        current_count = h[current_value]
+        h[current_value] = current_count + 1
+
+        del current_value, current_count
+
+    bins = list(h.keys())
+    n = list(h.values())
+    return n, bins
+
+
+def otsu_8bit_image(gray):
+    if len(gray.shape) == 1:
+        pixel_number = gray.shape[0]
+    else:
+        pixel_number = gray.shape[0] * gray.shape[1]
+    mean_weight = 1.0 / pixel_number
+    his, bins = np.histogram(gray, bins=np.arange(0, 257))
+    final_thresh = -1
+    final_value = -1
+    intensity_arr = np.arange(256)
+    for t in bins[1:-1]:
+        pcb = np.sum(his[:t])
+        pcf = np.sum(his[t:])
+        Wb = pcb * mean_weight
+        Wf = pcf * mean_weight
+
+        mub = np.sum(intensity_arr[:t] * his[:t]) / float(pcb)
+        muf = np.sum(intensity_arr[t:] * his[t:]) / float(pcf)
+        # print mub, muf
+        value = Wb * Wf * (mub - muf) ** 2
+
+        if value > final_value:
+            final_thresh = t
+            final_value = value
+    return final_thresh
+
+
 if __name__ == "__main__":
     print('There are some util functions for everyone to use within this file. Enjoy. :)')

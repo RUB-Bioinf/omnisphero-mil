@@ -1,6 +1,8 @@
 import os
+import shutil
 import sys
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
@@ -8,20 +10,21 @@ import hardware
 import loader
 import models
 import omnisphero_mil
-from mil_metrics import save_sigmoid_prediction_csv
-from mil_metrics import save_sigmoid_prediction_img
 from util import log
-from models import predict_dose_response
+from util import utils
+from util.omnisphero_data_loader import OmniSpheroDataLoader
 from util.paths import default_out_dir_unix_base
+from util.well_metadata import TileMetadata
+from util.well_metadata import extract_well_info
 
-model_debug_path = "U:\bioinfdata\work\OmniSphero\mil\oligo-diff\models\production\hnm-early_inverted-O1-adadelta-NoNeuron2-wells-normalize-6repack-0.55-BEST"
+model_debug_path = "U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\production\\hnm-early_inverted-O1-adadelta-NoNeuron2-wells-normalize-6repack-0.55-BEST"
 
 
-def predict_path(model_save_path: str, checkpoint_file: str, bag_path: str, normalize_enum: int, out_dir: str,
+def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], normalize_enum: int, out_dir: str,
                  max_workers: int, channel_inclusions=loader.default_channel_inclusions_all,
                  tile_constraints=loader.default_tile_constraints_nuclei,
                  gpu_enabled: bool = True, model_optimizer=None):
-    log.write('Predicting path: ' + bag_path)
+    log.write('Predicting from paths: ' + str(bag_paths))
     if not model_save_path.endswith(".h5"):
         model_save_path = model_save_path + "model.h5"
     model_state_dict_file = model_save_path[:-8] + 'model.pt'
@@ -67,8 +70,10 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_path: str, norm
     model.device = device
 
     # Loading the data
-    X, _, _, _, _, experiment_names, well_names, errors, loaded_files_list = loader.load_bags_json_batch(
-        batch_dirs=[bag_path],
+    # X_full, y_full, y_tiles_full, X_raw_full, X_metadata, bag_names_full, experiment_names_full, well_names_full, error_list, loaded_files_list_full
+    # X, y, y_tiles, X_raw, X_metadata, experiment_names, well_names, errors, loaded_files_list = loader.load_bags_json_batch(
+    X, y, y_tiles, X_raw, X_metadata, bag_names, experiment_names, well_names, errors, loaded_files_list = loader.load_bags_json_batch(
+        batch_dirs=bag_paths,
         max_workers=max_workers,
         include_raw=True,
         channel_inclusions=channel_inclusions,
@@ -79,45 +84,261 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_path: str, norm
         normalize_enum=normalize_enum)
     X = [np.einsum('bhwc->bchw', bag) for bag in X]
 
+    dataset, input_dim = loader.convert_bag_to_batch(bags=X, labels=None, y_tiles=None)
+    data_loader = OmniSpheroDataLoader(dataset, batch_size=1, shuffle=False,
+                                       pin_memory=False,
+                                       transform_enabled=False,
+                                       num_workers=max_workers,
+                                       transform_data_saver=False)
+    del X, dataset, y, y_tiles
+
     # TODO react to loading errors
     log.write('Number of files loaded: ' + str(len(loaded_files_list)))
     log.write('Number of loading errors: ' + str(len(errors)))
 
+    for norm in [True, False]:
+        for sparse in [True, False]:
+            current_out_dir = out_dir + 'predictions'
+            if norm:
+                current_out_dir = current_out_dir + '-normalized'
+            if sparse:
+                current_out_dir = current_out_dir + '-sparse'
+
+            predict_data(model=model, data_loader=data_loader, X_raw=X_raw, X_metadata=X_metadata,
+                         experiment_names=experiment_names, input_dim=input_dim, sparse_hist=sparse,
+                         normalized_attention=norm, clear_old_data=False,
+                         well_names=well_names, max_workers=max_workers, out_dir=current_out_dir)
+    print('Batch prediction finished.')
+
+
+def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X_raw: [np.ndarray],
+                 X_metadata: [TileMetadata], experiment_names: [str], well_names: [str],
+                 input_dim: (int), max_workers: int, out_dir: str, sparse_hist: bool = True,
+                 normalized_attention: bool = True,
+                 clear_old_data: bool = False, dpi: int = 250):
+    os.makedirs(out_dir, exist_ok=True)
+
+    log.write('Predicting ' + str(len(X_metadata)) + ' bags.')
+    y_hats, y_preds, _, _, y_samples_pred, _, all_attentions, original_bag_indices = models.get_predictions(
+        model, data_loader)
+    assert len(X_metadata) == len(all_attentions)
+    assert len(X_metadata) == len(X_raw)
+
+    # Setting up result directories and file handles
+    experiment_names_unique = list(dict.fromkeys(experiment_names))
+    well_letters_unique_candidates = []
+    well_numbers_unique_candidates = []
+
+    handles = {}
+    for exp in experiment_names_unique:
+        handles[exp] = {}
+        # Removing previously existing paths, if they exist
+        if os.path.exists(out_dir + os.sep + exp + os.sep) and clear_old_data:
+            try:
+                shutil.rmtree(out_dir + os.sep + exp + os.sep)
+            except Exception as e:
+                log.write("Cannot remove path for " + exp + ". Msg: " + str(e))
+    del exp
+
+    bars_width_mod = 10000
+    if sparse_hist:
+        bars_width_mod = 1000
+
+    # Iterating over the predictions to save them to disc & dict
+    for i in range(len(y_hats)):
+        # Extracting predictions
+        X_raw_current = X_raw[i]
+        X_metadata_current: [TileMetadata] = X_metadata[i]
+        experiment_names_current = experiment_names[i]
+        well_names_current = well_names[i]
+        all_attentions_current = all_attentions[i]
+        y_samples_pred_current = y_samples_pred[i]
+        y_hat_current = y_hats[i]
+        y_pred_current = y_preds[i]
+        log.write('[' + str(i + 1) + '/' + str(
+            len(y_preds)) + '] Evaluating predictions for: ' + experiment_names_current + ' - ' + well_names_current)
+
+        # Setting up handles & folders
+        current_exp_handle = handles[experiment_names_current]
+        if well_names_current not in current_exp_handle:
+            current_exp_handle[well_names_current] = {}
+        current_well_handle = current_exp_handle[well_names_current]
+        well_letter, well_number = extract_well_info(well_names_current, verbose=False)
+        well_letters_unique_candidates.append(well_letter)
+        well_numbers_unique_candidates.append(well_number)
+
+        # More Setting up handles & folders
+        all_attentions_current_normalized = all_attentions_current / max(all_attentions_current)
+        current_well_handle['attention'] = all_attentions_current
+        current_out_dir = out_dir + os.sep + experiment_names_current + os.sep + well_names_current + os.sep
+        os.makedirs(current_out_dir, exist_ok=True)
+
+        # Checking if metadata matches
+        assert X_metadata_current[0].experiment_name == experiment_names_current
+        assert X_metadata_current[0].well_letter.lower() in well_names_current.lower()
+        assert str(X_metadata_current[0].well_number) in well_names_current.lower()
+
+        # Choosing sparse / normalized data
+        all_attentions_used = all_attentions_current
+        if normalized_attention:
+            all_attentions_used = all_attentions_current_normalized
+
+        # Saving hist
+        plt.clf()
+        if sparse_hist:
+            n, bins = utils.sparse_hist(a=all_attentions_used)
+            plt.bar(bins, n, width=(float(len(n)) / bars_width_mod), align='center', color='blue', edgecolor='white')
+            threshold_index = utils.lecture_otsu(n=np.array(n))
+            threshold = bins[threshold_index]
+        else:
+            n, bins, _ = plt.hist(x=all_attentions_used, bins=len(all_attentions_used), color='blue')
+            plt.clf()
+            n = list(n)
+            bins = list(bins[:-1])
+            plt.bar(bins, n, width=(float(len(n)) / bars_width_mod), align='center', color='blue', edgecolor='white')
+            threshold_index = utils.lecture_otsu(n=np.array(n))
+            threshold = bins[threshold_index]
+
+        plt.axvline(x=threshold, color='orange')
+        plt.ylabel('Count (' + str(len(all_attentions_used)) + ' tiles total)')
+        plt.xlabel('Attention Scores (Normalized)')
+        plt.title(
+            'Histogram of Normalized Attention Scores of: ' + experiment_names_current + ' - ' + well_names_current +
+            '\nPrediction: ' + str(y_hat_current) + ' -> ' + str(y_pred_current))
+        plt.legend(['Otsu Threshold: ' + str(int(threshold * 1000) / 1000)])
+        plt.xlim([0, max(bins) * 1.05])
+        plt.ylim([0, max(n) * 1.05])
+        plt.grid(True)
+        plt.autoscale()
+        plt.savefig(current_out_dir + 'attention_hist.png', dpi=int(dpi * 1.337), bbox_inches='tight')
+        plt.savefig(current_out_dir + 'attention_hist.svg', dpi=int(dpi * 1.337), bbox_inches='tight')
+        plt.savefig(current_out_dir + 'attention_hist.pdf', dpi=int(dpi * 1.337), bbox_inches='tight')
+
+        # Saving raw data as CSV
+        f = open(current_out_dir + experiment_names_current + '-' + well_names_current + '-attention.csv', 'w')
+        f.write('Index;Attention;Attention (Normalized)\n')
+        for j in range(len(all_attentions_current)):
+            f.write(str(j) + ';')
+            f.write(str(all_attentions_current[j]) + ';' + str(all_attentions_used[j]))
+            f.write('\n')
+        f.write('Sum;' + str(sum(all_attentions_current)) + ';' + str(sum(all_attentions_used)))
+        f.close()
+
+        # Saving histogram
+        f = open(current_out_dir + experiment_names_current + '-' + well_names_current + '-histogram.csv', 'w')
+        f.write('Index;n;bin\n')
+        for j in range(len(n)):
+            f.write(str(j) + ';')
+            f.write(str(n[j]) + ';' + str(bins[j]))
+            f.write('\n')
+        f.close()
+
+        current_well_handle['n'] = n
+        current_well_handle['bins'] = bins
+        current_well_handle['otsu'] = threshold
+        current_well_handle['y_hat'] = y_hat_current
+        current_well_handle['y_pred'] = y_pred_current
+        del n, bins, threshold, y_hat_current, y_pred_current
+
+        # writing the current handles back
+        current_exp_handle[well_names_current] = current_well_handle
+        handles[experiment_names_current] = current_exp_handle
+        del experiment_names_current, current_exp_handle
+    print('Done evaluating.')
+
+    well_letters_unique: [int] = list(dict.fromkeys(well_letters_unique_candidates))
+    well_numbers_unique: [str] = list(dict.fromkeys(well_numbers_unique_candidates))
+    well_letters_unique.sort()
+    well_numbers_unique.sort()
+    del well_letters_unique_candidates, well_numbers_unique_candidates
+
+    for e in range(len(experiment_names_unique)):
+        exp = experiment_names_unique[e]
+        log.write('[' + str(e + 1) + '/' + str(
+            len(experiment_names_unique)) + '] Writing pooled results for experiment: ' + exp)
+
+        current_handle = handles[exp]
+        current_out_dir = out_dir + os.sep + exp + os.sep
+
+        plt.clf()
+        plt.title('Attention Comparisons: ' + exp)
+        f, ax = plt.subplots(nrows=len(well_letters_unique), ncols=len(well_numbers_unique), figsize=(30, 30))
+        for j in range(len(well_letters_unique)):
+            well_letter = well_letters_unique[j]
+            for i in range(len(well_numbers_unique)):
+                well_number = well_numbers_unique[i]
+                well_key = well_letter + '0' + str(well_number)
+
+                # subplot_index = str(len(well_letters_unique)) + str(len(well_numbers_unique)) + str(i + 1)
+                if well_key in current_handle.keys():
+                    a = ax[j, i]
+                    current_well_handle = current_handle[well_key]
+                    threshold = current_well_handle['otsu']
+                    bins = current_well_handle['bins']
+                    n = current_well_handle['n']
+                    attention = current_well_handle['attention']
+                    y_hat = current_well_handle['y_hat']
+                    y_pred = current_well_handle['y_pred']
+                    attention_normalized = attention / max(attention)
+
+                    # a.hist(x=attention_normalized, bins=len(attention_normalized), color='blue')
+                    # a.bar(bins, n, width=(float(len(n)) / 1000), color='blue', edgecolor='white')
+                    a.bar(bins, n, width=(float(len(n)) / bars_width_mod), color='blue', edgecolor='white')
+                    # a.plot([bins])
+                    a.set_xlim([0, max(bins) * 1.05])
+                    a.set_ylim([0, max(n) * 1.05])
+                    a.grid(True)
+                    # a.autoscale()
+                    a.axvline(x=threshold, color='orange')
+                    a.legend(['Histogram - Bag Tiles: ' + str(len(attention_normalized)),
+                              'Otsu Threshold: ' + str(int(threshold * 1000) / 1000)])
+                    a.title.set_text(exp + ' - ' + well_key + '\nPrediction: ' + str(y_hat) + ' -> ' + str(y_pred))
+                else:
+                    ax[j, i].remove()  # remove Axes from fig
+                    ax[j, i] = None  # make sure that there are no 'dangling' references.
+
+        plt.tight_layout()
+        plt.autoscale()
+        plt.savefig(current_out_dir + exp + '-hist.png', dpi=dpi, bbox_inches='tight')
+        plt.savefig(current_out_dir + exp + '-hist.pdf', dpi=dpi, bbox_inches='tight')
+        plt.savefig(current_out_dir + exp + '-hist.svg', dpi=dpi, bbox_inches='tight')
+    log.write('All pooled results saved.')
+
     # Repacking loaded experiments into holders for prediction
-    experiment_holders, all_well_letters, all_well_numbers, experiment_names_unique = generate_experiment_prediction_holders(
-        X=X, experiment_names=experiment_names, well_names=well_names)
-
-    for current_experiment in experiment_names_unique:
-        current_holder = experiment_holders[current_experiment]
-        log.write('Predicting: ' + current_experiment)
-
-        # Predicting all wells of this experiment
-        all_wells, prediction_dict_bags, prediction_dict_samples, prediction_dict_well_names = predict_dose_response(
-            experiment_holder=current_holder, experiment_name=current_experiment, model=model,
-            max_workers=max_workers)
-
-        # Writing the predictions to disk
-        out_file_base = out_dir + os.sep + current_experiment
-        save_sigmoid_prediction_csv(experiment_name=current_experiment, all_well_letters=all_well_letters,
-                                    prediction_dict=prediction_dict_samples,
-                                    file_path=out_file_base + '-samples.csv',
-                                    prediction_dict_well_names=prediction_dict_well_names)
-        save_sigmoid_prediction_csv(experiment_name=current_experiment, all_well_letters=all_well_letters,
-                                    prediction_dict=prediction_dict_bags,
-                                    file_path=out_file_base + '-bags.csv',
-                                    prediction_dict_well_names=prediction_dict_well_names)
-
-        # Saving preview dose response graph
-        x_ticks_angle = 15
-        x_ticks_font_size = 10
-        save_sigmoid_prediction_img(out_file_base + '-bags.png', prediction_dict=prediction_dict_bags,
-                                    title='Dose Response: ' + current_experiment + ': ' + 'Whole Well',
-                                    prediction_dict_well_names=prediction_dict_well_names,
-                                    x_ticks_angle=x_ticks_angle, x_ticks_font_size=x_ticks_font_size)
-        save_sigmoid_prediction_img(out_file_base + '-samples.png', prediction_dict=prediction_dict_samples,
-                                    title='Dose Response: ' + current_experiment + ': ' + 'Samples',
-                                    prediction_dict_well_names=prediction_dict_well_names,
-                                    x_ticks_angle=x_ticks_angle, x_ticks_font_size=x_ticks_font_size)
+    # experiment_holders, all_well_letters, all_well_numbers, experiment_names_unique = generate_experiment_prediction_holders(
+    #    X=X, experiment_names=experiment_names, well_names=well_names)
+    #
+    # for current_experiment in experiment_names_unique:
+    #    current_holder = experiment_holders[current_experiment]
+    #    log.write('Predicting: ' + current_experiment)
+    #
+    #    # Predicting all wells of this experiment
+    #    all_wells, prediction_dict_bags, prediction_dict_samples, prediction_dict_well_names = predict_dose_response(
+    #        experiment_holder=current_holder, experiment_name=current_experiment, model=model,
+    #        max_workers=max_workers)
+    #
+    #    # Writing the predictions to disk
+    #    out_file_base = out_dir + os.sep + current_experiment
+    #    save_sigmoid_prediction_csv(experiment_name=current_experiment, all_well_letters=all_well_letters,
+    #                                prediction_dict=prediction_dict_samples,
+    #                                file_path=out_file_base + '-samples.csv',
+    #                                prediction_dict_well_names=prediction_dict_well_names)
+    #    save_sigmoid_prediction_csv(experiment_name=current_experiment, all_well_letters=all_well_letters,
+    #                                prediction_dict=prediction_dict_bags,
+    #                                file_path=out_file_base + '-bags.csv',
+    #                                prediction_dict_well_names=prediction_dict_well_names)
+    #
+    #    # Saving preview dose response graph
+    #    x_ticks_angle = 15
+    #    x_ticks_font_size = 10
+    #    save_sigmoid_prediction_img(out_file_base + '-bags.png', prediction_dict=prediction_dict_bags,
+    #                                title='Dose Response: ' + current_experiment + ': ' + 'Whole Well',
+    #                                prediction_dict_well_names=prediction_dict_well_names,
+    #                                x_ticks_angle=x_ticks_angle, x_ticks_font_size=x_ticks_font_size)
+    #    save_sigmoid_prediction_img(out_file_base + '-samples.png', prediction_dict=prediction_dict_samples,
+    #                                title='Dose Response: ' + current_experiment + ': ' + 'Samples',
+    #                                prediction_dict_well_names=prediction_dict_well_names,
+    #                                x_ticks_angle=x_ticks_angle, x_ticks_font_size=x_ticks_font_size)
 
 
 def generate_experiment_prediction_holders(X: [np.ndarray], experiment_names: [str], well_names: [str]):
@@ -159,28 +380,29 @@ def main():
 
     model = default_out_dir_unix_base + os.sep + 'hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
     if sys.platform == 'win32':
-        # debug = True
+        debug = True
         model = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\'
 
     if debug:
         predict_path(
             model_save_path=model,
             checkpoint_file='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\hnm\\model_best.h5',
-            bag_path='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_win\\',
-            out_dir=model + 'predictions\\',
+            bag_paths=['U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_win\\'],
+            out_dir='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\debug_predictions\\',
             gpu_enabled=False, normalize_enum=7, max_workers=4)
     elif sys.platform == 'win32':
         for data_dir in omnisphero_mil.all_source_dirs_win:
             predict_path(model_save_path=model,
                          checkpoint_file='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\hnm\\model_best.h5',
-                         out_dir=model + 'predictions-win\\', bag_path=data_dir,
+                         out_dir=model + 'predictions\\',
+                         bag_paths=[data_dir],
                          gpu_enabled=False, normalize_enum=7, max_workers=6)
     else:
         print('Predicting linux batches')
         # checkpoint_file = '/bph/puredata4/bioinfdata/work/OmniSphero/mil/oligo-diff/models/linux/hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
         checkpoint_file = model + 'hnm/model_best.h5'
         for data_dir in omnisphero_mil.default_source_dirs_unix:
-            predict_path(checkpoint_file=checkpoint_file, model_save_path=model, bag_path=data_dir,
+            predict_path(checkpoint_file=checkpoint_file, model_save_path=model, bag_paths=[data_dir],
                          out_dir=model + 'predictions-linux/',
                          gpu_enabled=False, normalize_enum=7, max_workers=20)
 
