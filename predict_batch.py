@@ -1,6 +1,8 @@
 import os
 import shutil
 import sys
+import time
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,7 +15,10 @@ import omnisphero_mil
 from util import log
 from util import utils
 from util.omnisphero_data_loader import OmniSpheroDataLoader
+from util.paths import debug_prediction_dirs_unix
+from util.paths import debug_prediction_dirs_win
 from util.paths import default_out_dir_unix_base
+from util.utils import line_print
 from util.well_metadata import TileMetadata
 from util.well_metadata import extract_well_info
 
@@ -23,7 +28,21 @@ model_debug_path = "U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\p
 def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], normalize_enum: int, out_dir: str,
                  max_workers: int, channel_inclusions=loader.default_channel_inclusions_all,
                  tile_constraints=loader.default_tile_constraints_nuclei,
-                 gpu_enabled: bool = True, model_optimizer=None):
+                 global_log_dir: str = None,
+                 gpu_enabled: bool = False, model_optimizer=None):
+    start_time = datetime.now()
+    log_label = str(start_time.strftime("%d-%m-%Y-%H-%M-%S"))
+
+    # Setting up log
+    global_log_filename = None
+    local_log_filename = out_dir + os.sep + 'log_predictions.txt'
+    log.add_file(local_log_filename)
+    if global_log_dir is not None:
+        global_log_filename = global_log_dir + os.sep + 'log-predictions-' + log_label + '.txt'
+        os.makedirs(global_log_dir, exist_ok=True)
+        log.add_file(global_log_filename)
+
+    # Setting up dirs & paths
     log.write('Predicting from paths: ' + str(bag_paths))
     if not model_save_path.endswith(".h5"):
         model_save_path = model_save_path + "model.h5"
@@ -33,6 +52,8 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
 
     # Setting the device calculations will take part in
     device = hardware.get_hardware_device(gpu_preferred=gpu_enabled)
+    log.write('Prediction device: ' + str(device))
+    time.sleep(2)
 
     # Loading model
     log.write('Loading model: ' + model_save_path)
@@ -95,6 +116,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
     # TODO react to loading errors
     log.write('Number of files loaded: ' + str(len(loaded_files_list)))
     log.write('Number of loading errors: ' + str(len(errors)))
+    del errors, loaded_files_list
 
     for norm in [True, False]:
         for sparse in [True, False]:
@@ -108,7 +130,14 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                          experiment_names=experiment_names, input_dim=input_dim, sparse_hist=sparse,
                          normalized_attention=norm, clear_old_data=False,
                          well_names=well_names, max_workers=max_workers, out_dir=current_out_dir)
-    print('Batch prediction finished.')
+    del data_loader, X_raw, X_metadata
+
+    # All done and finishing up the logger
+    log.write('Batch prediction finished.')
+    log.remove_file(local_log_filename)
+    if global_log_dir is not None:
+        log.remove_file(global_log_filename)
+    log.clear_files()
 
 
 def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X_raw: [np.ndarray],
@@ -121,8 +150,10 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
     log.write('Predicting ' + str(len(X_metadata)) + ' bags.')
     y_hats, y_preds, _, _, y_samples_pred, _, all_attentions, original_bag_indices = models.get_predictions(
         model, data_loader)
+    log.write('Finished predictions.')
     assert len(X_metadata) == len(all_attentions)
     assert len(X_metadata) == len(X_raw)
+    del data_loader, model, X_raw
 
     # Setting up result directories and file handles
     experiment_names_unique = list(dict.fromkeys(experiment_names))
@@ -144,10 +175,11 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
     if sparse_hist:
         bars_width_mod = 1000
 
+    print('\n')
     # Iterating over the predictions to save them to disc & dict
     for i in range(len(y_hats)):
         # Extracting predictions
-        X_raw_current = X_raw[i]
+        # X_raw_current = X_raw[i]
         X_metadata_current: [TileMetadata] = X_metadata[i]
         experiment_names_current = experiment_names[i]
         well_names_current = well_names[i]
@@ -155,8 +187,8 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
         y_samples_pred_current = y_samples_pred[i]
         y_hat_current = y_hats[i]
         y_pred_current = y_preds[i]
-        log.write('[' + str(i + 1) + '/' + str(
-            len(y_preds)) + '] Evaluating predictions for: ' + experiment_names_current + ' - ' + well_names_current)
+        line_print('[' + str(i + 1) + '/' + str(len(y_preds)) + '] Evaluating predictions for: ' +
+                   experiment_names_current + ' - ' + well_names_current, include_in_log=True)
 
         # Setting up handles & folders
         current_exp_handle = handles[experiment_names_current]
@@ -252,10 +284,11 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
     well_numbers_unique.sort()
     del well_letters_unique_candidates, well_numbers_unique_candidates
 
+    print('')
     for e in range(len(experiment_names_unique)):
         exp = experiment_names_unique[e]
-        log.write('[' + str(e + 1) + '/' + str(
-            len(experiment_names_unique)) + '] Writing pooled results for experiment: ' + exp)
+        line_print('[' + str(e + 1) + '/' + str(
+            len(experiment_names_unique)) + '] Writing pooled results for experiment: ' + exp, include_in_log=True)
 
         current_handle = handles[exp]
         current_out_dir = out_dir + os.sep + exp + os.sep
@@ -340,6 +373,9 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
     #                                prediction_dict_well_names=prediction_dict_well_names,
     #                                x_ticks_angle=x_ticks_angle, x_ticks_font_size=x_ticks_font_size)
 
+    print('Finished predictions for dir: ' + out_dir)
+    del y_hats, y_preds, y_samples_pred, _, all_attentions, original_bag_indices
+
 
 def generate_experiment_prediction_holders(X: [np.ndarray], experiment_names: [str], well_names: [str]):
     # Reordering bags based on metadata
@@ -380,19 +416,25 @@ def main():
 
     model = default_out_dir_unix_base + os.sep + 'hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
     if sys.platform == 'win32':
+        current_global_log_dir = 'U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\'
+        log.add_file('U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\all_logs.txt')
         debug = True
         model = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\'
+    else:
+        current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log/linux/'
 
     if debug:
         predict_path(
             model_save_path=model,
+            global_log_dir=current_global_log_dir,
             checkpoint_file='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\hnm\\model_best.h5',
-            bag_paths=['U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_win\\'],
+            bag_paths=debug_prediction_dirs_win,
             out_dir='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\debug_predictions\\',
             gpu_enabled=False, normalize_enum=7, max_workers=4)
     elif sys.platform == 'win32':
         for data_dir in omnisphero_mil.all_source_dirs_win:
             predict_path(model_save_path=model,
+                         global_log_dir=current_global_log_dir,
                          checkpoint_file='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\hnm\\model_best.h5',
                          out_dir=model + 'predictions\\',
                          bag_paths=[data_dir],
@@ -401,12 +443,21 @@ def main():
         print('Predicting linux batches')
         # checkpoint_file = '/bph/puredata4/bioinfdata/work/OmniSphero/mil/oligo-diff/models/linux/hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
         checkpoint_file = model + 'hnm/model_best.h5'
-        for data_dir in omnisphero_mil.default_source_dirs_unix:
-            predict_path(checkpoint_file=checkpoint_file, model_save_path=model, bag_paths=[data_dir],
-                         out_dir=model + 'predictions-linux/',
-                         gpu_enabled=False, normalize_enum=7, max_workers=20)
+        for data_dir in [debug_prediction_dirs_unix]:
+            try:
+                predict_path(checkpoint_file=checkpoint_file, model_save_path=model, bag_paths=data_dir,
+                             out_dir=model + 'predictions-linux/',
+                             global_log_dir=current_global_log_dir,
+                             gpu_enabled=False, normalize_enum=7, max_workers=20)
+            except Exception as e:
+                # TODO handle this exception better
+                log.write('\n\n============================================================')
+                log.write('Fatal error during HT predictions: "' + str(e) + '"!')
+                log.write(str(e.__class__.__name__) + ': "' + str(e) + '"')
+                raise e
 
-    print('Finished predicting & Dose-Response for all bags.')
+    # Finishing up the logging process
+    log.write('Finished predicting & Dose-Response for all bags.')
 
 
 if __name__ == '__main__':

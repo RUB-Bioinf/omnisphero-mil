@@ -102,7 +102,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
     X_raw_full = None
     y_full = None
     y_tiles_full = None
-    X_metadata = []
+    X_metadata_full = []
     error_list = []
     loaded_files_list_full = []
     bag_names_full = []
@@ -144,6 +144,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
             error_list.extend(errors)
             well_names_full.extend(well_names)
             experiment_names_full.extend(experiment_names)
+            X_metadata_full.extend(X_metadata)
 
             if X_full is None:
                 X_full = X
@@ -175,14 +176,15 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
     log.write('Debug list size "y_tiles_full": ' + str(len(y_tiles_full)))
     log.write('Debug list size "X_raw_full": ' + str(len(X_raw_full)))
     log.write('Debug list size "bag_names": ' + str(len(bag_names_full)))
+    log.write('Debug list size "X_metadata_full": ' + str(len(X_metadata_full)))
 
     assert len(X_full) == len(y_full)
     assert len(X_full) == len(y_tiles_full)
     assert len(X_full) == len(X_raw_full)
     assert len(X_full) == len(bag_names_full)
-    assert len(X_full) == len(X_metadata)
+    assert len(X_full) == len(X_metadata_full)
 
-    return X_full, y_full, y_tiles_full, X_raw_full, X_metadata, bag_names_full, experiment_names_full, well_names_full, error_list, loaded_files_list_full
+    return X_full, y_full, y_tiles_full, X_raw_full, X_metadata_full, bag_names_full, experiment_names_full, well_names_full, error_list, loaded_files_list_full
 
 
 # Main Loading function
@@ -316,6 +318,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
     log.write('Debug list size "y_tiles": ' + str(len(y_tiles)))
     log.write('Debug list size "X_raw": ' + str(len(X_raw)))
     log.write('Debug list size "bag_names": ' + str(len(bag_names)))
+    log.write('Debug list size "bag_names": ' + str(len(X_metadata)))
 
     assert len(X) == len(y)
     assert len(X) == len(y_tiles)
@@ -323,6 +326,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
     assert len(X) == len(bag_names)
     assert len(X) == len(experiment_names)
     assert len(X) == len(well_names)
+    assert len(X) == len(X_metadata)
 
     return X, y, y_tiles, X_raw, X_metadata, bag_names, experiment_names, well_names, error_list, loaded_files_list
 
