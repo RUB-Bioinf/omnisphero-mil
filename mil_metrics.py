@@ -480,6 +480,7 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
                                                    override_colormap=[255, 255, 255])
             if y_bag_true == 1:
                 if y_bag == 1:
+                    # TODO why is this error?
                     minattention_tilesTP.append(min_attention_tile)
                     added_attention_tiles_count = added_attention_tiles_count + 1
                 elif y_bag == 0:

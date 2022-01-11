@@ -12,6 +12,7 @@ import hardware
 import loader
 import models
 import omnisphero_mil
+from util import data_renderer
 from util import log
 from util import utils
 from util.omnisphero_data_loader import OmniSpheroDataLoader
@@ -153,7 +154,13 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
     log.write('Finished predictions.')
     assert len(X_metadata) == len(all_attentions)
     assert len(X_metadata) == len(X_raw)
-    del data_loader, model, X_raw
+    del data_loader, model
+
+    log.write('Rendering spheres and predictions.')
+    data_renderer.renderSpheres(X_raw=X_raw, X_metadata=X_metadata, input_dim=input_dim, y_attentions=all_attentions,
+                                y_pred=y_hats, y_pred_binary=y_preds, out_dir=out_dir)
+    del X_raw
+    log.write('Finished rendering spheres.')
 
     # Setting up result directories and file handles
     experiment_names_unique = list(dict.fromkeys(experiment_names))
@@ -174,8 +181,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
     bars_width_mod = 10000
     if sparse_hist:
         bars_width_mod = 1000
-
-    print('\n')
+    print('\n')  # new line so linux systems can write a single line
     # Iterating over the predictions to save them to disc & dict
     for i in range(len(y_hats)):
         # Extracting predictions
@@ -284,7 +290,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
     well_numbers_unique.sort()
     del well_letters_unique_candidates, well_numbers_unique_candidates
 
-    print('')
+    print('\n')  # new line so linux systems can write a single line
     for e in range(len(experiment_names_unique)):
         exp = experiment_names_unique[e]
         line_print('[' + str(e + 1) + '/' + str(
@@ -303,7 +309,15 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                 well_key = well_letter + '0' + str(well_number)
 
                 # subplot_index = str(len(well_letters_unique)) + str(len(well_numbers_unique)) + str(i + 1)
-                if well_key in current_handle.keys():
+                axis_found = True
+                try:
+                    a = ax[j, i]
+                except Exception as e:
+                    log.write(' = WARNING = Failed to locate axis at ' + str(j) + ',' + str(i) + '!')
+                    axis_found = False
+                    continue
+
+                if well_key in current_handle.keys() and axis_found:
                     a = ax[j, i]
                     current_well_handle = current_handle[well_key]
                     threshold = current_well_handle['otsu']

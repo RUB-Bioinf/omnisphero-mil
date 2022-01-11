@@ -29,8 +29,8 @@ class TileMetadata:
             self.well_letter = '<runtime metadata>'
 
     def get_formatted_well(self, long: bool = True):
-        if self.read_from_source:
-            return '<runtime tile>'
+        if not self.read_from_source:
+            return '<runtime generated tile>'
 
         if len(self.well_letter) == 1 and long:
             return self.well_letter + '0' + str(self.well_number)
