@@ -12,8 +12,10 @@ import hardware
 import loader
 import models
 import omnisphero_mil
+import r
 from util import data_renderer
 from util import log
+from util import paths
 from util import utils
 from util.omnisphero_data_loader import OmniSpheroDataLoader
 from util.paths import debug_prediction_dirs_unix
@@ -27,9 +29,8 @@ model_debug_path = "U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\p
 
 
 def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], normalize_enum: int, out_dir: str,
-                 max_workers: int, channel_inclusions=loader.default_channel_inclusions_all,
-                 tile_constraints=loader.default_tile_constraints_nuclei,
-                 global_log_dir: str = None,
+                 max_workers: int, image_folder: str, channel_inclusions=loader.default_channel_inclusions_all,
+                 tile_constraints=loader.default_tile_constraints_nuclei, global_log_dir: str = None,
                  gpu_enabled: bool = False, model_optimizer=None):
     start_time = datetime.now()
     log_label = str(start_time.strftime("%d-%m-%Y-%H-%M-%S"))
@@ -129,7 +130,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
 
             predict_data(model=model, data_loader=data_loader, X_raw=X_raw, X_metadata=X_metadata,
                          experiment_names=experiment_names, input_dim=input_dim, sparse_hist=sparse,
-                         normalized_attention=norm, clear_old_data=False,
+                         normalized_attention=norm, clear_old_data=False, image_folder=image_folder,
                          well_names=well_names, max_workers=max_workers, out_dir=current_out_dir)
     del data_loader, X_raw, X_metadata
 
@@ -142,7 +143,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
 
 
 def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X_raw: [np.ndarray],
-                 X_metadata: [TileMetadata], experiment_names: [str], well_names: [str],
+                 X_metadata: [TileMetadata], experiment_names: [str], well_names: [str], image_folder: str,
                  input_dim: (int), max_workers: int, out_dir: str, sparse_hist: bool = True,
                  normalized_attention: bool = True,
                  clear_old_data: bool = False, dpi: int = 250):
@@ -156,9 +157,21 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
     assert len(X_metadata) == len(X_raw)
     del data_loader, model
 
+    # Evaluating sigmoid performance
+    if r.has_connection():
+        r.prediction_sigmoid_evaluation(X_raw=X_raw, X_metadata=X_metadata, y_pred=y_hats, out_dir=out_dir)
+    else:
+        log.write('Not running r evaluation. No connection.')
+
+    # Rendering attention scores
     log.write('Rendering spheres and predictions.')
-    data_renderer.renderSpheres(X_raw=X_raw, X_metadata=X_metadata, input_dim=input_dim, y_attentions=all_attentions,
-                                y_pred=y_hats, y_pred_binary=y_preds, out_dir=out_dir)
+    data_renderer.render_dose_response(X_raw=X_raw, X_metadata=X_metadata, input_dim=input_dim,
+                                       y_attentions=all_attentions, image_folder=image_folder, y_pred=y_hats,
+                                       y_pred_binary=y_preds, out_dir=out_dir)
+    data_renderer.renderAttentionSpheres(X_raw=X_raw, X_metadata=X_metadata, input_dim=input_dim,
+                                         y_attentions=all_attentions, image_folder=image_folder, y_pred=y_hats,
+                                         y_pred_binary=y_preds,
+                                         out_dir=out_dir)
     del X_raw
     log.write('Finished rendering spheres.')
 
@@ -427,15 +440,18 @@ def main():
     print('Predicting and creating a Dose Response curve for a whole bag.')
     debug = False
     model = None
+    image_folder = None
 
     model = default_out_dir_unix_base + os.sep + 'hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
     if sys.platform == 'win32':
+        image_folder = paths.nucleus_predictions_image_folder_win
         current_global_log_dir = 'U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\'
         log.add_file('U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\all_logs.txt')
         debug = True
         model = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\'
     else:
         current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log/linux/'
+        image_folder = paths.nucleus_predictions_image_folder_unix
 
     if debug:
         predict_path(
@@ -443,6 +459,7 @@ def main():
             global_log_dir=current_global_log_dir,
             checkpoint_file='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\hnm\\model_best.h5',
             bag_paths=debug_prediction_dirs_win,
+            image_folder=image_folder,
             out_dir='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\debug_predictions\\',
             gpu_enabled=False, normalize_enum=7, max_workers=4)
     elif sys.platform == 'win32':
@@ -452,6 +469,7 @@ def main():
                          checkpoint_file='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\hnm\\model_best.h5',
                          out_dir=model + 'predictions\\',
                          bag_paths=[data_dir],
+                         image_folder=image_folder,
                          gpu_enabled=False, normalize_enum=7, max_workers=6)
     else:
         print('Predicting linux batches')
@@ -462,6 +480,7 @@ def main():
                 predict_path(checkpoint_file=checkpoint_file, model_save_path=model, bag_paths=data_dir,
                              out_dir=model + 'predictions-linux/',
                              global_log_dir=current_global_log_dir,
+                             image_folder=image_folder,
                              gpu_enabled=False, normalize_enum=7, max_workers=20)
             except Exception as e:
                 # TODO handle this exception better

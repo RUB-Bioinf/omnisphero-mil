@@ -625,9 +625,21 @@ def calculate_dice_score(TP: int, FP: int, FN: int):
     return (2 * TP) / (2 * TP + FP + FN)
 
 
-def fuse_image_tiles(images: [np.ndarray], image_width: int, image_height: int):
+def fuse_image_tiles(images: [np.ndarray], image_width: int = None, image_height: int = None, light_mode: bool = False):
     # assert image_width is None
     # assert image_height is None
+
+    if image_width is None or image_height is None:
+        image_width_max = 0
+        image_height_max = 0
+        for image in images:
+            s = image.shape
+            image_width_max = max(image_width_max, s[0])
+            image_height_max = max(image_height_max, s[1])
+
+        image_width = max(image_width_max, image_height_max)
+        image_height = max(image_width_max, image_height_max)
+        del s, image, image_height_max, image_width_max
 
     image_count = len(images)
     assert image_count > 0
@@ -639,8 +651,18 @@ def fuse_image_tiles(images: [np.ndarray], image_width: int, image_height: int):
     if image_count == 2:
         # Special case, if there are only 2 images in the list
         combined_img = np.zeros((image_height, image_width * 2, 3), dtype=np.uint8)
-        combined_img[0:image_width, 0:image_height] = images[0].astype(np.uint8)
-        combined_img[0:image_width, image_height:image_height * 2] = images[1].astype(np.uint8)
+
+        padded_img_1 = np.zeros((image_width, image_height, 3), dtype=np.uint8)
+        padded_img_0 = np.zeros((image_width, image_height, 3), dtype=np.uint8)
+        if light_mode:
+            padded_img_0 = np.ones((image_width, image_height, 3), dtype=np.uint8) * 255
+            padded_img_1 = np.ones((image_width, image_height, 3), dtype=np.uint8) * 255
+
+        padded_img_0[:images[0].shape[0], :images[0].shape[1], :] = images[0]
+        padded_img_1[:images[1].shape[0], :images[1].shape[1], :] = images[1]
+
+        combined_img[0:image_width, 0:image_height] = padded_img_0
+        combined_img[0:image_width, image_height:image_height * 2] = padded_img_1
         return combined_img
 
     out_image_bounds = math.ceil(math.sqrt(image_count))
@@ -652,8 +674,15 @@ def fuse_image_tiles(images: [np.ndarray], image_width: int, image_height: int):
         if x == 0:
             y = y + 1
         current_img = (images[i]).astype(np.uint8)
+        s = current_img.shape
+
+        current_img_padded = np.zeros((image_width, image_height, 3), dtype=np.uint8)
+        if light_mode:
+            current_img_padded = np.ones((image_width, image_height, 3), dtype=np.uint8) * 255
+        current_img_padded[:s[0], :s[1], :] = current_img
+
         combined_img[x * image_width:x * image_width + image_width,
-        y * image_height:y * image_height + image_height] = current_img
+        y * image_height:y * image_height + image_height] = current_img_padded
 
     return combined_img
 

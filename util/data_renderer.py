@@ -1,3 +1,5 @@
+import nucleus_predictions
+from mil_metrics import fuse_image_tiles
 from util import log
 import numpy as np
 import os
@@ -7,15 +9,23 @@ from util.well_metadata import TileMetadata
 import matplotlib.pyplot as plt
 
 
-def renderSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pred: [np.ndarray], y_pred_binary: [np.ndarray],
-                  input_dim, y_attentions: [np.ndarray] = None, out_dir: str = None, colormap_name: str = 'jet',
-                  dpi: int = 650, overlay_alpha: float = 0.65):
+def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pred: [np.ndarray],
+                           y_pred_binary: [np.ndarray],
+                           image_folder: str, input_dim, y_attentions: [np.ndarray] = None, out_dir: str = None,
+                           colormap_name: str = 'jet', dpi: int = 650, overlay_alpha: float = 0.65):
     os.makedirs(out_dir, exist_ok=True)
 
     assert input_dim[0] == 3
     tile_w = input_dim[1]
     tile_h = input_dim[2]
+    image_height = float('nan')
+    image_width = float('nan')
+    image_height_detail = float('nan')
+    image_width_detail = float('nan')
     color_map = plt.get_cmap(colormap_name)
+
+    activation_grayscale_overlay_images = {}
+    activation_grayscale_overlay_images_detail = {}
 
     print('\n')
     for i in range(len(X_raw)):
@@ -34,6 +44,16 @@ def renderSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pred: [np.n
         image_width = X_metadata_sample.well_image_width
         experiment_name = X_metadata_sample.experiment_name
         well_name = X_metadata_sample.get_formatted_well(long=True)
+
+        # Loading previously predicted data
+        prediction_coordinates: [int, int] = []
+        _, exists_oligo_predictions = nucleus_predictions.get_prediction_file_path(image_folder=image_folder,
+                                                                                   experiment_name=experiment_name,
+                                                                                   well_name=well_name)
+        if exists_oligo_predictions:
+            prediction_coordinates = nucleus_predictions.load_oligo_predictions(image_folder=image_folder,
+                                                                                experiment_name=experiment_name,
+                                                                                well_name=well_name)
 
         out_dir_current = out_dir + os.sep + experiment_name + os.sep + well_name + os.sep
         os.makedirs(out_dir_current, exist_ok=True)
@@ -97,7 +117,13 @@ def renderSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pred: [np.n
             rgb = np.dstack((r, g, b))
             activation_grayscale_overlay[pos_y:pos_y + tile_h, pos_x:pos_x + tile_w] = rgb
 
-            del pos_x, pos_y, attention, existing_attention, r, g, b, rgb, attention_color
+            del pos_x, pos_y, attention, existing_attention, r, g, b, rgb, attention_color, current_raw_metadata
+
+        prediction_coordinate_map = np.zeros((image_width, image_height, 3))
+        for (x, y) in prediction_coordinates:
+            prediction_coordinate_map[x, y, :] = (1, 1, 1)
+            activation_grayscale_overlay[x, y, :] = (255, 255, 255)
+            del x, y
 
         assert activation_map.min() == 0
         assert activation_map.max() == 1
@@ -105,8 +131,12 @@ def renderSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pred: [np.n
         activation_map = activation_map.astype(np.uint8)
         activation_map_mask = activation_map_mask.astype(np.uint8)
         activation_map_mask = activation_map_mask * 255
-        plt.imsave(out_dir_current + 'predicted_tiles_activation_map.jpg', activation_map)
-        plt.imsave(out_dir_current + 'predicted_tiles_activation_map_mask.jpg', activation_map_mask)
+        prediction_coordinate_map = prediction_coordinate_map.astype(np.uint8)
+        prediction_coordinate_map = prediction_coordinate_map * 255
+
+        plt.imsave(out_dir_current + 'predicted_coordinates_map.png', prediction_coordinate_map)
+        plt.imsave(out_dir_current + 'predicted_tiles_activation_map.png', activation_map)
+        plt.imsave(out_dir_current + 'predicted_tiles_activation_map_mask.png', activation_map_mask)
         plt.imsave(out_dir_current + 'predicted_tiles_activation_overlay.png', activation_grayscale_overlay)
 
         plt.clf()
@@ -127,7 +157,63 @@ def renderSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pred: [np.n
         plt.savefig(out_dir_current + 'predicted_tiles_activation_overlay-detail.png', dpi=dpi, bbox_inches='tight')
         plt.savefig(out_dir_current + 'predicted_tiles_activation_overlay-detail.pdf', dpi=dpi, bbox_inches='tight')
 
+        rendered_detail_fig = plt.imread(out_dir_current + 'predicted_tiles_activation_overlay-detail.png')
+        rendered_detail_fig = rendered_detail_fig[:, :, :-1] * 255
+        rendered_detail_fig = rendered_detail_fig.astype(np.uint8)
+
+        if experiment_name not in activation_grayscale_overlay_images.keys():
+            activation_grayscale_overlay_images[experiment_name] = []
+            activation_grayscale_overlay_images_detail[experiment_name] = []
+        activation_grayscale_overlay_images[experiment_name].append(activation_grayscale_overlay)
+        activation_grayscale_overlay_images_detail[experiment_name].append(rendered_detail_fig)
+
+    # Printing the imfused images
+    for experiment_name in activation_grayscale_overlay_images.keys():
+        activation_grayscale_overlay_image = activation_grayscale_overlay_images[experiment_name]
+        activation_grayscale_overlay_image_detail = activation_grayscale_overlay_images_detail[experiment_name]
+
+        activation_grayscale_overlay_image = fuse_image_tiles(images=activation_grayscale_overlay_image,
+                                                              light_mode=True)
+        activation_grayscale_overlay_image_detail = fuse_image_tiles(images=activation_grayscale_overlay_image_detail,
+                                                                     light_mode=True)
+
+        out_dir_exp = out_dir + os.sep + experiment_name
+        os.makedirs(out_dir_exp, exist_ok=True)
+        plt.imsave(out_dir_exp + os.sep + experiment_name + '-predicted_tiles_activation_overlays.png',
+                   activation_grayscale_overlay_image)
+        plt.imsave(out_dir_exp + os.sep + experiment_name + '-predicted_tiles_activation_overlays_detail.png',
+                   activation_grayscale_overlay_image_detail)
+
     log.write('Finished rendering all attention overlays.')
+
+
+def render_dose_response(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pred: [np.ndarray],
+                         y_pred_binary: [np.ndarray], image_folder: str, input_dim, y_attentions: [np.ndarray] = None,
+                         out_dir: str = None, colormap_name: str = 'jet', dpi: int = 650, overlay_alpha: float = 0.65):
+    os.makedirs(out_dir, exist_ok=True)
+
+    assert input_dim[0] == 3
+    tile_w = input_dim[1]
+    tile_h = input_dim[2]
+    image_height = float('nan')
+    image_width = float('nan')
+    image_height_detail = float('nan')
+    image_width_detail = float('nan')
+    color_map = plt.get_cmap(colormap_name)
+
+    activation_grayscale_overlay_images = {}
+    activation_grayscale_overlay_images_detail = {}
+
+    print('\n')
+    for i in range(len(X_raw)):
+        X_raw_current = X_raw[i]
+        X_metadata_current: [TileMetadata] = X_metadata[i]
+        y_attention_current = y_attentions[i]
+        y_pred_current = float(y_pred[i])
+        y_pred_binary_current = int(y_pred_binary[i])
+        y_attention_current_normalized = y_attention_current / max(y_attention_current)
+        color_bar_min = y_attention_current.min()
+        color_bar_max = y_attention_current.max()
 
 
 def rgb_to_gray(img: np.ndarray, weights_r=0.299, weights_g=0.587, weights_b=0.114):

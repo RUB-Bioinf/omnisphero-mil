@@ -21,5 +21,8 @@ debug_prediction_dirs_unix = [
     '/mil/oligo-diff/training_data/curated_linux/ELS744'
 ]
 
+nucleus_predictions_image_folder_win = 'U:\\bioinfdata\\work\\OmniSphero\\Bilderordner\\'
+nucleus_predictions_image_folder_unix = ''
+
 if __name__ == '__main__':
     log.write('This class contains all important paths.')
