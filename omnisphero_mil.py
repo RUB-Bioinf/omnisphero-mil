@@ -15,9 +15,10 @@ import loader
 import mil_metrics
 import models
 import omnisphero_mining
-import predict_batch
+import r
 import torch_callbacks
 from util import log
+from util import paths
 from util import sample_preview
 from util import utils
 from util.omnisphero_data_loader import OmniSpheroDataLoader
@@ -103,7 +104,7 @@ max_workers_default = 5
 
 def train_model(
         # Basic training data params
-        training_label: str, source_dirs: [str],
+        training_label: str, source_dirs: [str], image_folder: str,
         # Model fitting params
         loss_function: str, device_ordinals: [int],
         epochs: int = 3, max_workers: int = max_workers_default, normalize_enum: int = normalize_enum_default,
@@ -161,11 +162,12 @@ def train_model(
     os.makedirs(loading_preview_dir_whole_bag, exist_ok=True)
     os.makedirs(sigmoid_validation_dir, exist_ok=True)
 
-    print('Model classification - Use Max: ' + str(model_use_max))
-    print('Model classification - Use Attention: ' + str(model_enable_attention))
-    print('Model classification - Use HNM: ' + str(use_hard_negative_mining))
+    log.write('Model classification - Use Max: ' + str(model_use_max))
+    log.write('Model classification - Use Attention: ' + str(model_enable_attention))
+    log.write('Model classification - Use HNM: ' + str(use_hard_negative_mining))
+    log.write('R - Is pyRserve connection available: ' + str(r.has_connection()))
 
-    print('Saving logs and protocols to: ' + out_dir)
+    log.write('Saving logs and protocols to: ' + out_dir)
     # Logging params and args
     protocol_f = open(out_dir + os.sep + 'protocol.txt', 'w')
     protocol_f.write('Start time: ' + utils.gct())
@@ -173,6 +175,7 @@ def train_model(
     protocol_f.write('\nSource dirs: ' + str(len(source_dirs)))
     protocol_f.write('\nLoss function: ' + loss_function)
     protocol_f.write('\nDevice ordinals: ' + str(device_ordinals))
+    protocol_f.write('\nR - Is pyRserve connection available: ' + str(r.has_connection()))
     protocol_f.write('\nEpochs: ' + str(epochs))
     protocol_f.write('\nShuffle data loader: ' + str(shuffle_data_loaders))
     protocol_f.write('\nMax File-Loader Workers: ' + str(max_workers))
@@ -313,7 +316,7 @@ def train_model(
     # Setting up bags for MIL
     if repack_percentage > 0:
         print_bag_metadata(X, y, y_tiles, bag_names, file_name=out_dir + 'bags_pre-packed.csv')
-        X, X_raw, y, y_tiles, bag_names = loader.repack_bags_merge(X, X_raw, y, bag_names,
+        X, X_raw, y, y_tiles, bag_names = loader.repack_bags_merge(X=X, X_raw=X_raw, y=y, bag_names=bag_names,
                                                                    repack_percentage=repack_percentage,
                                                                    positive_bag_min_samples=positive_bag_min_samples)
         print_bag_metadata(X, y, y_tiles, bag_names, file_name=out_dir + 'bags_repacked.csv')
@@ -394,13 +397,23 @@ def train_model(
     device = hardware.get_hardware_device(gpu_preferred=gpu_enabled)
     log.write('Selected device: ' + str(device))
 
+    # Loader args
+    loader_kwargs = {}
+    data_loader_pin_memory = False
+    if torch.cuda.is_available():
+        # model.cuda()
+        loader_kwargs = {'num_workers': data_loader_cores, 'pin_memory': data_loader_pin_memory}
+
     #######################
     # Loading sigmoid data
     #######################
-    spc: torch_callbacks.SigmoidPredictionCallback = None
     f = open(out_dir + 'sigmoid_validation.txt', 'w')
+    data_loader_sigmoid: OmniSpheroDataLoader = None
+    X_metadata_sigmoid: [np.ndarray] = None
     if len(sigmoid_validation_dirs) > 0:
-        X_sigmoid, _, _, _, X_raw_sigmoid, X_metadata_sigmoid, experiment_names_sigmoid, well_names_sigmoid, errors_sigmoid, loaded_files_list_sigmoid = loader.load_bags_json_batch(
+        f.write('Sigmoid validation dirs:' + str(sigmoid_validation_dirs))
+
+        X_sigmoid, _, _, _, X_metadata_sigmoid, _, _, _, errors_sigmoid, loaded_files_list_sigmoid = loader.load_bags_json_batch(
             batch_dirs=sigmoid_validation_dirs,
             max_workers=max_workers,
             include_raw=True,
@@ -411,18 +424,24 @@ def train_model(
             label_1_well_indices=loader.default_well_indices_all,
             normalize_enum=normalize_enum)
         X_sigmoid = [np.einsum('bhwc->bchw', bag) for bag in X_sigmoid]
-        experiment_holders_sigmoid, all_well_letters_sigmoid, all_well_numbers_sigmoid, experiment_names_unique_sigmoid = predict_batch.generate_experiment_prediction_holders(
-            X=X_sigmoid, experiment_names=experiment_names_sigmoid, well_names=well_names_sigmoid)
 
-        spc = torch_callbacks.SigmoidPredictionCallback(out_dir=sigmoid_validation_dir, epoch_interval=2,
-                                                        experiment_holders=experiment_holders_sigmoid,
-                                                        all_well_letters=all_well_letters_sigmoid,
-                                                        all_well_numbers=all_well_numbers_sigmoid,
-                                                        workers=data_loader_cores,
-                                                        verbose=True,
-                                                        experiment_names_unique=experiment_names_unique_sigmoid)
+        sigmoid_temp_entry = None
+        f.write('\n\nList of loaded sigmoid files:')
+        for sigmoid_temp_entry in loaded_files_list_sigmoid:
+            f.write('\n' + str(sigmoid_temp_entry))
+            # log.write('Loaded sigmoid file: ' + str(sigmoid_temp_entry))
+        f.write('\n\nList of sigmoid loading errors:')
+        for sigmoid_temp_entry in errors_sigmoid:
+            f.write('\n' + str(sigmoid_temp_entry))
+            log.write('Loading error: ' + str(sigmoid_temp_entry))
+
+        dataset_sigmoid, _ = loader.convert_bag_to_batch(bags=X_sigmoid, labels=None, y_tiles=None)
+        data_loader_sigmoid = OmniSpheroDataLoader(dataset_sigmoid, batch_size=1, shuffle=False,
+                                                   transform_enabled=False, transform_data_saver=False, **loader_kwargs)
+
+        del X_sigmoid, errors_sigmoid, loaded_files_list_sigmoid, dataset_sigmoid, sigmoid_temp_entry
     else:
-        f.write('Not validating.')
+        f.write('Not sigmoid validating.')
     f.close()
 
     # Setting up Model
@@ -438,13 +457,6 @@ def train_model(
     # Saving the raw version of this model
     torch.save(model.state_dict(), out_dir + 'model.pt')
     torch.save(model, out_dir + 'model.h5')
-
-    # Loader args
-    loader_kwargs = {}
-    data_loader_pin_memory = False
-    if torch.cuda.is_available():
-        # model.cuda()
-        loader_kwargs = {'num_workers': data_loader_cores, 'pin_memory': data_loader_pin_memory}
 
     model_optimizer = models.choose_optimizer(model, selection=optimizer)
     log.write('Finished loading data and model')
@@ -481,9 +493,6 @@ def train_model(
     callbacks.append(torch_callbacks.UnreasonableLossCallback(loss_max=40.0))
     hnm_callbacks.append(torch_callbacks.EarlyStopping(epoch_threshold=int(epochs / 5 + 1)))
     hnm_callbacks.append(torch_callbacks.UnreasonableLossCallback(loss_max=40.0))
-    if spc is not None:
-        callbacks.append(spc)
-        hnm_callbacks.append(spc)
 
     protocol_f.write('\n\n == Model Information==')
     protocol_f.write('\nDevice Ordinals: ' + str(device_ordinals))
@@ -520,6 +529,8 @@ def train_model(
                                                              validation_data=validation_dl,
                                                              out_dir_base=out_dir,
                                                              checkpoint_interval=None,
+                                                             data_loader_sigmoid=data_loader_sigmoid,
+                                                             X_metadata_sigmoid=X_metadata_sigmoid,
                                                              clamp_min=clamp_min, clamp_max=clamp_max,
                                                              callbacks=callbacks)
     log.write('Finished training!')
@@ -538,6 +549,7 @@ def train_model(
         mil_metrics.plot_accuracy_tiles(history, metrics_dir, include_raw=True, include_tikz=True)
         mil_metrics.plot_accuracies(history, metrics_dir, include_tikz=True)
         mil_metrics.plot_dice_scores(history, metrics_dir, include_tikz=True)
+        mil_metrics.plot_sigmoid_scores(history, metrics_dir, include_tikz=True)
         mil_metrics.plot_binary_roc_curves(history, metrics_dir, include_tikz=True)
 
     ##################
@@ -598,11 +610,6 @@ def train_model(
         os.makedirs(mined_out_dir, exist_ok=True)
         epochs = math.ceil(epochs * 1.5)
 
-        if spc is not None:
-            sigmoid_validation_dir = mined_out_dir + 'sigmoid_live'
-            os.makedirs(sigmoid_validation_dir, exist_ok=True)
-            spc.out_dir = sigmoid_validation_dir
-
         f = open(mined_out_dir + 'mining.txt', 'w')
         f.write('Hard Negative Mining parameters:')
         f.write('\nMining dir: ' + mined_out_dir)
@@ -619,6 +626,8 @@ def train_model(
                                                                  training_data=train_dl,
                                                                  validation_data=validation_dl,
                                                                  out_dir_base=mined_out_dir,
+                                                                 data_loader_sigmoid=data_loader_sigmoid,
+                                                                 X_metadata_sigmoid=X_metadata_sigmoid,
                                                                  checkpoint_interval=None,
                                                                  clamp_min=clamp_min, clamp_max=clamp_max,
                                                                  callbacks=hnm_callbacks)
@@ -634,6 +643,7 @@ def train_model(
         mil_metrics.plot_accuracy_tiles(history, metrics_dir, include_raw=True, include_tikz=True)
         mil_metrics.plot_accuracies(history, metrics_dir, include_tikz=True)
         mil_metrics.plot_dice_scores(history, metrics_dir, include_tikz=True)
+        mil_metrics.plot_sigmoid_scores(history, metrics_dir, include_tikz=True)
         mil_metrics.plot_binary_roc_curves(history, metrics_dir, include_tikz=True)
 
         # Testing HNM models on test data
@@ -673,7 +683,8 @@ def test_model(model: models.OmniSpheroMil, model_save_path_best: str, model_opt
 
     # Get best saved model from this run
     model, model_optimizer, _, _ = models.load_checkpoint(model_save_path_best, model, model_optimizer)
-    y_hats, y_pred, y_true, _, y_samples_pred, y_samples_true, _, _ = models.get_predictions(model, data_loader)
+    y_hats, y_pred, y_true, _, y_samples_pred, y_samples_true, all_attentions, _ = models.get_predictions(model,
+                                                                                                          data_loader)
 
     # Flattening sample predictions
     y_samples_pred = [item for sublist in y_samples_pred for item in sublist]
@@ -791,8 +802,13 @@ def main(debug: bool = False):
 
     # Preparing for model loading
     current_device_ordinals = models.device_ordinals_ehrlich
+    image_folder: str = None
+    sigmoid_input_dirs: [str] = []
 
     if sys.platform == 'win32':
+        image_folder = paths.nucleus_predictions_image_folder_win
+        sigmoid_input_dirs = default_sigmoid_validation_dirs_win
+
         current_global_log_dir = 'U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\'
         log.add_file('U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\all_logs.txt')
 
@@ -802,6 +818,8 @@ def main(debug: bool = False):
         current_gpu_enabled = False
         current_device_ordinals = models.device_ordinals_local
     else:
+        sigmoid_input_dirs = default_sigmoid_validation_dirs_unix
+        image_folder = paths.nucleus_predictions_image_folder_unix
         current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log/linux/'
 
     current_out_dir = default_out_dir_base + os.sep
@@ -810,7 +828,7 @@ def main(debug: bool = False):
     log.write('Starting Training...')
     if debug:
         train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
-                    max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
+                    max_workers=current_max_workers, gpu_enabled=current_gpu_enabled, image_folder=image_folder,
                     device_ordinals=current_device_ordinals,
                     normalize_enum=7,
                     training_label='debug',
@@ -841,8 +859,9 @@ def main(debug: bool = False):
 
                             train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
+                                        image_folder=image_folder,
                                         normalize_enum=i,
-                                        training_label='hnm-early_inverted-overlap-' + o + '-NoNeuron2-wells-normalize-' + str(
+                                        training_label='hnm-sigmoid-overlap-' + o + '-NoNeuron2-wells-normalize-' + str(
                                             i) + 'repack-' + str(r),
                                         global_log_dir=current_global_log_dir,
                                         data_split_percentage_validation=0.25,
@@ -864,7 +883,7 @@ def main(debug: bool = False):
                                         label_1_well_indices=loader.default_well_indices_early,
                                         label_0_well_indices=loader.default_well_indices_very_late,
                                         device_ordinals=current_device_ordinals,
-                                        sigmoid_validation_dirs=None
+                                        sigmoid_validation_dirs=sigmoid_input_dirs
                                         )
     log.write('Finished every training!')
 

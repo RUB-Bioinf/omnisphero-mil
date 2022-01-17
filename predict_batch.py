@@ -18,6 +18,7 @@ from util import log
 from util import paths
 from util import utils
 from util.omnisphero_data_loader import OmniSpheroDataLoader
+from util.paths import all_prediction_dirs_win
 from util.paths import debug_prediction_dirs_unix
 from util.paths import debug_prediction_dirs_win
 from util.paths import default_out_dir_unix_base
@@ -59,6 +60,8 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
 
     # Loading model
     log.write('Loading model: ' + model_save_path)
+    log.write('Assumed model state dict: ' + model_state_dict_file)
+
     model = None
     loading_error = False
     if os.path.exists(model_save_path):
@@ -71,14 +74,19 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
             log.write("Error loading model!")
             log.write(str(e))
             loading_error = True
+
     if (model is None or loading_error) and os.path.exists(model_state_dict_file):
         loss_function = 'binary_cross_entropy'
         accuracy_function = 'binary'
+        log.write('Creating a new untrained model and feeding it the state dict')
         log.write('Selected device: ' + str(device))
         model = models.BaselineMIL((3, 150, 150), device=device, loss_function=None, accuracy_function=None)
         model.load_state_dict(torch.load(model_state_dict_file, map_location='cpu'))
-    else:
-        log.write("WARNING! INCORRECT MODEL PATH")
+    elif model is None or loading_error or not os.path.exists(model_state_dict_file):
+        log.write('Model is None: ' + str(model is None))
+        log.write('Has loading error: ' + str(loading_error))
+        log.write('Exists state dict: ' + str(os.path.exists(model_state_dict_file)))
+        log.write("\n\n ==== WARNING! INCORRECT MODEL PATH. YOUR MODEL MAY NOT HAVE BEEN LOADED ====\n\n")
 
     # Checking if the right data has been loaded
     assert model is not None
@@ -94,7 +102,6 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
 
     # Loading the data
     # X_full, y_full, y_tiles_full, X_raw_full, X_metadata, bag_names_full, experiment_names_full, well_names_full, error_list, loaded_files_list_full
-    # X, y, y_tiles, X_raw, X_metadata, experiment_names, well_names, errors, loaded_files_list = loader.load_bags_json_batch(
     X, y, y_tiles, X_raw, X_metadata, bag_names, experiment_names, well_names, errors, loaded_files_list = loader.load_bags_json_batch(
         batch_dirs=bag_paths,
         max_workers=max_workers,
@@ -159,15 +166,12 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
 
     # Evaluating sigmoid performance
     if r.has_connection():
-        r.prediction_sigmoid_evaluation(X_raw=X_raw, X_metadata=X_metadata, y_pred=y_hats, out_dir=out_dir)
+        r.prediction_sigmoid_evaluation(X_metadata=X_metadata, y_pred=y_hats, out_dir=out_dir)
     else:
         log.write('Not running r evaluation. No connection.')
 
     # Rendering attention scores
     log.write('Rendering spheres and predictions.')
-    data_renderer.render_dose_response(X_raw=X_raw, X_metadata=X_metadata, input_dim=input_dim,
-                                       y_attentions=all_attentions, image_folder=image_folder, y_pred=y_hats,
-                                       y_pred_binary=y_preds, out_dir=out_dir)
     data_renderer.renderAttentionSpheres(X_raw=X_raw, X_metadata=X_metadata, input_dim=input_dim,
                                          y_attentions=all_attentions, image_folder=image_folder, y_pred=y_hats,
                                          y_pred_binary=y_preds,
@@ -364,43 +368,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
         plt.savefig(current_out_dir + exp + '-hist.svg', dpi=dpi, bbox_inches='tight')
     log.write('All pooled results saved.')
 
-    # Repacking loaded experiments into holders for prediction
-    # experiment_holders, all_well_letters, all_well_numbers, experiment_names_unique = generate_experiment_prediction_holders(
-    #    X=X, experiment_names=experiment_names, well_names=well_names)
-    #
-    # for current_experiment in experiment_names_unique:
-    #    current_holder = experiment_holders[current_experiment]
-    #    log.write('Predicting: ' + current_experiment)
-    #
-    #    # Predicting all wells of this experiment
-    #    all_wells, prediction_dict_bags, prediction_dict_samples, prediction_dict_well_names = predict_dose_response(
-    #        experiment_holder=current_holder, experiment_name=current_experiment, model=model,
-    #        max_workers=max_workers)
-    #
-    #    # Writing the predictions to disk
-    #    out_file_base = out_dir + os.sep + current_experiment
-    #    save_sigmoid_prediction_csv(experiment_name=current_experiment, all_well_letters=all_well_letters,
-    #                                prediction_dict=prediction_dict_samples,
-    #                                file_path=out_file_base + '-samples.csv',
-    #                                prediction_dict_well_names=prediction_dict_well_names)
-    #    save_sigmoid_prediction_csv(experiment_name=current_experiment, all_well_letters=all_well_letters,
-    #                                prediction_dict=prediction_dict_bags,
-    #                                file_path=out_file_base + '-bags.csv',
-    #                                prediction_dict_well_names=prediction_dict_well_names)
-    #
-    #    # Saving preview dose response graph
-    #    x_ticks_angle = 15
-    #    x_ticks_font_size = 10
-    #    save_sigmoid_prediction_img(out_file_base + '-bags.png', prediction_dict=prediction_dict_bags,
-    #                                title='Dose Response: ' + current_experiment + ': ' + 'Whole Well',
-    #                                prediction_dict_well_names=prediction_dict_well_names,
-    #                                x_ticks_angle=x_ticks_angle, x_ticks_font_size=x_ticks_font_size)
-    #    save_sigmoid_prediction_img(out_file_base + '-samples.png', prediction_dict=prediction_dict_samples,
-    #                                title='Dose Response: ' + current_experiment + ': ' + 'Samples',
-    #                                prediction_dict_well_names=prediction_dict_well_names,
-    #                                x_ticks_angle=x_ticks_angle, x_ticks_font_size=x_ticks_font_size)
-
-    print('Finished predictions for dir: ' + out_dir)
+    log.write('Finished predictions for dir: ' + out_dir)
     del y_hats, y_preds, y_samples_pred, _, all_attentions, original_bag_indices
 
 
@@ -438,24 +406,26 @@ def generate_experiment_prediction_holders(X: [np.ndarray], experiment_names: [s
 
 def main():
     print('Predicting and creating a Dose Response curve for a whole bag.')
-    debug = False
-    model = None
+    debug = True
+    model_path = None
     image_folder = None
 
-    model = default_out_dir_unix_base + os.sep + 'hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
+    model_path = default_out_dir_unix_base + os.sep + 'hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
     if sys.platform == 'win32':
         image_folder = paths.nucleus_predictions_image_folder_win
         current_global_log_dir = 'U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\'
         log.add_file('U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\all_logs.txt')
-        debug = True
-        model = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\'
+        model_path = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\'
     else:
-        current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log/linux/'
+        model_path = '/mil/oligo-diff/models/linux/hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
+        current_global_log_dir = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65'
         image_folder = paths.nucleus_predictions_image_folder_unix
+        debug = False
 
+    assert os.path.exists(model_path)
     if debug:
         predict_path(
-            model_save_path=model,
+            model_save_path=model_path,
             global_log_dir=current_global_log_dir,
             checkpoint_file='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\hnm\\model_best.h5',
             bag_paths=debug_prediction_dirs_win,
@@ -463,22 +433,22 @@ def main():
             out_dir='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\debug_predictions\\',
             gpu_enabled=False, normalize_enum=7, max_workers=4)
     elif sys.platform == 'win32':
-        for data_dir in omnisphero_mil.all_source_dirs_win:
-            predict_path(model_save_path=model,
+        for prediction_dir in paths.all_prediction_dirs_win:
+            predict_path(model_save_path=model_path,
                          global_log_dir=current_global_log_dir,
                          checkpoint_file='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\hnm\\model_best.h5',
-                         out_dir=model + 'predictions\\',
-                         bag_paths=[data_dir],
+                         out_dir=model_path + 'predictions-sigmoid\\',
+                         bag_paths=[prediction_dir],
                          image_folder=image_folder,
                          gpu_enabled=False, normalize_enum=7, max_workers=6)
     else:
         print('Predicting linux batches')
         # checkpoint_file = '/bph/puredata4/bioinfdata/work/OmniSphero/mil/oligo-diff/models/linux/hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
-        checkpoint_file = model + 'hnm/model_best.h5'
-        for data_dir in [debug_prediction_dirs_unix]:
+        checkpoint_file = model_path + os.sep + 'hnm/model_best.h5'
+        for prediction_dir in debug_prediction_dirs_unix:
             try:
-                predict_path(checkpoint_file=checkpoint_file, model_save_path=model, bag_paths=data_dir,
-                             out_dir=model + 'predictions-linux/',
+                predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path, bag_paths=[prediction_dir],
+                             out_dir=model_path + 'predictions-sigmoid-linux/',
                              global_log_dir=current_global_log_dir,
                              image_folder=image_folder,
                              gpu_enabled=False, normalize_enum=7, max_workers=20)

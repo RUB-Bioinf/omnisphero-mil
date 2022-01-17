@@ -24,12 +24,33 @@ If you run this pipeline in a docker, make sure to run ``R`` also inside that do
 
 
 ### Setting up R
+
+To connect python to `R`, run this command to install the required library:
+````
+$ pip install pyRserve
+````
+
+## Installing R
+
+On a windows device, make sure to download and install ``R``.
+
+On a linux device, run these commands in the terminal:
+````
+$ apt update
+$ apt upgrade
+$ sudo apt install r-base
+````
+You can now run `R` by typing `$ R`.
+
+## Connecting a running python instance to R
+
 Make sure to set up a ``R`` workspace before using this pipeline.
 This is usually done inside a different terminal than the _python_ script.
 Follow these steps to set up such an environment:
 
 ````
 $ R
+$ install.packages("drc") # Not needed if already installed
 $ install.packages("Rserve") # Not needed if already installed
 $ library(Rserve)
 $ Rserve()

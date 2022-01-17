@@ -17,6 +17,7 @@ from torch.utils.data import DataLoader
 import hardware
 import loader
 import mil_metrics
+import r
 import torch_callbacks
 from util import log
 from util import utils
@@ -386,6 +387,7 @@ def choose_optimizer(model: OmniSpheroMil, selection: str) -> Optimizer:
 def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: OmniSpheroDataLoader,
         validation_data: OmniSpheroDataLoader, out_dir_base: str, callbacks: [torch_callbacks.BaseTorchCallback],
         checkpoint_interval: int = 1, clamp_min: float = None, clamp_max: float = None,
+        data_loader_sigmoid: OmniSpheroDataLoader = None, X_metadata_sigmoid: [np.ndarray] = None,
         augment_training_data: bool = False, augment_validation_data: bool = False):
     """ Trains a model on the previously preprocessed train and val sets.
     Also calls evaluate in the validation phase of each epoch.
@@ -393,14 +395,17 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     best_loss = sys.float_info.max
     history = []
     history_keys = ['train_loss', 'train_acc', 'val_acc', 'val_loss', 'train_roc_auc', 'val_roc_auc',
-                    'train_dice_score', 'val_dice_score']
+                    'val_mean_sigmoid_scores', 'train_dice_score', 'val_dice_score']
+    history_keys.sort()
 
     checkpoint_out_dir = out_dir_base + 'checkpoints' + os.sep
     metrics_dir_live = out_dir_base + training_metrics_live_dir_name + os.sep
     epoch_data_dir_live = metrics_dir_live + 'epochs_live' + os.sep
+    sigmoid_data_dir_live = metrics_dir_live + 'sigmoid_live' + os.sep
     os.makedirs(checkpoint_out_dir, exist_ok=True)
     os.makedirs(metrics_dir_live, exist_ok=True)
     os.makedirs(epoch_data_dir_live, exist_ok=True)
+    os.makedirs(sigmoid_data_dir_live, exist_ok=True)
 
     # Writing Live Loss CSV
     batch_headers = ';'.join(
@@ -408,6 +413,15 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     batch_losses_file = metrics_dir_live + 'batch_losses.csv'
     f = open(batch_losses_file, 'w')
     f.write('Epoch;' + batch_headers)
+    f.close()
+
+    batch_sigmoid_evaluation_file = sigmoid_data_dir_live + 'sigmoid_evaluations.csv'
+    f = open(batch_sigmoid_evaluation_file, 'w')
+    f.write('Epoch;Experiments')
+    f.close()
+    batch_sigmoid_evaluation_error_file = sigmoid_data_dir_live + 'sigmoid_evaluations_errors.txt'
+    f = open(batch_sigmoid_evaluation_error_file, 'w')
+    f.write('Errors:')
     f.close()
 
     # Writing Live Tile Accuracy CSV
@@ -534,6 +548,48 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                                                             clamp_min=clamp_min,
                                                             apply_data_augmentation=augment_validation_data)  # returns a results dict for metrics
 
+        # Sigmoid evaluation for this epoch
+        val_mean_sigmoid_scores = float('nan')
+        if r.has_connection() and X_metadata_sigmoid is not None and data_loader_sigmoid is not None:
+            y_hats_sigmoid, _, _, _, _, _, _, _ = get_predictions(model, data_loader_sigmoid)
+            sigmoid_score_map: {float} = r.prediction_sigmoid_evaluation(X_metadata=X_metadata_sigmoid,
+                                                                         y_pred=y_hats_sigmoid,
+                                                                         file_name_suffix='-epoch' + str(epoch),
+                                                                         out_dir=sigmoid_data_dir_live)
+
+            sigmoid_mean = float('nan')
+            try:
+                sigmoid_mean = np.mean(list(sigmoid_score_map.values()))
+
+                f = open(batch_sigmoid_evaluation_file, 'a')
+                f.write('\n' + str(epoch))
+                for key in sigmoid_score_map.keys():
+                    f.write(';' + str(sigmoid_score_map[key]))
+                f.write(';' + str(sigmoid_mean))
+
+                val_mean_sigmoid_scores = sigmoid_mean
+                f.close()
+            except Exception as e:
+                err_text = 'FATAL ERROR: Sigmoid evaluation failed! Reason: "' + str(e) + '"'
+                log.write(err_text)
+                f = open(batch_sigmoid_evaluation_error_file, 'a')
+                f.write('\nEpoch: ' + str(epoch) + ' - "' + str(e) + '"')
+                f.close()
+
+            del y_hats_sigmoid, sigmoid_mean
+        else:
+            log.write(
+                'Warning: Not running sigmoid evaluation. Data missing or no rServe connection.Connected: ' + str(
+                    r.has_connection()))
+            log.write('X_metadata_sigmoid is None: ' + str(X_metadata_sigmoid is None))
+            log.write('data_loader_sigmoid is None: ' + str(data_loader_sigmoid is None))
+            f = open(batch_sigmoid_evaluation_error_file, 'a')
+            f.write('\nEpoch: ' + str(epoch) + ' - Data missing or no rServe connection. Connected: ' + str(
+                r.has_connection()) + '. X_metadata_sigmoid is None: ' + str(
+                X_metadata_sigmoid is None) + '. data_loader_sigmoid is None: ' + str(data_loader_sigmoid is None))
+            f.close()
+
+        # ROC curve for this epoch
         fpr, tpr, thresholds = mil_metrics.binary_roc_curve(all_labels, predicted_labels)
         roc_auc = float('NaN')
         try:
@@ -542,6 +598,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             log.write(str(e))
         result['train_roc_auc'] = roc_auc
 
+        result['val_mean_sigmoid_scores'] = val_mean_sigmoid_scores
         result['train_FP'] = train_FP
         result['train_TP'] = train_TP
         result['train_FN'] = train_FN
@@ -563,10 +620,10 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         history.append(result)
         log.write(
             'Epoch {}/{}: Train Loss: {:.4f}, Train Acc (Bags): {:.4f}, Val Loss: {:.4f}, '
-            'Val Acc (Bags): {:.4f}, Train AUC: {:.4f}, Val AUC: {:.4f}. Duration: {}. ETA: {}'.format(
+            'Val Acc (Bags): {:.4f},Sigmoid Scores: {:.4f} Train AUC: {:.4f}, Val AUC: {:.4f}. Duration: {}. ETA: {}'.format(
                 epoch, epochs, result['train_loss'], result['train_acc'], result['val_loss'],
-                result['val_acc'], result['train_roc_auc'], result['val_roc_auc'], time_diff,
-                eta_timestamp))
+                result['val_acc'], result['val_mean_sigmoid_scores'], result['train_roc_auc'], result['val_roc_auc'],
+                time_diff, eta_timestamp))
 
         # Notifying Callbacks
         for i in range(len(callbacks)):
@@ -591,7 +648,8 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             mil_metrics.plot_accuracy_tiles(history, metrics_dir_live, include_raw=False, include_tikz=False)
             mil_metrics.plot_losses(history, metrics_dir_live, include_raw=False, include_tikz=False)
             mil_metrics.plot_accuracies(history, metrics_dir_live, include_tikz=False)
-            mil_metrics.plot_dice_scores(history, metrics_dir_live, include_tikz=True)
+            mil_metrics.plot_dice_scores(history, metrics_dir_live, include_tikz=False)
+            mil_metrics.plot_sigmoid_scores(history, metrics_dir_live, include_tikz=False)
             mil_metrics.plot_binary_roc_curves(history, metrics_dir_live, include_tikz=False)
         except Exception as e:
             print('Failed to write metrics for this epoch.')

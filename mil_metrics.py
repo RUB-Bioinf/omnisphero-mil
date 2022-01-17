@@ -80,6 +80,10 @@ def plot_dice_scores(history, save_path: str, include_raw: bool = False, include
     plot_metric(history, 'val_dice_score', save_path, 'train_dice_score', include_tikz=include_tikz, clamp=clamp)
 
 
+def plot_sigmoid_scores(history, save_path: str, include_tikz: bool = False):
+    plot_metric(history, 'val_mean_sigmoid_scores', save_path, 'val_mean_sigmoid_scores', include_tikz=include_tikz, clamp=None)
+
+
 def plot_losses(history, save_path: str, include_raw: bool = False, include_tikz: bool = False, clamp: float = None):
     ''' takes a history object and plots the losses
     '''
@@ -198,6 +202,8 @@ def _get_metric_title(metric_name: str):
     metric_name = metric_name.replace('val_', '')
     metric_name = metric_name.replace('train_', '')
 
+    if metric_name == 'mean_sigmoid_scores':
+        metric_name = 'Sigmoid Scores'
     if metric_name == 'acc':
         metric_name = 'Accuracy (Bags)'
     if metric_name == 'acc_tiles':
@@ -720,6 +726,8 @@ def save_sigmoid_prediction_csv(experiment_name: str, file_path: str, all_well_l
     if verbose:
         log.write('Writing prediction CSV: ' + file_path)
 
+    log.write('DeprecationWarning: save_sigmoid_prediction_csv() is unused!')
+
     # Saving the results to a CSV file
     f = open(file_path, 'w')
     f.write(experiment_name + ';')
@@ -743,6 +751,8 @@ def save_sigmoid_prediction_img(file_path: str, title: str, prediction_dict: dic
                                 include_curve_fit: bool = True, include_ideal_fit: bool = True,
                                 dpi: int = 900, x_ticks_angle: int = 30, x_ticks_font_size: int = 4,
                                 verbose: bool = False):
+    log.write('DeprecationWarning: save_sigmoid_prediction_img() is unused!')
+
     # Writing the results as dose-response png images
     if verbose:
         log.write('Rendering dose response curve: "' + title + '" at ' + file_path)

@@ -9,7 +9,7 @@ r_test_file = 'imports' + os.sep + 'r' + os.sep + 'sigmoid_evaluation.R'
 assert os.path.exists(r_test_file)
 
 # r test file on the prodi drive, available to unix devices
-prodi_r_test_file = '/mil/test_python.R'
+prodi_r_test_file = '/mil/sigmoid_evaluation.R'
 if not os.name == 'nt':
     assert os.path.exists(prodi_r_test_file)
 
@@ -18,15 +18,20 @@ r_test_file = os.path.abspath(r_test_file)
 prodi_r_test_file = os.path.abspath(prodi_r_test_file)
 
 
-def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_filename: str):
+def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_filename: str,
+                              save_sigmoid_plot: bool = True, verbose: bool = False):
     assert len(doses) == len(responses)
     assert len(doses) > 1
     import pyRserve
+
+    out_dir = os.path.dirname(out_image_filename)
+    os.makedirs(out_dir, exist_ok=True)
     conn = pyRserve.connect()
 
     # Testing if we can receive pi from R correctly
     pi = conn.eval('pi')
-    log.write('According to Rserve, "PI" = ' + str(pi))
+    if verbose:
+        log.write('According to Rserve, "PI" = ' + str(pi))
 
     doses_parsed = str(doses)[1:-1]
     responses_parsed = str(responses)[1:-1]
@@ -38,7 +43,9 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
         r_test_file_local = r_test_file.replace('\\', '\\\\')
     else:
         r_test_file_local = prodi_r_test_file
-    print('Executing file: ' + r_test_file_local)
+
+    if verbose:
+        log.write('Executing file: ' + r_test_file_local)
 
     try:
         # Setting input variables
@@ -49,6 +56,10 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
 
         conn.eval('dose <- c(' + doses_parsed + ')')
         conn.eval('resp <- c(' + responses_parsed + ')')
+        if save_sigmoid_plot:
+            conn.eval('plot_curve <- T')
+        else:
+            conn.eval('plot_curve <- F')
 
         conn.eval('filename <- \'' + out_image_filename + '\'')
 
@@ -61,7 +72,8 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
         log.write('R failed to evaluate the sigmoid evaluation!')
         log.write(str(e))
 
-    log.write('Sigmoid score: ' + str(final_score))
+    if verbose:
+        log.write('Sigmoid score: ' + str(final_score))
 
     try:
         conn.close()
@@ -73,15 +85,16 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
     return final_score
 
 
-def prediction_sigmoid_evaluation(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pred: [np.ndarray], out_dir: str):
-    print('Running sigmoid prediction on predictions')
-    os.makedirs(out_dir,exist_ok=True)
-    assert len(X_raw) == len(X_metadata)
-    assert len(X_raw) == len(y_pred)
+def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarray], out_dir: str,
+                                  file_name_suffix: str = None, verbose: bool = False):
+    if verbose:
+        log.write('Running sigmoid prediction on predictions')
+    os.makedirs(out_dir, exist_ok=True)
+    assert len(X_metadata) == len(y_pred)
 
     # Remapping predictions so they can be evaluated
     experiment_prediction_map = {}
-    for (X_raw_current, X_metadata_current, y_pred_current) in zip(X_raw, X_metadata, y_pred):
+    for (X_metadata_current, y_pred_current) in zip(X_metadata, y_pred):
         y_pred_current: float = float(y_pred_current)
         metadata: TileMetadata = X_metadata_current[0]
 
@@ -99,8 +112,8 @@ def prediction_sigmoid_evaluation(X_raw: [np.ndarray], X_metadata: [TileMetadata
 
         # Adding the current prediction to the list
         well_index_map[well_number].append(y_pred_current)
-        del X_raw_current, X_metadata_current, y_pred_current
-    del X_raw, X_metadata, y_pred
+        del X_metadata_current, y_pred_current
+    del X_metadata, y_pred
 
     # Iterating over the experiment metadata so we can run the sigmoid evaluations
     sigmoid_score_map = {}
@@ -117,10 +130,15 @@ def prediction_sigmoid_evaluation(X_raw: [np.ndarray], X_metadata: [TileMetadata
 
         log.write(
             'Running sigmoid evaluation for ' + experiment_name + ' with ' + str(len(responses)) + ' total responses.')
-        out_image_filename = out_dir + os.sep + experiment_name + '-sigmoid.png'
-        sigmoid_score = pooled_sigmoid_evaluation(doses=doses, responses=responses,
+        out_image_filename = out_dir + os.sep + experiment_name + '-sigmoid'
+        if file_name_suffix is not None:
+            out_image_filename = out_image_filename + file_name_suffix
+        out_image_filename = out_image_filename + '.png'
+
+        sigmoid_score = pooled_sigmoid_evaluation(doses=doses, responses=responses, verbose=verbose,
                                                   out_image_filename=out_image_filename)
         sigmoid_score_map[experiment_name] = sigmoid_score
+        log.write('Sigmoid score for ' + experiment_name + ': ' + str(sigmoid_score))
 
     return sigmoid_score_map
 

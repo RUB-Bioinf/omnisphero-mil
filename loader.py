@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import mil_metrics
+import r
 from util import log
 from util.sample_preview import z_score_to_rgb
 from util.utils import gct
@@ -55,7 +56,6 @@ normalize_enum_descriptions = [
     ' 9: Normalizing first, according to [4] and z-scoring afterwards according to [5]',
     '10: Normalizing first, according to [4] and z-scoring afterwards according to [6]'
 ]
-
 
 default_tile_constraints_none = [0, 0, 0]
 default_tile_constraints_nuclei = [1, 0, 0]
@@ -327,6 +327,9 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
     assert len(X) == len(experiment_names)
     assert len(X) == len(well_names)
     assert len(X) == len(X_metadata)
+
+    # In case we have a R terminal running, we should keep it busy so it does not time out
+    r.has_connection()
 
     return X, y, y_tiles, X_raw, X_metadata, bag_names, experiment_names, well_names, error_list, loaded_files_list
 
@@ -1050,8 +1053,8 @@ def np_std(n: np.ndarray, axis=None, mean: float = None) -> np.ndarray:
 # Takes the read data and labes and creates new bags, so that bags with label 1 contain PERCENTAGE% tiles with label
 # 1, while the rest is label 0. This is done by merging two adjacent input bags together.
 # Yes, this discards a lot of tiles
-def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], bag_names: [str], repack_percentage: float = 0.05,
-                      positive_bag_min_samples: int = None):
+def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], bag_names: [str],
+                      repack_percentage: float = 0.05, positive_bag_min_samples: int = None):
     new_x = []
     new_x_r = []
     new_y = []
@@ -1103,13 +1106,12 @@ def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], bag_names:
         positive_bag_raw = X_raw[positive_indices[k]]
         negative_bag_name = bag_names[negative_indices[i]]
         positive_bag_name = bag_names[positive_indices[k]]
-        line_print('Trying to repack negative bag "' + negative_bag_name + '" (Index ' + str(i + 1) + '/' + str(
-            len(negative_indices)) + ') and pairing it with positive bag "' + positive_bag_name + '" (Index ' + str(
-            k + 1) + '/' + str(len(positive_indices)) + ').')
-        print('')
         del partner_label, current_label
 
         if i % 2 == 0:
+            log.write('Repacking negative bag "' + negative_bag_name + '" (Index ' + str(i + 1) + '/' + str(
+                len(negative_indices)) + ') by leaving it unchanged.')
+
             # This new entry is all label 0. Thus, nothing needs to change.
             new_x.append(negative_bag)
             new_x_r.append(negative_bag_raw)
@@ -1117,6 +1119,10 @@ def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], bag_names:
             new_bag_names.append(negative_bag_name)
             new_y_tiles.append([0 for i in range(negative_bag.shape[0])])
         else:
+            log.write('Repacking negative bag "' + negative_bag_name + '" (Index ' + str(i + 1) + '/' + str(
+                len(negative_indices)) + ') and pairing it with positive bag "' + positive_bag_name + '" (Index ' + str(
+                k + 1) + '/' + str(len(positive_indices)) + ').')
+
             # This bag will have label 1.
             # As such, we will take all zero-label samples from the current bag and add random PARAM-% samples from the positive bag.
             original_count = negative_bag.shape[0]

@@ -1,3 +1,5 @@
+import math
+
 import nucleus_predictions
 from mil_metrics import fuse_image_tiles
 from util import log
@@ -67,8 +69,11 @@ def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pr
             assert current_raw_tile.shape == (tile_w, tile_h, 3)
             current_raw_tile = current_raw_tile.astype(np.uint8)
 
-            pos_x = current_raw_metadata.pos_x
-            pos_y = current_raw_metadata.pos_y
+            pos_x = float(current_raw_metadata.pos_x)
+            pos_y = float(current_raw_metadata.pos_y)
+            assert not math.isnan(pos_x) and not math.isnan(pos_y)
+            # TODO handle this better than assertion
+
             rendered_image[pos_y:pos_y + tile_h, pos_x:pos_x + tile_w] = current_raw_tile
             del pos_x, pos_y, current_raw_tile
 
@@ -185,35 +190,6 @@ def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pr
                    activation_grayscale_overlay_image_detail)
 
     log.write('Finished rendering all attention overlays.')
-
-
-def render_dose_response(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pred: [np.ndarray],
-                         y_pred_binary: [np.ndarray], image_folder: str, input_dim, y_attentions: [np.ndarray] = None,
-                         out_dir: str = None, colormap_name: str = 'jet', dpi: int = 650, overlay_alpha: float = 0.65):
-    os.makedirs(out_dir, exist_ok=True)
-
-    assert input_dim[0] == 3
-    tile_w = input_dim[1]
-    tile_h = input_dim[2]
-    image_height = float('nan')
-    image_width = float('nan')
-    image_height_detail = float('nan')
-    image_width_detail = float('nan')
-    color_map = plt.get_cmap(colormap_name)
-
-    activation_grayscale_overlay_images = {}
-    activation_grayscale_overlay_images_detail = {}
-
-    print('\n')
-    for i in range(len(X_raw)):
-        X_raw_current = X_raw[i]
-        X_metadata_current: [TileMetadata] = X_metadata[i]
-        y_attention_current = y_attentions[i]
-        y_pred_current = float(y_pred[i])
-        y_pred_binary_current = int(y_pred_binary[i])
-        y_attention_current_normalized = y_attention_current / max(y_attention_current)
-        color_bar_min = y_attention_current.min()
-        color_bar_max = y_attention_current.max()
 
 
 def rgb_to_gray(img: np.ndarray, weights_r=0.299, weights_g=0.587, weights_b=0.114):

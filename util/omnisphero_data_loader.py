@@ -53,6 +53,9 @@ class OmniSpheroDataLoader(DataLoader):
             current_X = iter_ds[i][0]
             augmented_X = []
             hash_list.append(hash(current_X.tostring()))
+            # TODO Check DeprecationWarning
+            # DeprecationWarning: tostring() is deprecated. Use tobytes() instead.
+            #   hash_list.append(hash(current_X.tostring()))
 
             for j in range(current_X.shape[0]):
                 current_sample = current_X[j]

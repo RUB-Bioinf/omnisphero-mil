@@ -8,21 +8,32 @@ debug_prediction_dirs_win = [
     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\test_data\\debug_win\\'
 ]
 
+all_prediction_dirs_win = [
+    # New CNN
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux_overlap\\EFB18',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux_overlap\\ELS517',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux_overlap\\ELS637',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux_overlap\\ELS719',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux_overlap\\ELS744',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux_overlap\\ESM36',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux_overlap\\ELS681',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux_overlap\\ELS682'
+]
+
 debug_prediction_dirs_unix = [
     # New CNN
-    '/mil/oligo-diff/training_data/curated_linux/EFB18',
-    '/mil/oligo-diff/training_data/curated_linux/ESM36',
-    '/mil/oligo-diff/training_data/curated_linux/ELS411',
-    '/mil/oligo-diff/training_data/curated_linux/ELS517',
-    '/mil/oligo-diff/training_data/curated_linux/ELS637',
-    '/mil/oligo-diff/training_data/curated_linux/ELS681',
-    '/mil/oligo-diff/training_data/curated_linux/ELS682',
-    '/mil/oligo-diff/training_data/curated_linux/ELS719',
-    '/mil/oligo-diff/training_data/curated_linux/ELS744'
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EFB18',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS517',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS637',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS719',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS744',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ESM36',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS681',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS682'
 ]
 
 nucleus_predictions_image_folder_win = 'U:\\bioinfdata\\work\\OmniSphero\\Bilderordner\\'
-nucleus_predictions_image_folder_unix = ''
+nucleus_predictions_image_folder_unix = '/bilderordner'
 
 if __name__ == '__main__':
     log.write('This class contains all important paths.')
