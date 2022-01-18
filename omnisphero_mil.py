@@ -101,7 +101,6 @@ curated_overlapping_source_dirs_unix = [
 normalize_enum_default = 3
 max_workers_default = 5
 
-
 def train_model(
         # Basic training data params
         training_label: str, source_dirs: [str], image_folder: str,
@@ -124,6 +123,8 @@ def train_model(
         label_1_well_indices=loader.default_well_indices_none,
         # Enable data augmentation?
         augment_train: bool = False, augment_validation: bool = False,
+        # Sigmoid Evaluation parameters
+        save_sigmoid_plot_interval: int = 5,
         # What channels are enabled during loading?
         channel_inclusions: [bool] = loader.default_channel_inclusions_all,
         # Training / Validation Split percentages
@@ -176,6 +177,7 @@ def train_model(
     protocol_f.write('\nLoss function: ' + loss_function)
     protocol_f.write('\nDevice ordinals: ' + str(device_ordinals))
     protocol_f.write('\nR - Is pyRserve connection available: ' + str(r.has_connection()))
+    protocol_f.write('\nSaving sigmoid plot interval: ' + str(save_sigmoid_plot_interval))
     protocol_f.write('\nEpochs: ' + str(epochs))
     protocol_f.write('\nShuffle data loader: ' + str(shuffle_data_loaders))
     protocol_f.write('\nMax File-Loader Workers: ' + str(max_workers))
@@ -197,7 +199,7 @@ def train_model(
     protocol_f.write('\nTile constraints explained: Minimum number of x [Nuclei, Oligos, Neurons]')
     protocol_f.write('\nTile Constraints label 0: ' + str(tile_constraints_0))
     protocol_f.write('\nTile Constraints label 1: ' + str(tile_constraints_1))
-    protocol_f.write('\nchannel_inclusions: ' + str(channel_inclusions))
+    protocol_f.write('\nChannel_inclusions: ' + str(channel_inclusions))
 
     global_log_filename = None
     local_log_filename = out_dir + os.sep + 'log.txt'
@@ -206,6 +208,7 @@ def train_model(
         global_log_filename = global_log_dir + os.sep + 'log-' + training_label + '.txt'
         os.makedirs(global_log_dir, exist_ok=True)
         log.add_file(global_log_filename)
+    log.diagnose()
 
     # PREPARING DATA
     protocol_f.write('\n\n == Directories ==')
@@ -529,6 +532,7 @@ def train_model(
                                                              validation_data=validation_dl,
                                                              out_dir_base=out_dir,
                                                              checkpoint_interval=None,
+                                                             save_sigmoid_plot_interval=save_sigmoid_plot_interval,
                                                              data_loader_sigmoid=data_loader_sigmoid,
                                                              X_metadata_sigmoid=X_metadata_sigmoid,
                                                              clamp_min=clamp_min, clamp_max=clamp_max,
@@ -628,6 +632,7 @@ def train_model(
                                                                  out_dir_base=mined_out_dir,
                                                                  data_loader_sigmoid=data_loader_sigmoid,
                                                                  X_metadata_sigmoid=X_metadata_sigmoid,
+                                                                 save_sigmoid_plot_interval=save_sigmoid_plot_interval,
                                                                  checkpoint_interval=None,
                                                                  clamp_min=clamp_min, clamp_max=clamp_max,
                                                                  callbacks=hnm_callbacks)

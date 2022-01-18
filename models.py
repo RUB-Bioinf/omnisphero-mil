@@ -387,8 +387,9 @@ def choose_optimizer(model: OmniSpheroMil, selection: str) -> Optimizer:
 def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: OmniSpheroDataLoader,
         validation_data: OmniSpheroDataLoader, out_dir_base: str, callbacks: [torch_callbacks.BaseTorchCallback],
         checkpoint_interval: int = 1, clamp_min: float = None, clamp_max: float = None,
-        data_loader_sigmoid: OmniSpheroDataLoader = None, X_metadata_sigmoid: [np.ndarray] = None,
-        augment_training_data: bool = False, augment_validation_data: bool = False):
+        save_sigmoid_plot_interval: int = 5, data_loader_sigmoid: OmniSpheroDataLoader = None,
+        X_metadata_sigmoid: [np.ndarray] = None, augment_training_data: bool = False,
+        augment_validation_data: bool = False):
     """ Trains a model on the previously preprocessed train and val sets.
     Also calls evaluate in the validation phase of each epoch.
     """
@@ -402,10 +403,12 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     metrics_dir_live = out_dir_base + training_metrics_live_dir_name + os.sep
     epoch_data_dir_live = metrics_dir_live + 'epochs_live' + os.sep
     sigmoid_data_dir_live = metrics_dir_live + 'sigmoid_live' + os.sep
+    sigmoid_data_dir_live_best = sigmoid_data_dir_live + 'best' + os.sep
     os.makedirs(checkpoint_out_dir, exist_ok=True)
     os.makedirs(metrics_dir_live, exist_ok=True)
     os.makedirs(epoch_data_dir_live, exist_ok=True)
     os.makedirs(sigmoid_data_dir_live, exist_ok=True)
+    os.makedirs(sigmoid_data_dir_live_best, exist_ok=True)
 
     # Writing Live Loss CSV
     batch_headers = ';'.join(
@@ -550,10 +553,13 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
         # Sigmoid evaluation for this epoch
         val_mean_sigmoid_scores = float('nan')
+        save_sigmoid_plot = epoch % save_sigmoid_plot_interval or epoch == 1
+        y_hats_sigmoid = None
         if r.has_connection() and X_metadata_sigmoid is not None and data_loader_sigmoid is not None:
             y_hats_sigmoid, _, _, _, _, _, _, _ = get_predictions(model, data_loader_sigmoid)
             sigmoid_score_map: {float} = r.prediction_sigmoid_evaluation(X_metadata=X_metadata_sigmoid,
                                                                          y_pred=y_hats_sigmoid,
+                                                                         save_sigmoid_plot=save_sigmoid_plot,
                                                                          file_name_suffix='-epoch' + str(epoch),
                                                                          out_dir=sigmoid_data_dir_live)
 
@@ -576,7 +582,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                 f.write('\nEpoch: ' + str(epoch) + ' - "' + str(e) + '"')
                 f.close()
 
-            del y_hats_sigmoid, sigmoid_mean
+            del sigmoid_mean
         else:
             log.write(
                 'Warning: Not running sigmoid evaluation. Data missing or no rServe connection.Connected: ' + str(
@@ -672,6 +678,15 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         if is_best:
             log.write('New best model! Saving...')
             save_model(state, model_save_path_best, verbose=False)
+
+            # Rendering the sigmoid curves again, because of new best performance
+            if r.has_connection() and X_metadata_sigmoid is not None and data_loader_sigmoid is not None and y_hats_sigmoid is not None:
+                r.prediction_sigmoid_evaluation(X_metadata=X_metadata_sigmoid,
+                                                y_pred=y_hats_sigmoid,
+                                                save_sigmoid_plot=True,
+                                                file_name_suffix='-best-epoch' + str(epoch),
+                                                out_dir=sigmoid_data_dir_live_best)
+        del y_hats_sigmoid
 
         if cancel_requested:
             log.write('Model was canceled before reaching all epochs.')

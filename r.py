@@ -58,14 +58,18 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
         conn.eval('resp <- c(' + responses_parsed + ')')
         if save_sigmoid_plot:
             conn.eval('plot_curve <- T')
+            if verbose:
+                log.write('Plotting R curve to: ' + out_image_filename)
         else:
             conn.eval('plot_curve <- F')
+            if verbose:
+                log.write('Not saving the R plot.')
 
         conn.eval('filename <- \'' + out_image_filename + '\'')
 
         # Running the R based code
         conn.eval('source("' + r_test_file_local + '")')
-        final_score = conn.eval('finalScore')
+        final_score = conn.eval('final_Score ')
     except Exception as e:
         final_score = float('nan')
         log.write(' == FATAL ERROR! ==')
@@ -86,6 +90,7 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
 
 
 def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarray], out_dir: str,
+                                  save_sigmoid_plot: bool = False,
                                   file_name_suffix: str = None, verbose: bool = False):
     if verbose:
         log.write('Running sigmoid prediction on predictions')
@@ -136,6 +141,7 @@ def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarra
         out_image_filename = out_image_filename + '.png'
 
         sigmoid_score = pooled_sigmoid_evaluation(doses=doses, responses=responses, verbose=verbose,
+                                                  save_sigmoid_plot=save_sigmoid_plot,
                                                   out_image_filename=out_image_filename)
         sigmoid_score_map[experiment_name] = sigmoid_score
         log.write('Sigmoid score for ' + experiment_name + ': ' + str(sigmoid_score))

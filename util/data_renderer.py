@@ -12,14 +12,14 @@ import matplotlib.pyplot as plt
 
 
 def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pred: [np.ndarray],
-                           y_pred_binary: [np.ndarray],
-                           image_folder: str, input_dim, y_attentions: [np.ndarray] = None, out_dir: str = None,
-                           colormap_name: str = 'jet', dpi: int = 650, overlay_alpha: float = 0.65):
+                           y_pred_binary: [np.ndarray], image_folder: str, input_dim, y_attentions: [np.ndarray] = None,
+                           out_dir: str = None, colormap_name: str = 'jet', dpi: int = 650,
+                           overlay_alpha: float = 0.65):
     os.makedirs(out_dir, exist_ok=True)
 
     assert input_dim[0] == 3
-    tile_w = input_dim[1]
-    tile_h = input_dim[2]
+    tile_w = int(input_dim[1])
+    tile_h = int(input_dim[2])
     image_height = float('nan')
     image_width = float('nan')
     image_height_detail = float('nan')
@@ -59,7 +59,8 @@ def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pr
 
         out_dir_current = out_dir + os.sep + experiment_name + os.sep + well_name + os.sep
         os.makedirs(out_dir_current, exist_ok=True)
-        line_print('Rendering: ' + experiment_name + ' - ' + well_name, include_in_log=True)
+        line_print(str(i) + '/' + str(len(X_raw)) + ' Rendering: ' + experiment_name + ' - ' + well_name,
+                   include_in_log=True)
         rendered_image = np.zeros((image_width, image_height, 3), dtype=np.uint8)
 
         for current_raw_tile, current_raw_metadata in zip(X_raw_current, X_metadata_current):
@@ -69,10 +70,16 @@ def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pr
             assert current_raw_tile.shape == (tile_w, tile_h, 3)
             current_raw_tile = current_raw_tile.astype(np.uint8)
 
-            pos_x = float(current_raw_metadata.pos_x)
-            pos_y = float(current_raw_metadata.pos_y)
+            pos_x = int(current_raw_metadata.pos_x)
+            pos_y = int(current_raw_metadata.pos_y)
             assert not math.isnan(pos_x) and not math.isnan(pos_y)
             # TODO handle this better than assertion
+
+            # Debugging output
+            # log.write('Rendered image size: ' + str(image_width) + 'x' + str(image_height))
+            # log.write('Tile size: ' + str(tile_w) + 'x' + str(tile_h))
+            # log.write('Tile insertion: ' + str(pos_y) + ':' + str(pos_y + tile_h) + ',' + str(pos_x) + ':' + str(
+            #     pos_x + tile_w))
 
             rendered_image[pos_y:pos_y + tile_h, pos_x:pos_x + tile_w] = current_raw_tile
             del pos_x, pos_y, current_raw_tile
@@ -190,6 +197,140 @@ def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pr
                    activation_grayscale_overlay_image_detail)
 
     log.write('Finished rendering all attention overlays.')
+
+
+def render_naive_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sigmoid_score_map: {str} = None,
+                                 out_dir: str = None, dpi: int = 650):
+    # Remapping predictions so they can be evaluated
+    experiment_prediction_map_pooled = {}
+    experiment_prediction_map = {}
+    experiment_well_tick_map = {}
+    all_experiment_names = []
+    all_well_names = []
+    all_well_indices = []
+    all_well_letters = []
+
+    for (X_metadata_current, y_pred_current) in zip(X_metadata, y_pred):
+        y_pred_current: float = float(y_pred_current)
+        metadata: TileMetadata = X_metadata_current[0]
+
+        experiment_name = metadata.experiment_name
+        well_letter = metadata.well_letter
+        well_number = metadata.well_number
+        well = metadata.get_formatted_well()
+
+        if experiment_name not in all_experiment_names:
+            all_experiment_names.append(experiment_name)
+        if well not in all_well_names:
+            all_well_names.append(well)
+        if well_number not in all_well_indices:
+            all_well_indices.append(well_number)
+        if well_letter not in all_well_letters:
+            all_well_letters.append(well_letter)
+
+        if experiment_name not in experiment_prediction_map_pooled.keys():
+            experiment_prediction_map_pooled[experiment_name] = {}
+            experiment_prediction_map[experiment_name] = {}
+            experiment_well_tick_map[experiment_name] = {}
+
+        experiment_well_tick_index_map = experiment_well_tick_map[experiment_name]
+        well_index_map = experiment_prediction_map_pooled[experiment_name]
+        if well_number not in well_index_map.keys():
+            well_index_map[well_number] = []
+            experiment_well_tick_index_map[well_number] = []
+
+        well_map = experiment_prediction_map[experiment_name]
+        well_map[well] = y_pred_current
+
+        # Adding the current prediction to the list
+        well_index_map[well_number].append(y_pred_current)
+        experiment_well_tick_index_map[well_number].append(well)
+        del X_metadata_current, y_pred_current, experiment_name, well_letter, well_number, well
+    all_well_names.sort()
+    all_experiment_names.sort()
+    all_well_letters.sort()
+    all_well_indices.sort()
+
+    # Iterating over the experiment metadata so we can run the sigmoid evaluations
+    for experiment_name in all_experiment_names:
+        experiment_dir = out_dir + os.sep + experiment_name + os.sep
+        os.makedirs(experiment_dir, exist_ok=True)
+
+        # Extracting sigmoid score
+        sigmoid_score: str = str(float('nan'))
+        if sigmoid_score_map is None:
+            sigmoid_score = 'Not evaluated.'
+        if experiment_name in sigmoid_score_map:
+            sigmoid_score = str(sigmoid_score_map[experiment_name])
+        else:
+            sigmoid_score = 'Not available.'
+
+        # writing to CSV
+        out_csv = experiment_dir + os.sep + experiment_name + '-prediction_map.csv'
+        log.write('Saving prediction matrix to: ' + out_csv)
+        f = open(out_csv, 'w')
+        f.write(experiment_name + '[' + str(sigmoid_score) + '];')
+        [f.write(str(i) + ';') for i in all_well_indices]
+        for w in all_well_letters:
+            f.write('\n' + w)
+            current_well = None
+            for i in all_well_indices:
+                f.write(';')
+                current_well = w + str(i)
+                if i < 10:
+                    current_well = w + '0' + str(i)
+
+                if current_well in experiment_prediction_map[experiment_name].keys():
+                    r: float = experiment_prediction_map[experiment_name][current_well]
+                    f.write(str(r))
+            del w, i, current_well
+        f.close()
+        del f, out_csv
+
+        ##########################################
+
+        well_index_map: {} = experiment_prediction_map_pooled[experiment_name]
+        well_map: {} = experiment_prediction_map[experiment_name]
+        well_indices = list(well_index_map.keys())
+        prediction_entries = []
+        prediction_ticks = []
+        y_error = []
+        well_indices.sort()
+        for i in range(len(well_indices)):
+            k = well_indices[i]
+            predictions: [float] = well_index_map[k]
+            predictions = np.array(predictions)
+            prediction_entries.append(np.mean(predictions))
+            ticks: [str] = experiment_well_tick_map[experiment_name][k]
+            ticks.sort()
+            prediction_ticks.append(str(ticks))
+
+            error = np.std(predictions, ddof=1) / np.sqrt(np.size(predictions))
+            y_error.append(error)
+
+        assert len(prediction_entries) == len(well_index_map.keys())
+        assert len(y_error) == len(well_index_map.keys())
+        assert len(prediction_ticks) == len(well_index_map.keys())
+
+        plt.clf()
+        plt.plot(well_indices, prediction_entries, color='blue')
+        plt.errorbar(well_indices, prediction_entries, yerr=y_error, fmt='o', ecolor='orange', color='red')
+        plt.title('Predictions: ' + experiment_name)
+        plt.legend(['Sigmoid Score: ' + sigmoid_score])
+        plt.ylabel('Prediction Score (Mean)')
+        plt.xlabel('Wells')
+        plt.ylim([0.0, 1.05])
+        ax = plt.gca()
+        ax.set_ylim([0.0, 1.05])
+        plt.xticks(well_indices, prediction_ticks, rotation=90)
+
+        plt.tight_layout()
+        plt.autoscale()
+
+        out_plot_name_base = experiment_dir + os.sep + experiment_name + '-predictions_concentration_response'
+        plt.savefig(out_plot_name_base + '.png', dpi=dpi, transparent=True)
+        plt.savefig(out_plot_name_base + '.svg', dpi=dpi, transparent=True)
+        plt.savefig(out_plot_name_base + '.pdf', dpi=dpi)
 
 
 def rgb_to_gray(img: np.ndarray, weights_r=0.299, weights_g=0.587, weights_b=0.114):

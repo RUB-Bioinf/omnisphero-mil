@@ -32,6 +32,7 @@ model_debug_path = "U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\p
 def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], normalize_enum: int, out_dir: str,
                  max_workers: int, image_folder: str, channel_inclusions=loader.default_channel_inclusions_all,
                  tile_constraints=loader.default_tile_constraints_nuclei, global_log_dir: str = None,
+                 sigmoid_verbose: bool = False, render_attention_spheres_enabled: bool = True,
                  gpu_enabled: bool = False, model_optimizer=None):
     start_time = datetime.now()
     log_label = str(start_time.strftime("%d-%m-%Y-%H-%M-%S"))
@@ -44,6 +45,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
         global_log_filename = global_log_dir + os.sep + 'log-predictions-' + log_label + '.txt'
         os.makedirs(global_log_dir, exist_ok=True)
         log.add_file(global_log_filename)
+    log.diagnose()
 
     # Setting up dirs & paths
     log.write('Predicting from paths: ' + str(bag_paths))
@@ -138,6 +140,8 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
             predict_data(model=model, data_loader=data_loader, X_raw=X_raw, X_metadata=X_metadata,
                          experiment_names=experiment_names, input_dim=input_dim, sparse_hist=sparse,
                          normalized_attention=norm, clear_old_data=False, image_folder=image_folder,
+                         sigmoid_verbose=sigmoid_verbose,
+                         render_attention_spheres_enabled=render_attention_spheres_enabled,
                          well_names=well_names, max_workers=max_workers, out_dir=current_out_dir)
     del data_loader, X_raw, X_metadata
 
@@ -152,32 +156,22 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
 def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X_raw: [np.ndarray],
                  X_metadata: [TileMetadata], experiment_names: [str], well_names: [str], image_folder: str,
                  input_dim: (int), max_workers: int, out_dir: str, sparse_hist: bool = True,
-                 normalized_attention: bool = True,
+                 normalized_attention: bool = True, save_sigmoid_plot: bool = True, sigmoid_verbose: bool = False,
+                 render_attention_spheres_enabled: bool = True,
                  clear_old_data: bool = False, dpi: int = 250):
     os.makedirs(out_dir, exist_ok=True)
 
+    log.write('Using image folder: ' + image_folder)
+    log.write('Exists image folder: ' + str(os.path.exists(image_folder)))
+
     log.write('Predicting ' + str(len(X_metadata)) + ' bags.')
+    log.write('Saving predictions to: ' + out_dir)
     y_hats, y_preds, _, _, y_samples_pred, _, all_attentions, original_bag_indices = models.get_predictions(
         model, data_loader)
     log.write('Finished predictions.')
     assert len(X_metadata) == len(all_attentions)
     assert len(X_metadata) == len(X_raw)
     del data_loader, model
-
-    # Evaluating sigmoid performance
-    if r.has_connection():
-        r.prediction_sigmoid_evaluation(X_metadata=X_metadata, y_pred=y_hats, out_dir=out_dir)
-    else:
-        log.write('Not running r evaluation. No connection.')
-
-    # Rendering attention scores
-    log.write('Rendering spheres and predictions.')
-    data_renderer.renderAttentionSpheres(X_raw=X_raw, X_metadata=X_metadata, input_dim=input_dim,
-                                         y_attentions=all_attentions, image_folder=image_folder, y_pred=y_hats,
-                                         y_pred_binary=y_preds,
-                                         out_dir=out_dir)
-    del X_raw
-    log.write('Finished rendering spheres.')
 
     # Setting up result directories and file handles
     experiment_names_unique = list(dict.fromkeys(experiment_names))
@@ -194,6 +188,32 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
             except Exception as e:
                 log.write("Cannot remove path for " + exp + ". Msg: " + str(e))
     del exp
+
+    # Evaluating sigmoid performance using R
+    sigmoid_score_map = None
+    if r.has_connection():
+        sigmoid_score_map = r.prediction_sigmoid_evaluation(X_metadata=X_metadata, y_pred=y_hats, out_dir=out_dir,
+                                                            verbose=sigmoid_verbose,
+                                                            save_sigmoid_plot=save_sigmoid_plot)
+    else:
+        log.write('Not running r evaluation. No connection.')
+
+    # Rendering basic response curves
+    data_renderer.render_naive_response_curves(X_metadata=X_metadata, y_pred=y_hats, out_dir=out_dir,
+                                               sigmoid_score_map=sigmoid_score_map, dpi=int(dpi * 1.337))
+
+    # Rendering attention scores
+    if render_attention_spheres_enabled:
+        log.write('Rendering spheres and predictions.')
+        data_renderer.renderAttentionSpheres(X_raw=X_raw, X_metadata=X_metadata, input_dim=input_dim,
+                                             y_attentions=all_attentions, image_folder=image_folder, y_pred=y_hats,
+                                             y_pred_binary=y_preds,
+                                             out_dir=out_dir)
+    else:
+        log.write('Not rendering spheres and predictions.')
+
+    del X_raw
+    log.write('Finished rendering spheres.')
 
     bars_width_mod = 10000
     if sparse_hist:
@@ -238,7 +258,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
         if normalized_attention:
             all_attentions_used = all_attentions_current_normalized
 
-        # Saving hist
+        # Saving histogram
         plt.clf()
         if sparse_hist:
             n, bins = utils.sparse_hist(a=all_attentions_used)
@@ -407,6 +427,7 @@ def generate_experiment_prediction_holders(X: [np.ndarray], experiment_names: [s
 def main():
     print('Predicting and creating a Dose Response curve for a whole bag.')
     debug = True
+    render_attention_spheres_enabled = False
     model_path = None
     image_folder = None
 
@@ -430,16 +451,20 @@ def main():
             checkpoint_file='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\hnm\\model_best.h5',
             bag_paths=debug_prediction_dirs_win,
             image_folder=image_folder,
+            render_attention_spheres_enabled=render_attention_spheres_enabled,
+            sigmoid_verbose=True,
             out_dir='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\debug_predictions\\',
             gpu_enabled=False, normalize_enum=7, max_workers=4)
     elif sys.platform == 'win32':
         for prediction_dir in paths.all_prediction_dirs_win:
             predict_path(model_save_path=model_path,
                          global_log_dir=current_global_log_dir,
+                         render_attention_spheres_enabled=render_attention_spheres_enabled,
                          checkpoint_file='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\hnm\\model_best.h5',
                          out_dir=model_path + 'predictions-sigmoid\\',
                          bag_paths=[prediction_dir],
                          image_folder=image_folder,
+                         sigmoid_verbose=True,
                          gpu_enabled=False, normalize_enum=7, max_workers=6)
     else:
         print('Predicting linux batches')
@@ -450,6 +475,8 @@ def main():
                 predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path, bag_paths=[prediction_dir],
                              out_dir=model_path + 'predictions-sigmoid-linux/',
                              global_log_dir=current_global_log_dir,
+                             render_attention_spheres_enabled=render_attention_spheres_enabled,
+                             sigmoid_verbose=False,
                              image_folder=image_folder,
                              gpu_enabled=False, normalize_enum=7, max_workers=20)
             except Exception as e:

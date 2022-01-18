@@ -3,7 +3,8 @@ from pathlib import Path
 
 from util.utils import gct
 
-_log_files = []
+global _log_files
+_log_files: [str] = []
 
 
 def add_file(filename: str):
@@ -59,6 +60,15 @@ def write(output, print_to_console: bool = True, include_timestamp: bool = True,
             f.close()
 
 
+def diagnose():
+    global _log_files
+    # Diagnosing log files
+    write('Diagnosing log files.')
+    write('Number of log files: ' + str(len(_log_files)))
+    for file in _log_files:
+        write('Logging to: ' + str(file))
+
+
 def main():
     global _log_files
     write('Testing the "log" functions.')
@@ -66,6 +76,8 @@ def main():
     if len(_log_files) == 0:
         add_file('test_log.txt')
     write('This is a test log.')
+    diagnose()
+    clear_files()
 
 
 if __name__ == "__main__":
