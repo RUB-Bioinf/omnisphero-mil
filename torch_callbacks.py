@@ -90,9 +90,11 @@ class EarlyStopping(BaseTorchCallback):
 
 class UnreasonableLossCallback(BaseTorchCallback):
 
-    def __init__(self, loss_max: float = 15.0):
+    def __init__(self, loss_max: float = 15.0, tolerance: int = 15):
         super().__init__()
         self.loss_max = loss_max
+        self.tolerance = tolerance
+        self.irrational_epochs_count = 0
 
     def on_epoch_finished(self, model, epoch: int, epoch_result, history):
         super().on_epoch_finished(model, epoch, epoch_result, history)
@@ -100,11 +102,21 @@ class UnreasonableLossCallback(BaseTorchCallback):
         loss = epoch_result['train_loss']
 
         if val_loss > self.loss_max or loss > self.loss_max:
-            log.write('The current loss has exceeded its maximum! Aborting training!!')
-            self.request_cancellation()
+            self.irrational_epochs_count = self.irrational_epochs_count + 1
+            log.write('The current loss has exceeded its maximum! Irrational spree: ' + str(
+                self.irrational_epochs_count) + '/' + str(self.tolerance))
+
+            if self.irrational_epochs_count >= self.tolerance:
+                log.write('The spree has exceeded the tolerance. Aborting training.')
+                self.request_cancellation()
+        else:
+            self.irrational_epochs_count = 0
+
+    def reset(self):
+        self.irrational_epochs_count = 0
 
     def _describe(self) -> str:
-        return 'Unreasonable Loss. Max Loss: "' + str(self.loss_max)
+        return 'Unreasonable Loss. Max Loss: "' + str(self.loss_max) + ' for ' + str(self.tolerance) + ' epochs.'
 
 
 if __name__ == "__main__":

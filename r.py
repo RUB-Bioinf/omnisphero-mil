@@ -1,3 +1,4 @@
+import math
 import os
 import numpy as np
 from util import log
@@ -69,12 +70,36 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
 
         # Running the R based code
         conn.eval('source("' + r_test_file_local + '")')
-        final_score = conn.eval('final_Score ')
+
+        # extracting results
+        final_score = conn.eval('final_Score')
+        plot_data = conn.eval('plot_data')
+        estimate_plot = conn.eval('estimate_data')
+
+        # Extracting sigmoid fitted curve
     except Exception as e:
         final_score = float('nan')
+        plot_data = None
+        estimate_plot = None
         log.write(' == FATAL ERROR! ==')
         log.write('R failed to evaluate the sigmoid evaluation!')
         log.write(str(e))
+
+    # Extracting estimate data
+    if estimate_plot is not None:
+        try:
+            estimate_plot = np.asarray(estimate_plot, dtype=np.float64)
+            estimate_plot = np.asarray([e[0] for e in estimate_plot])
+        except Exception as e:
+            estimate_plot = None
+            log.write(' == FATAL ERROR! ==')
+            log.write('Failed to extract the curve fitted values!')
+            log.write(str(e))
+
+    # Checking if final score is nan, so the plot data is set to None
+    if math.isnan(final_score):
+        estimate_plot = None
+        plot_data = None
 
     if verbose:
         log.write('Sigmoid score: ' + str(final_score))
@@ -86,7 +111,7 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
         log.write('Warning: Failed to close R connection.')
         log.write(str(e))
 
-    return final_score
+    return final_score, estimate_plot, plot_data
 
 
 def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarray], out_dir: str,
@@ -122,6 +147,8 @@ def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarra
 
     # Iterating over the experiment metadata so we can run the sigmoid evaluations
     sigmoid_score_map = {}
+    sigmoid_plot_estimation_map = {}
+    sigmoid_plot_data_map = {}
     for experiment_name in experiment_prediction_map.keys():
         well_index_map = experiment_prediction_map[experiment_name]
 
@@ -140,13 +167,16 @@ def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarra
             out_image_filename = out_image_filename + file_name_suffix
         out_image_filename = out_image_filename + '.png'
 
-        sigmoid_score = pooled_sigmoid_evaluation(doses=doses, responses=responses, verbose=verbose,
-                                                  save_sigmoid_plot=save_sigmoid_plot,
-                                                  out_image_filename=out_image_filename)
+        sigmoid_score, estimate_plot, plot_data = pooled_sigmoid_evaluation(doses=doses, responses=responses,
+                                                                            verbose=verbose,
+                                                                            save_sigmoid_plot=save_sigmoid_plot,
+                                                                            out_image_filename=out_image_filename)
         sigmoid_score_map[experiment_name] = sigmoid_score
+        sigmoid_plot_estimation_map[experiment_name] = estimate_plot
+        sigmoid_plot_data_map[experiment_name] = plot_data
         log.write('Sigmoid score for ' + experiment_name + ': ' + str(sigmoid_score))
 
-    return sigmoid_score_map
+    return sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map
 
 
 def has_connection() -> bool:

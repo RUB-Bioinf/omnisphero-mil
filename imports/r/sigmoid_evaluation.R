@@ -101,16 +101,31 @@ plot_drm_object <- function() {
               0)) #axis ticks distance
   plot(drm_object,
        type = "all",
-       ylim = c(0, 150), #min and max values of y axis
+       ylim = c(0, 1.5), #min and max values of y axis
        cex.main = 2, #size of title
        lwd = 2, #curve line width
        cex.lab = 2, #size of axis lable
        cex.axis = 1.5, #size of axis numbers
        pch = 19, #type of data points
        cex = 1, #size of data points
-       main = paste(finalScore) #text for title
+       main = paste(final_Score) #text for title
   )
   dev.off() #close plotting device
+}
+
+
+# CURVE GRID VALUE FUNCTION --------------------------------------------------------------------------------------------------------------
+#this function simply plots the fit and data as png file
+#the global paramater 'filename' determines the output path and filename
+
+get_object_griddata <- function() {
+  dev.new()
+  plot_data <- plot(drm_object,
+                    gridsize = 100
+  )
+  colnames(plot_data)[2] <- "fit_model_response"
+  dev.off()
+  return(plot_data)
 }
 
 
@@ -125,27 +140,47 @@ if (inherits(possibleError, "error")) {
 if (typeof(drm_object) != 'list') { #if it failed
   print("Curve fitting failed: No model could be fitted to the data.")
 }else {
-
   #execute fit model evaluation function and catch error if occured
   possibleError <- tryCatch( #Saving plot as png if possible
     final_Score <- evaluate_fit(),
     error = function(e) e
   )
-  if (inherits(possibleError, "error")) {
+  if (inherits(possibleError, "error")) { #if it failed
     print(paste("Fit model evaluation failed:", possibleError))
   }else {
-
     #execute fit model plotting function and catch error if occured
     if (plot_curve) { #if input boolean is true
       possibleError <- tryCatch( #Saving plot as png if possible
         plot_drm_object(),
         error = function(e) e
       )
-      if (inherits(possibleError, "error")) {
+      if (inherits(possibleError, "error")) { #if it failed
         print(paste("Plot failed:", possibleError))
-      } #if it failed
+      }
     }
   }
+}
+
+
+#try to get the fit model grid data from a plot
+possibleError <- tryCatch(
+  plot_data <- get_object_griddata,
+  error = function(e) e
+)
+if (inherits(possibleError, "error")) { #if it failed
+  print(paste("Getting grid data from plot failed:", possibleError))
+}
+
+
+#try to get the model estimates for all doses from model parameter prediction
+possibleError <- tryCatch(
+  estimate_data <- predict(drm_object, se.fit = FALSE,
+                           interval = c("prediction"),
+                           level = 0.95, pava = FALSE),
+  error = function(e) e
+)
+if (inherits(possibleError, "error")) { #if it failed
+  print(paste("Getting model estimates from predict failed:", possibleError))
 }
 
 

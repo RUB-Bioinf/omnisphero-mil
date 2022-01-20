@@ -19,6 +19,7 @@ import loader
 import mil_metrics
 import r
 import torch_callbacks
+from util import data_renderer
 from util import log
 from util import utils
 from util.omnisphero_data_loader import OmniSpheroDataLoader
@@ -404,11 +405,15 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     epoch_data_dir_live = metrics_dir_live + 'epochs_live' + os.sep
     sigmoid_data_dir_live = metrics_dir_live + 'sigmoid_live' + os.sep
     sigmoid_data_dir_live_best = sigmoid_data_dir_live + 'best' + os.sep
+    sigmoid_data_dir_naive_live = sigmoid_data_dir_live + 'naive' + os.sep
+    sigmoid_data_dir_naive_live_best = sigmoid_data_dir_naive_live + 'best' + os.sep
     os.makedirs(checkpoint_out_dir, exist_ok=True)
     os.makedirs(metrics_dir_live, exist_ok=True)
     os.makedirs(epoch_data_dir_live, exist_ok=True)
     os.makedirs(sigmoid_data_dir_live, exist_ok=True)
     os.makedirs(sigmoid_data_dir_live_best, exist_ok=True)
+    os.makedirs(sigmoid_data_dir_naive_live, exist_ok=True)
+    os.makedirs(sigmoid_data_dir_naive_live_best, exist_ok=True)
 
     # Writing Live Loss CSV
     batch_headers = ';'.join(
@@ -418,9 +423,13 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     f.write('Epoch;' + batch_headers)
     f.close()
 
+    sigmoid_experiment_names: [str] = list(dict.fromkeys([m[0].experiment_name for m in X_metadata_sigmoid]))
     batch_sigmoid_evaluation_file = sigmoid_data_dir_live + 'sigmoid_evaluations.csv'
     f = open(batch_sigmoid_evaluation_file, 'w')
-    f.write('Epoch;Experiments')
+    f.write('Epoch;')
+    for sigmoid_experiment in sigmoid_experiment_names:
+        f.write(sigmoid_experiment + ';')
+        del sigmoid_experiment
     f.close()
     batch_sigmoid_evaluation_error_file = sigmoid_data_dir_live + 'sigmoid_evaluations_errors.txt'
     f = open(batch_sigmoid_evaluation_error_file, 'w')
@@ -553,19 +562,44 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
         # Sigmoid evaluation for this epoch
         val_mean_sigmoid_scores = float('nan')
-        save_sigmoid_plot = epoch % save_sigmoid_plot_interval or epoch == 1
+        save_sigmoid_plot = epoch % save_sigmoid_plot_interval == 0 or epoch == 1
         y_hats_sigmoid = None
         if r.has_connection() and X_metadata_sigmoid is not None and data_loader_sigmoid is not None:
             y_hats_sigmoid, _, _, _, _, _, _, _ = get_predictions(model, data_loader_sigmoid)
-            sigmoid_score_map: {float} = r.prediction_sigmoid_evaluation(X_metadata=X_metadata_sigmoid,
-                                                                         y_pred=y_hats_sigmoid,
-                                                                         save_sigmoid_plot=save_sigmoid_plot,
-                                                                         file_name_suffix='-epoch' + str(epoch),
-                                                                         out_dir=sigmoid_data_dir_live)
+            sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map = r.prediction_sigmoid_evaluation(
+                X_metadata=X_metadata_sigmoid,
+                y_pred=y_hats_sigmoid,
+                save_sigmoid_plot=save_sigmoid_plot,
+                file_name_suffix='-epoch' + str(epoch),
+                out_dir=sigmoid_data_dir_live)
+
+            if save_sigmoid_plot:
+                data_renderer.render_naive_response_curves(X_metadata=X_metadata_sigmoid, y_pred=y_hats_sigmoid,
+                                                           sigmoid_score_map=sigmoid_score_map, dpi=350,
+                                                           sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
+                                                           file_name_suffix='-epoch' + str(epoch),
+                                                           title_suffix='\nTraining Epoch ' + str(epoch),
+                                                           out_dir=sigmoid_data_dir_naive_live)
 
             sigmoid_mean = float('nan')
+            sigmoid_successes = 0
+            sigmoid_scores_sanitized = None
+            sigmoid_scores_raw = None
             try:
-                sigmoid_mean = np.mean(list(sigmoid_score_map.values()))
+                sigmoid_scores_raw = list(sigmoid_score_map.values())
+                sigmoid_scores_sanitized = []
+                for score in sigmoid_scores_raw:
+                    if not math.isnan(score):
+                        sigmoid_scores_sanitized.append(score)
+
+                sigmoid_successes = len(sigmoid_scores_sanitized)
+                if sigmoid_successes == 0:
+                    sigmoid_mean = float('nan')
+                    log.write('WARNING: ALL SIGMOID FITS FAILED!')
+                else:
+                    sigmoid_mean = np.mean(np.asarray(sigmoid_scores_sanitized))
+                log.write('Sigmoid successes: ' + str(sigmoid_successes) + '/' + str(
+                    len(sigmoid_scores_raw)) + '. Score: ' + str(sigmoid_mean))
 
                 f = open(batch_sigmoid_evaluation_file, 'a')
                 f.write('\n' + str(epoch))
@@ -582,7 +616,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                 f.write('\nEpoch: ' + str(epoch) + ' - "' + str(e) + '"')
                 f.close()
 
-            del sigmoid_mean
+            del sigmoid_mean, sigmoid_successes, sigmoid_scores_sanitized, sigmoid_scores_raw
         else:
             log.write(
                 'Warning: Not running sigmoid evaluation. Data missing or no rServe connection.Connected: ' + str(
@@ -681,11 +715,20 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
             # Rendering the sigmoid curves again, because of new best performance
             if r.has_connection() and X_metadata_sigmoid is not None and data_loader_sigmoid is not None and y_hats_sigmoid is not None:
-                r.prediction_sigmoid_evaluation(X_metadata=X_metadata_sigmoid,
-                                                y_pred=y_hats_sigmoid,
-                                                save_sigmoid_plot=True,
-                                                file_name_suffix='-best-epoch' + str(epoch),
-                                                out_dir=sigmoid_data_dir_live_best)
+                sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map = r.prediction_sigmoid_evaluation(
+                    X_metadata=X_metadata_sigmoid,
+                    y_pred=y_hats_sigmoid,
+                    save_sigmoid_plot=True,
+                    file_name_suffix='-best-epoch' + str(epoch),
+                    out_dir=sigmoid_data_dir_live_best)
+                data_renderer.render_naive_response_curves(X_metadata=X_metadata_sigmoid, y_pred=y_hats_sigmoid,
+                                                           sigmoid_score_map=sigmoid_score_map, dpi=350,
+                                                           sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
+                                                           file_name_suffix='-best-epoch' + str(epoch),
+                                                           title_suffix='\nTraining Epoch ' + str(
+                                                               epoch) + ' (New Best)',
+                                                           out_dir=sigmoid_data_dir_naive_live_best)
+                del sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map
         del y_hats_sigmoid
 
         if cancel_requested:

@@ -58,14 +58,6 @@ all_source_dirs_win = [
     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS719',
     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS744'
 ]
-default_sigmoid_validation_dirs_unix = [
-    '/mil/oligo-diff/training_data/curated_linux/ELS681',
-    '/mil/oligo-diff/training_data/curated_linux/ELS682'
-]
-default_sigmoid_validation_dirs_win = [
-    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS517',
-    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS411'
-]
 
 ideal_source_dirs_unix = [
     # New CNN
@@ -100,6 +92,7 @@ curated_overlapping_source_dirs_unix = [
 # 8 = z-score every cell individually with every color channel using the mean / std of all three from all samples in the bag
 normalize_enum_default = 3
 max_workers_default = 5
+
 
 def train_model(
         # Basic training data params
@@ -289,9 +282,11 @@ def train_model(
         X_size_raw = X_size_raw + X_raw[i].nbytes
 
     X_s = utils.convert_size(X_size)
+    X_s_raw = utils.convert_size(X_size_raw)
     y_s = utils.convert_size(getsizeof(y))
     log.write("X-size in memory (after loading all data): " + str(X_s))
     log.write("y-size in memory (after loading all data): " + str(y_s))
+    log.write("X-size (raw) in memory (after loading all data): " + str(X_s_raw))
 
     protocol_f.write('\n\n == Loaded Data ==')
     protocol_f.write('\nNumber of Bags: ' + str(len(X)))
@@ -812,7 +807,7 @@ def main(debug: bool = False):
 
     if sys.platform == 'win32':
         image_folder = paths.nucleus_predictions_image_folder_win
-        sigmoid_input_dirs = default_sigmoid_validation_dirs_win
+        sigmoid_input_dirs = paths.default_sigmoid_validation_dirs_win
 
         current_global_log_dir = 'U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\'
         log.add_file('U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\all_logs.txt')
@@ -823,7 +818,7 @@ def main(debug: bool = False):
         current_gpu_enabled = False
         current_device_ordinals = models.device_ordinals_local
     else:
-        sigmoid_input_dirs = default_sigmoid_validation_dirs_unix
+        sigmoid_input_dirs = paths.default_sigmoid_validation_dirs_unix
         image_folder = paths.nucleus_predictions_image_folder_unix
         current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log/linux/'
 
@@ -836,8 +831,9 @@ def main(debug: bool = False):
                     max_workers=current_max_workers, gpu_enabled=current_gpu_enabled, image_folder=image_folder,
                     device_ordinals=current_device_ordinals,
                     normalize_enum=7,
-                    training_label='debug',
+                    training_label='debug-sigmoid',
                     global_log_dir=current_global_log_dir,
+                    save_sigmoid_plot_interval=1,
                     repack_percentage=0.1,
                     model_use_max=False,
                     model_enable_attention=True,
@@ -851,13 +847,14 @@ def main(debug: bool = False):
                     loss_function='binary_cross_entropy',
                     testing_model_enabled=True,
                     writing_metrics_enabled=True,
-                    sigmoid_validation_dirs=default_sigmoid_validation_dirs_win
+                    sigmoid_validation_dirs=paths.default_sigmoid_validation_dirs_win
                     )
     else:
+        # '/mil/oligo-diff/models/linux/hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
         for l in ['binary_cross_entropy']:
-            for o in ['adadelta', 'adam']:
-                for r in [0.25]:
-                    for i in [4, 6, 7, 8]:
+            for o in ['adam', 'adadelta']:
+                for r in [0.65]:
+                    for i in [7, 8, 6, 4]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
                             augment_train = aug[1]

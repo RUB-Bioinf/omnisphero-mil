@@ -81,7 +81,7 @@ def plot_dice_scores(history, save_path: str, include_raw: bool = False, include
 
 
 def plot_sigmoid_scores(history, save_path: str, include_tikz: bool = False):
-    plot_metric(history, 'val_mean_sigmoid_scores', save_path, 'val_mean_sigmoid_scores', include_tikz=include_tikz, clamp=None)
+    plot_metric(history, 'val_mean_sigmoid_scores', save_path, include_tikz=include_tikz, clamp=None)
 
 
 def plot_losses(history, save_path: str, include_raw: bool = False, include_tikz: bool = False, clamp: float = None):
@@ -203,7 +203,7 @@ def _get_metric_title(metric_name: str):
     metric_name = metric_name.replace('train_', '')
 
     if metric_name == 'mean_sigmoid_scores':
-        metric_name = 'Sigmoid Scores'
+        metric_name = 'Mean Sigmoid Scores'
     if metric_name == 'acc':
         metric_name = 'Accuracy (Bags)'
     if metric_name == 'acc_tiles':
@@ -487,7 +487,7 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
             if y_bag_true == 1:
                 if y_bag == 1:
                     # TODO why is this error?
-                    minattention_tilesTP.append(min_attention_tile)
+                    min_attention_tilesTP.append(min_attention_tile)
                     added_attention_tiles_count = added_attention_tiles_count + 1
                 elif y_bag == 0:
                     min_attention_tilesFP.append(min_attention_tile)

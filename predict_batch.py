@@ -11,14 +11,12 @@ import torch
 import hardware
 import loader
 import models
-import omnisphero_mil
 import r
 from util import data_renderer
 from util import log
 from util import paths
 from util import utils
 from util.omnisphero_data_loader import OmniSpheroDataLoader
-from util.paths import all_prediction_dirs_win
 from util.paths import debug_prediction_dirs_unix
 from util.paths import debug_prediction_dirs_win
 from util.paths import default_out_dir_unix_base
@@ -33,7 +31,8 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  max_workers: int, image_folder: str, channel_inclusions=loader.default_channel_inclusions_all,
                  tile_constraints=loader.default_tile_constraints_nuclei, global_log_dir: str = None,
                  sigmoid_verbose: bool = False, render_attention_spheres_enabled: bool = True,
-                 gpu_enabled: bool = False, model_optimizer=None):
+                 predicted_tiles_activation_overlays: bool = False, gpu_enabled: bool = False,
+                 data_loader_data_saver: bool = False):
     start_time = datetime.now()
     log_label = str(start_time.strftime("%d-%m-%Y-%H-%M-%S"))
 
@@ -116,12 +115,27 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
         normalize_enum=normalize_enum)
     X = [np.einsum('bhwc->bchw', bag) for bag in X]
 
+    # Printing the size in memory
+    X_size = 0
+    X_size_raw = 0
+    for i in range(len(X)):
+        X_size = X_size + X[i].nbytes
+        X_size_raw = X_size_raw + X_raw[i].nbytes
+
+    X_s = utils.convert_size(X_size)
+    X_s_raw = utils.convert_size(X_size_raw)
+    y_s = utils.convert_size(sys.getsizeof(y))
+    log.write("X-size in memory (after loading all data): " + str(X_s))
+    log.write("y-size in memory (after loading all data): " + str(y_s))
+    log.write("X-size (raw) in memory (after loading all data): " + str(X_s_raw))
+    del X_s, y_s, X_s_raw, X_size, X_size_raw
+
     dataset, input_dim = loader.convert_bag_to_batch(bags=X, labels=None, y_tiles=None)
     data_loader = OmniSpheroDataLoader(dataset, batch_size=1, shuffle=False,
                                        pin_memory=False,
+                                       transform_data_saver=data_loader_data_saver,
                                        transform_enabled=False,
-                                       num_workers=max_workers,
-                                       transform_data_saver=False)
+                                       num_workers=max_workers)
     del X, dataset, y, y_tiles
 
     # TODO react to loading errors
@@ -141,6 +155,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                          experiment_names=experiment_names, input_dim=input_dim, sparse_hist=sparse,
                          normalized_attention=norm, clear_old_data=False, image_folder=image_folder,
                          sigmoid_verbose=sigmoid_verbose,
+                         predicted_tiles_activation_overlays=predicted_tiles_activation_overlays,
                          render_attention_spheres_enabled=render_attention_spheres_enabled,
                          well_names=well_names, max_workers=max_workers, out_dir=current_out_dir)
     del data_loader, X_raw, X_metadata
@@ -157,7 +172,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                  X_metadata: [TileMetadata], experiment_names: [str], well_names: [str], image_folder: str,
                  input_dim: (int), max_workers: int, out_dir: str, sparse_hist: bool = True,
                  normalized_attention: bool = True, save_sigmoid_plot: bool = True, sigmoid_verbose: bool = False,
-                 render_attention_spheres_enabled: bool = True,
+                 render_attention_spheres_enabled: bool = True, predicted_tiles_activation_overlays: bool = False,
                  clear_old_data: bool = False, dpi: int = 250):
     os.makedirs(out_dir, exist_ok=True)
 
@@ -191,15 +206,18 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
 
     # Evaluating sigmoid performance using R
     sigmoid_score_map = None
+    sigmoid_plot_estimation_map = None
     if r.has_connection():
-        sigmoid_score_map = r.prediction_sigmoid_evaluation(X_metadata=X_metadata, y_pred=y_hats, out_dir=out_dir,
-                                                            verbose=sigmoid_verbose,
-                                                            save_sigmoid_plot=save_sigmoid_plot)
+        sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map = r.prediction_sigmoid_evaluation(
+            X_metadata=X_metadata, y_pred=y_hats, out_dir=out_dir,
+            verbose=sigmoid_verbose,
+            save_sigmoid_plot=save_sigmoid_plot)
     else:
         log.write('Not running r evaluation. No connection.')
 
     # Rendering basic response curves
     data_renderer.render_naive_response_curves(X_metadata=X_metadata, y_pred=y_hats, out_dir=out_dir,
+                                               sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
                                                sigmoid_score_map=sigmoid_score_map, dpi=int(dpi * 1.337))
 
     # Rendering attention scores
@@ -207,8 +225,8 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
         log.write('Rendering spheres and predictions.')
         data_renderer.renderAttentionSpheres(X_raw=X_raw, X_metadata=X_metadata, input_dim=input_dim,
                                              y_attentions=all_attentions, image_folder=image_folder, y_pred=y_hats,
-                                             y_pred_binary=y_preds,
-                                             out_dir=out_dir)
+                                             predicted_tiles_activation_overlays=predicted_tiles_activation_overlays,
+                                             y_pred_binary=y_preds, out_dir=out_dir)
     else:
         log.write('Not rendering spheres and predictions.')
 
@@ -426,7 +444,7 @@ def generate_experiment_prediction_holders(X: [np.ndarray], experiment_names: [s
 
 def main():
     print('Predicting and creating a Dose Response curve for a whole bag.')
-    debug = True
+    debug = False
     render_attention_spheres_enabled = False
     model_path = None
     image_folder = None
@@ -441,7 +459,6 @@ def main():
         model_path = '/mil/oligo-diff/models/linux/hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
         current_global_log_dir = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65'
         image_folder = paths.nucleus_predictions_image_folder_unix
-        debug = False
 
     assert os.path.exists(model_path)
     if debug:
@@ -451,6 +468,7 @@ def main():
             checkpoint_file='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\hnm\\model_best.h5',
             bag_paths=debug_prediction_dirs_win,
             image_folder=image_folder,
+            data_loader_data_saver=True,
             render_attention_spheres_enabled=render_attention_spheres_enabled,
             sigmoid_verbose=True,
             out_dir='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\debug_predictions\\',
@@ -468,12 +486,16 @@ def main():
                          gpu_enabled=False, normalize_enum=7, max_workers=6)
     else:
         print('Predicting linux batches')
-        # checkpoint_file = '/bph/puredata4/bioinfdata/work/OmniSphero/mil/oligo-diff/models/linux/hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
         checkpoint_file = model_path + os.sep + 'hnm/model_best.h5'
-        for prediction_dir in debug_prediction_dirs_unix:
+
+        debug_prediction_dirs_used = [debug_prediction_dirs_unix]
+        if debug:
+            debug_prediction_dirs_used = [[d] for d in debug_prediction_dirs_unix]
+
+        for prediction_dir in debug_prediction_dirs_used:
             try:
-                predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path, bag_paths=[prediction_dir],
-                             out_dir=model_path + 'predictions-sigmoid-linux/',
+                predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path, bag_paths=prediction_dir,
+                             out_dir=model_path + '/mil/oligo-diff/debug_predictions/predictions-sigmoid-linux-NR/',
                              global_log_dir=current_global_log_dir,
                              render_attention_spheres_enabled=render_attention_spheres_enabled,
                              sigmoid_verbose=False,

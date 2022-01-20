@@ -1,7 +1,7 @@
 import math
 
+import mil_metrics
 import nucleus_predictions
-from mil_metrics import fuse_image_tiles
 from util import log
 import numpy as np
 import os
@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pred: [np.ndarray],
                            y_pred_binary: [np.ndarray], image_folder: str, input_dim, y_attentions: [np.ndarray] = None,
                            out_dir: str = None, colormap_name: str = 'jet', dpi: int = 650,
-                           overlay_alpha: float = 0.65):
+                           predicted_tiles_activation_overlays: bool = False, overlay_alpha: float = 0.65):
     os.makedirs(out_dir, exist_ok=True)
 
     assert input_dim[0] == 3
@@ -180,27 +180,30 @@ def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pr
         activation_grayscale_overlay_images_detail[experiment_name].append(rendered_detail_fig)
 
     # Printing the imfused images
-    for experiment_name in activation_grayscale_overlay_images.keys():
-        activation_grayscale_overlay_image = activation_grayscale_overlay_images[experiment_name]
-        activation_grayscale_overlay_image_detail = activation_grayscale_overlay_images_detail[experiment_name]
+    if predicted_tiles_activation_overlays:
+        for experiment_name in activation_grayscale_overlay_images.keys():
+            activation_grayscale_overlay_image = activation_grayscale_overlay_images[experiment_name]
+            activation_grayscale_overlay_image_detail = activation_grayscale_overlay_images_detail[experiment_name]
 
-        activation_grayscale_overlay_image = fuse_image_tiles(images=activation_grayscale_overlay_image,
-                                                              light_mode=True)
-        activation_grayscale_overlay_image_detail = fuse_image_tiles(images=activation_grayscale_overlay_image_detail,
-                                                                     light_mode=True)
+            activation_grayscale_overlay_image = mil_metrics.fuse_image_tiles(images=activation_grayscale_overlay_image,
+                                                                              light_mode=True)
+            activation_grayscale_overlay_image_detail = mil_metrics.fuse_image_tiles(
+                images=activation_grayscale_overlay_image_detail,
+                light_mode=True)
 
-        out_dir_exp = out_dir + os.sep + experiment_name
-        os.makedirs(out_dir_exp, exist_ok=True)
-        plt.imsave(out_dir_exp + os.sep + experiment_name + '-predicted_tiles_activation_overlays.png',
-                   activation_grayscale_overlay_image)
-        plt.imsave(out_dir_exp + os.sep + experiment_name + '-predicted_tiles_activation_overlays_detail.png',
-                   activation_grayscale_overlay_image_detail)
+            out_dir_exp = out_dir + os.sep + experiment_name
+            os.makedirs(out_dir_exp, exist_ok=True)
+            plt.imsave(out_dir_exp + os.sep + experiment_name + '-predicted_tiles_activation_overlays.png',
+                       activation_grayscale_overlay_image)
+            plt.imsave(out_dir_exp + os.sep + experiment_name + '-predicted_tiles_activation_overlays_detail.png',
+                       activation_grayscale_overlay_image_detail)
 
     log.write('Finished rendering all attention overlays.')
 
 
 def render_naive_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sigmoid_score_map: {str} = None,
-                                 out_dir: str = None, dpi: int = 650):
+                                 file_name_suffix: str = None, title_suffix: str = None, out_dir: str = None,
+                                 sigmoid_plot_estimation_map=None, dpi: int = 650):
     # Remapping predictions so they can be evaluated
     experiment_prediction_map_pooled = {}
     experiment_prediction_map = {}
@@ -209,6 +212,11 @@ def render_naive_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray
     all_well_names = []
     all_well_indices = []
     all_well_letters = []
+
+    if file_name_suffix is None:
+        file_name_suffix = ''
+    if title_suffix is None:
+        title_suffix = ''
 
     for (X_metadata_current, y_pred_current) in zip(X_metadata, y_pred):
         y_pred_current: float = float(y_pred_current)
@@ -258,15 +266,17 @@ def render_naive_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray
 
         # Extracting sigmoid score
         sigmoid_score: str = str(float('nan'))
+        sigmoid_plot_estimations: np.ndarray = None
         if sigmoid_score_map is None:
             sigmoid_score = 'Not evaluated.'
         if experiment_name in sigmoid_score_map:
             sigmoid_score = str(sigmoid_score_map[experiment_name])
+            sigmoid_plot_estimations = sigmoid_plot_estimation_map[experiment_name]
         else:
             sigmoid_score = 'Not available.'
 
         # writing to CSV
-        out_csv = experiment_dir + os.sep + experiment_name + '-prediction_map.csv'
+        out_csv = experiment_dir + os.sep + experiment_name + '-prediction_map' + file_name_suffix + '.csv'
         log.write('Saving prediction matrix to: ' + out_csv)
         f = open(out_csv, 'w')
         f.write(experiment_name + '[' + str(sigmoid_score) + '];')
@@ -290,7 +300,6 @@ def render_naive_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray
         ##########################################
 
         well_index_map: {} = experiment_prediction_map_pooled[experiment_name]
-        well_map: {} = experiment_prediction_map[experiment_name]
         well_indices = list(well_index_map.keys())
         prediction_entries = []
         prediction_ticks = []
@@ -303,7 +312,9 @@ def render_naive_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray
             prediction_entries.append(np.mean(predictions))
             ticks: [str] = experiment_well_tick_map[experiment_name][k]
             ticks.sort()
-            prediction_ticks.append(str(ticks))
+            ticks = str(ticks)
+            ticks = ticks.replace("'", "")
+            prediction_ticks.append(ticks)
 
             error = np.std(predictions, ddof=1) / np.sqrt(np.size(predictions))
             y_error.append(error)
@@ -315,20 +326,32 @@ def render_naive_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray
         plt.clf()
         plt.plot(well_indices, prediction_entries, color='blue')
         plt.errorbar(well_indices, prediction_entries, yerr=y_error, fmt='o', ecolor='orange', color='red')
-        plt.title('Predictions: ' + experiment_name)
-        plt.legend(['Sigmoid Score: ' + sigmoid_score])
-        plt.ylabel('Prediction Score (Mean)')
+
+        legend_entries = ['Mean Predictions']
+        if sigmoid_plot_estimations is not None:
+            estimations_y = list(sigmoid_plot_estimations)
+            estimations_x = [float(e + 1) / len(estimations_y) * (well_indices[-1] - well_indices[0]) + well_indices[0]
+                             for e in range(len(estimations_y))]
+            assert len(estimations_x) == len(estimations_y)
+            estimations_x[0] = float(well_indices[0])
+            plt.plot(estimations_x, estimations_y, color='lightblue')
+            legend_entries.append('Sigmoid Curve Fit')
+
+        plt.title('Predictions: ' + experiment_name + ' ' + title_suffix + '\nSigmoid Score: ' + sigmoid_score)
+        plt.legend(legend_entries, loc='best')
+        plt.ylabel('Prediction Score')
         plt.xlabel('Wells')
-        plt.ylim([0.0, 1.05])
-        ax = plt.gca()
-        ax.set_ylim([0.0, 1.05])
         plt.xticks(well_indices, prediction_ticks, rotation=90)
 
         plt.tight_layout()
         plt.autoscale()
+        # Setting the ylim after the autoscale, to make sure the lim actually is applied
+        plt.ylim([0.0, 1.05])
+        ax = plt.gca()
+        ax.set_ylim([0.0, 1.05])
 
-        out_plot_name_base = experiment_dir + os.sep + experiment_name + '-predictions_concentration_response'
-        plt.savefig(out_plot_name_base + '.png', dpi=dpi, transparent=True)
+        out_plot_name_base = experiment_dir + os.sep + experiment_name + '-predictions_concentration_response' + file_name_suffix
+        plt.savefig(out_plot_name_base + '.png', dpi=dpi)
         plt.savefig(out_plot_name_base + '.svg', dpi=dpi, transparent=True)
         plt.savefig(out_plot_name_base + '.pdf', dpi=dpi)
 

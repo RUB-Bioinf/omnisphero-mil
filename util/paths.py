@@ -32,6 +32,17 @@ debug_prediction_dirs_unix = [
     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS682'
 ]
 
+default_sigmoid_validation_dirs_unix = [
+    '/mil/oligo-diff/training_data/curated_linux/ELS517',
+    '/mil/oligo-diff/training_data/curated_linux/ELS681',
+    '/mil/oligo-diff/training_data/curated_linux/ELS682'
+]
+
+default_sigmoid_validation_dirs_win = [
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS517',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS411'
+]
+
 nucleus_predictions_image_folder_win = 'U:\\bioinfdata\\work\\OmniSphero\\Bilderordner\\'
 nucleus_predictions_image_folder_unix = '/bilderordner'
 
