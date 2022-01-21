@@ -18,35 +18,10 @@ library(drc) #R toolbox for curve fitting
 
 #initially setting output to overwerite it later (if curve fitting was successfull, else NaN will be put out)
 final_Score <- NaN
-upperScoreLimit <- 300 #if Scores are above this threshold, they will set to it; it serves as maximum score range for score normalization
-
-
-# CURVE FIT MODELLING FUNCTION---------------------------------------------------------------------------------------------------------------------
-#this functions takes dose and reponse values as input and tries to apply either a symmetrical or asymmetrical fit model to them
-#it gives the fit model as output
-
-fit_model <- function(dose, resp) {
-  #create initial curve fit model
-  drm_object <- try(drm(resp ~ dose, robust = 'mean', fct = llogistic2()))
-  #figure out, if symmetrical or asymmetrical model fits better
-  win <- mselect(drm_object, list(LL.4(), W1.4()), linreg = F)
-  #now create a new drm object with the winning model
-  for (n in 1:nrow(win)) {
-    winmodel <- rownames(win)[n]
-    if (winmodel == 'LL.4') {
-      drm_object <- try(drm(resp ~ dose, robust = 'mean', fct = LL.4()))
-    } else if (winmodel == 'W1.4') {
-      drm_object <- try(drm(resp ~ dose, robust = 'mean', fct = W1.4()))
-    }
-    #if the drm object is sucessfully created, break loop
-    if (typeof(drm_object) == 'list') {
-      break
-    } else {
-      next
-    }
-  }
-  return(drm_object) #return the fit model (or failure)
-}
+plot_data <- NaN
+estimate_data <- NaN
+score_data <- NaN
+upperScoreLimit <- 8 #if Scores are above this threshold, they will set to it; it serves as maximum score range for score normalization
 
 
 # MODEL EVALUATION FUNCTION------------------------------------------------------------------------------------------------------------------------
@@ -56,35 +31,65 @@ fit_model <- function(dose, resp) {
 
 evaluate_fit <- function() {
   paras <- drm_object$fit$par #get parameters like asymptote position and slope for score evaluation
+  #print(paste("Curve", i, ":"))
+  #print(round(paras,2))
+
   relativeresiduals <- sum(abs(residuals(drm_object, typeRes = "working"))) / length(dose) #get residuals
-  Gradient <- paras[1] #get curve gradient
+
+  Gradient <- paras[1] / paras[4] #get curve gradient
+
+
   if (Gradient < 0) { #in case slope is positive, we make it bigger for a much worse score
     Gradient <- Gradient * 5
   }
+
   #lower Asymptote
   lowAsympScore <- round((0 + paras[2]), 2)
-  if (lowAsympScore < -100) { #if lower asmptote is below -100% we set it there to avoid unplausible estimations way below this threshold
-    lowAsympScore <- -100
+  if (lowAsympScore < -1) { #if lower asmptote is below -100% we set it there to avoid unplausible estimations way below this threshold
+    lowAsympScore <- -1
   }
   #upper Asymptote
-  upAsympScore <- round(abs(100 - paras[3]), 2)
-  if (upAsympScore > 100) { #if upper asmptote is above 200% we set it there to avoid unplausible estimations way above this threshold
-    upAsympScore <- 100
+  upAsympScore <- round(abs(1 - paras[3]), 2)
+  if (upAsympScore > 1) { #if upper asmptote is above 200% we set it there to avoid unplausible estimations way above this threshold
+    upAsympScore <- 1
   }
-  GradientScore <- round((abs(1 - Gradient)^2), 2) #optimal gradient should be somewhere around 1
-  ResidualScore <- round(relativeresiduals, 2) #optimal residuals should be as low as possible
+
+
+  GradientScore <- tanh(round((abs(1.7 - Gradient)), 2) / 1.7) #optimal gradient should be somewhere around 5
+  print(paste('Gradient:', Gradient))
+  print(paste('GScore:', GradientScore))
+  print(as.character(drm_object[["call"]][["fct"]]))
+
+
+  ResidualScore <- round(5 * relativeresiduals, 2) #optimal residuals should be as low as possible
+
+
   #get effect size (how much curve descends) -> the more descend, the better
   dev.new()
   p <- plot(drm_object, gridsize = 100, plot = F)
   dev.off()
-  effectdiffScore <- abs((100 - (p[1, "1"] - p[nrow(p), "1"])))
-  #raw score is calculated, but should be transformed to a number between 0 and upperScoreLimit
-  rawScore <- round(sum((abs(lowAsympScore) + upAsympScore) / 2, GradientScore, ResidualScore, effectdiffScore * 2), 2)
+  effectdiffScore <- abs((1 - (p[1, "1"] - p[nrow(p), "1"])))
+
+  rawScore <- round(sum(
+    (abs(lowAsympScore) + upAsympScore) / 2,
+    GradientScore,
+    ResidualScore,
+    effectdiffScore * 5),
+                    2)
+
+
   if (rawScore > upperScoreLimit) {
     rawScore <- upperScoreLimit
   }
   #return final score as linear transformation of raw score to number between 0 and 1
-  return(1 - (rawScore / upperScoreLimit))
+  return(list(
+    AsympScore = (abs(lowAsympScore) + upAsympScore / 2),
+    EffectScore = effectdiffScore,
+    GradientScore = GradientScore,
+    ResidualScore = ResidualScore,
+    rawScore = rawScore,
+    finalScore = (1 - (rawScore / upperScoreLimit)) #raw score is transformed to a number between 0 and upperScoreLimit
+  ))
 }
 
 
@@ -93,9 +98,9 @@ evaluate_fit <- function() {
 #the global paramater 'filename' determines the output path and filename
 
 plot_drm_object <- function() {
-  png(filename, width = 500, height = 500) #open plotting device with directory and pixel dimensions of plot
+  png(filename, width = 1000, height = 1000) #open plotting device with directory and pixel dimensions of plot
   par(xpd = F, #BMR lines are underneath boxplot
-      mar = par()$mar + c(1, 1, 1, 1), #margins (bottom, left, top, right)
+      mar = par()$mar + c(1, 1, 10, 1), #margins (bottom, left, top, right)
       mgp = c(3, #axis lable distance
               1, #axis numbers distance
               0)) #axis ticks distance
@@ -108,7 +113,15 @@ plot_drm_object <- function() {
        cex.axis = 1.5, #size of axis numbers
        pch = 19, #type of data points
        cex = 1, #size of data points
-       main = paste(final_Score) #text for title
+       log = '',
+       main = paste(scenario, '\n',
+                    "Asymp Score: ", round(1 - score_data$AsympScore, 2), '\n',
+                    "Effect Score: ", round(1 - score_data$EffectScore, 2), '\n',
+                    "Gradient Score: ", round(1 - score_data$GradientScore, 2), '\n',
+                    "Residual Score: ", round(1 - score_data$ResidualScore, 2), '\n',
+                    "final Score: ", round(score_data$finalScore, 2), '\n',
+                    #"final Score: ", round(score_data$finalScore,2),
+                    sep = '') #text for title
   )
   dev.off() #close plotting device
 }
@@ -129,9 +142,13 @@ get_object_griddata <- function() {
 }
 
 
+#########################################################################################################################################
+######Script EXECUTION###################################################################################################################
+#########################################################################################################################################
+
 #execute fit modelling function and catch error if occured
 possibleError <- tryCatch( #Saving plot as png if possible
-  drm_object <- fit_model(dose, resp),
+  drm_object <- drm(resp ~ dose, robust = 'mean', fct = LL.4()),
   error = function(e) e
 )
 if (inherits(possibleError, "error")) {
@@ -140,15 +157,18 @@ if (inherits(possibleError, "error")) {
 if (typeof(drm_object) != 'list') { #if it failed
   print("Curve fitting failed: No model could be fitted to the data.")
 }else {
-  #execute fit model evaluation function and catch error if occured
+  #execute fit model evaluation function and catch error if occurred
   possibleError <- tryCatch( #Saving plot as png if possible
-    final_Score <- evaluate_fit(),
+    score_data <- evaluate_fit(),
     error = function(e) e
   )
   if (inherits(possibleError, "error")) { #if it failed
     print(paste("Fit model evaluation failed:", possibleError))
   }else {
-    #execute fit model plotting function and catch error if occured
+
+    final_Score <- score_data$finalScore #get final score from evaluation output
+
+    #execute fit model plotting function and catch error if occurred
     if (plot_curve) { #if input boolean is true
       possibleError <- tryCatch( #Saving plot as png if possible
         plot_drm_object(),
@@ -164,7 +184,7 @@ if (typeof(drm_object) != 'list') { #if it failed
 
 #try to get the fit model grid data from a plot
 possibleError <- tryCatch(
-  plot_data <- get_object_griddata,
+  plot_data <- get_object_griddata(),
   error = function(e) e
 )
 if (inherits(possibleError, "error")) { #if it failed

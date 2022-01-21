@@ -31,7 +31,8 @@ def load_oligo_predictions(image_folder: str, experiment_name: str, well_name: s
 
 
 def get_prediction_file_path(image_folder, experiment_name, well_name):
-    predictions_file = image_folder + experiment_name + os.sep + 'cnn' + os.sep + 'oligo' + os.sep + experiment_name + '_' + well_name + '_Manual-Neurons-2_overview_prediction.csv'
+    predictions_file = image_folder + experiment_name + os.sep + 'cnn' + os.sep + 'oligo' + os.sep + experiment_name \
+                       + '_' + well_name + '_Manual-Neurons-2_overview_prediction.csv'
     exists = os.path.exists(predictions_file)
 
     return predictions_file, exists

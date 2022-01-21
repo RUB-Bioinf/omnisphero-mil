@@ -854,7 +854,7 @@ def main(debug: bool = False):
         for l in ['binary_cross_entropy']:
             for o in ['adam', 'adadelta']:
                 for r in [0.65]:
-                    for i in [7, 8, 6, 4]:
+                    for i in [7, 8, 6]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
                             augment_train = aug[1]
@@ -863,7 +863,7 @@ def main(debug: bool = False):
                                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                                         image_folder=image_folder,
                                         normalize_enum=i,
-                                        training_label='hnm-sigmoid-overlap-' + o + '-NoNeuron2-wells-normalize-' + str(
+                                        training_label='hnm-sigmoid-overlap2-' + o + '-NoNeuron2-wells-normalize-' + str(
                                             i) + 'repack-' + str(r),
                                         global_log_dir=current_global_log_dir,
                                         data_split_percentage_validation=0.25,

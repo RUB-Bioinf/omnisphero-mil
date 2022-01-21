@@ -20,7 +20,7 @@ prodi_r_test_file = os.path.abspath(prodi_r_test_file)
 
 
 def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_filename: str,
-                              save_sigmoid_plot: bool = True, verbose: bool = False):
+                              save_sigmoid_plot: bool = False, verbose: bool = False):
     assert len(doses) == len(responses)
     assert len(doses) > 1
     import pyRserve
@@ -36,6 +36,8 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
 
     doses_parsed = str(doses)[1:-1]
     responses_parsed = str(responses)[1:-1]
+    dose_instruction = None
+    resp_instruction = None
 
     # Testing the external file
     # Needing to sanitize paths before, just in case. Thanks windows.
@@ -55,8 +57,13 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
         # conn.eval('dose <- c(0.1,0.2,0.3,0.4,0.1,0.2,0.3,0.4,0.1,0.2,0.3,0.4)')
         # conn.eval('resp <- c(100,100,50,0,100,100,50,0,100,100,50,0)')
 
-        conn.eval('dose <- c(' + doses_parsed + ')')
-        conn.eval('resp <- c(' + responses_parsed + ')')
+        dose_instruction = 'dose <- c(' + doses_parsed + ')'
+        resp_instruction = 'resp <- c(' + responses_parsed + ')'
+        log.write('dose instruction: ' + dose_instruction, print_to_console=False)
+        log.write('resp instruction: ' + resp_instruction, print_to_console=False)
+
+        conn.eval(dose_instruction)
+        conn.eval(resp_instruction)
         if save_sigmoid_plot:
             conn.eval('plot_curve <- T')
             if verbose:
@@ -73,13 +80,13 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
 
         # extracting results
         final_score = conn.eval('final_Score')
-        plot_data = conn.eval('plot_data')
+        fitted_plot = conn.eval('plot_data')
         estimate_plot = conn.eval('estimate_data')
 
         # Extracting sigmoid fitted curve
     except Exception as e:
         final_score = float('nan')
-        plot_data = None
+        fitted_plot = None
         estimate_plot = None
         log.write(' == FATAL ERROR! ==')
         log.write('R failed to evaluate the sigmoid evaluation!')
@@ -90,6 +97,8 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
         try:
             estimate_plot = np.asarray(estimate_plot, dtype=np.float64)
             estimate_plot = np.asarray([e[0] for e in estimate_plot])
+
+            fitted_plot = np.asarray(fitted_plot, dtype=np.float64)
         except Exception as e:
             estimate_plot = None
             log.write(' == FATAL ERROR! ==')
@@ -99,7 +108,7 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
     # Checking if final score is nan, so the plot data is set to None
     if math.isnan(final_score):
         estimate_plot = None
-        plot_data = None
+        fitted_plot = None
 
     if verbose:
         log.write('Sigmoid score: ' + str(final_score))
@@ -111,7 +120,8 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
         log.write('Warning: Failed to close R connection.')
         log.write(str(e))
 
-    return final_score, estimate_plot, plot_data
+    instructions = [dose_instruction, resp_instruction]
+    return final_score, estimate_plot, fitted_plot, instructions
 
 
 def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarray], out_dir: str,
@@ -148,7 +158,9 @@ def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarra
     # Iterating over the experiment metadata so we can run the sigmoid evaluations
     sigmoid_score_map = {}
     sigmoid_plot_estimation_map = {}
-    sigmoid_plot_data_map = {}
+    sigmoid_instructions_map = {}
+    sigmoid_fitted_plot_map = {}
+
     for experiment_name in experiment_prediction_map.keys():
         well_index_map = experiment_prediction_map[experiment_name]
 
@@ -167,16 +179,18 @@ def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarra
             out_image_filename = out_image_filename + file_name_suffix
         out_image_filename = out_image_filename + '.png'
 
-        sigmoid_score, estimate_plot, plot_data = pooled_sigmoid_evaluation(doses=doses, responses=responses,
-                                                                            verbose=verbose,
-                                                                            save_sigmoid_plot=save_sigmoid_plot,
-                                                                            out_image_filename=out_image_filename)
+        sigmoid_score, estimate_plot, fitted_plot, instructions = pooled_sigmoid_evaluation(doses=doses,
+                                                                                            responses=responses,
+                                                                                            verbose=verbose,
+                                                                                            save_sigmoid_plot=save_sigmoid_plot,
+                                                                                            out_image_filename=out_image_filename)
         sigmoid_score_map[experiment_name] = sigmoid_score
         sigmoid_plot_estimation_map[experiment_name] = estimate_plot
-        sigmoid_plot_data_map[experiment_name] = plot_data
+        sigmoid_fitted_plot_map[experiment_name] = fitted_plot
+        sigmoid_instructions_map[experiment_name] = instructions
         log.write('Sigmoid score for ' + experiment_name + ': ' + str(sigmoid_score))
 
-    return sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map
+    return sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_fitted_plot_map, sigmoid_instructions_map
 
 
 def has_connection() -> bool:

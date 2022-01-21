@@ -14,7 +14,8 @@ import matplotlib.pyplot as plt
 def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pred: [np.ndarray],
                            y_pred_binary: [np.ndarray], image_folder: str, input_dim, y_attentions: [np.ndarray] = None,
                            out_dir: str = None, colormap_name: str = 'jet', dpi: int = 650,
-                           predicted_tiles_activation_overlays: bool = False, overlay_alpha: float = 0.65):
+                           render_merged_predicted_tiles_activation_overlays: bool = False,
+                           overlay_alpha: float = 0.65):
     os.makedirs(out_dir, exist_ok=True)
 
     assert input_dim[0] == 3
@@ -59,7 +60,7 @@ def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pr
 
         out_dir_current = out_dir + os.sep + experiment_name + os.sep + well_name + os.sep
         os.makedirs(out_dir_current, exist_ok=True)
-        line_print(str(i) + '/' + str(len(X_raw)) + ' Rendering: ' + experiment_name + ' - ' + well_name,
+        line_print(str(i) + '/' + str(len(X_raw)) + ' Rendering: overlay sphere ' + experiment_name + ' - ' + well_name,
                    include_in_log=True)
         rendered_image = np.zeros((image_width, image_height, 3), dtype=np.uint8)
 
@@ -180,7 +181,7 @@ def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pr
         activation_grayscale_overlay_images_detail[experiment_name].append(rendered_detail_fig)
 
     # Printing the imfused images
-    if predicted_tiles_activation_overlays:
+    if render_merged_predicted_tiles_activation_overlays:
         for experiment_name in activation_grayscale_overlay_images.keys():
             activation_grayscale_overlay_image = activation_grayscale_overlay_images[experiment_name]
             activation_grayscale_overlay_image_detail = activation_grayscale_overlay_images_detail[experiment_name]
@@ -203,7 +204,8 @@ def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pr
 
 def render_naive_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sigmoid_score_map: {str} = None,
                                  file_name_suffix: str = None, title_suffix: str = None, out_dir: str = None,
-                                 sigmoid_plot_estimation_map=None, dpi: int = 650):
+                                 sigmoid_plot_fit_map: {np.ndarray} = None, sigmoid_plot_estimation_map=None,
+                                 dpi: int = 650):
     # Remapping predictions so they can be evaluated
     experiment_prediction_map_pooled = {}
     experiment_prediction_map = {}
@@ -267,11 +269,13 @@ def render_naive_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray
         # Extracting sigmoid score
         sigmoid_score: str = str(float('nan'))
         sigmoid_plot_estimations: np.ndarray = None
+        sigmoid_plot_fit: np.ndarray = None
         if sigmoid_score_map is None:
             sigmoid_score = 'Not evaluated.'
         if experiment_name in sigmoid_score_map:
             sigmoid_score = str(sigmoid_score_map[experiment_name])
             sigmoid_plot_estimations = sigmoid_plot_estimation_map[experiment_name]
+            sigmoid_plot_fit = sigmoid_plot_fit_map[experiment_name]
         else:
             sigmoid_score = 'Not available.'
 
@@ -279,7 +283,7 @@ def render_naive_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray
         out_csv = experiment_dir + os.sep + experiment_name + '-prediction_map' + file_name_suffix + '.csv'
         log.write('Saving prediction matrix to: ' + out_csv)
         f = open(out_csv, 'w')
-        f.write(experiment_name + '[' + str(sigmoid_score) + '];')
+        f.write(experiment_name + ' [' + str(sigmoid_score) + '];')
         [f.write(str(i) + ';') for i in all_well_indices]
         for w in all_well_letters:
             f.write('\n' + w)
@@ -313,7 +317,7 @@ def render_naive_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray
             ticks: [str] = experiment_well_tick_map[experiment_name][k]
             ticks.sort()
             ticks = str(ticks)
-            ticks = ticks.replace("'", "")
+            ticks = ticks.replace("'", "").replace("]", "").replace("[", "")
             prediction_ticks.append(ticks)
 
             error = np.std(predictions, ddof=1) / np.sqrt(np.size(predictions))
@@ -328,14 +332,24 @@ def render_naive_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray
         plt.errorbar(well_indices, prediction_entries, yerr=y_error, fmt='o', ecolor='orange', color='red')
 
         legend_entries = ['Mean Predictions']
-        if sigmoid_plot_estimations is not None:
+        if sigmoid_plot_fit is not None:
+            # Plotting the fitted coordinates, if they exist
+            estimations_x = list(sigmoid_plot_fit[0])
+            estimations_y = list(sigmoid_plot_fit[1])
+            assert len(estimations_x) == len(estimations_y)
+
+            plt.plot(estimations_x, estimations_y, color='lightblue')
+            legend_entries.append('Sigmoid Curve Fit')
+        elif sigmoid_plot_estimations is not None:
+            # Plotting the estimations instead
             estimations_y = list(sigmoid_plot_estimations)
             estimations_x = [float(e + 1) / len(estimations_y) * (well_indices[-1] - well_indices[0]) + well_indices[0]
                              for e in range(len(estimations_y))]
             assert len(estimations_x) == len(estimations_y)
+
             estimations_x[0] = float(well_indices[0])
             plt.plot(estimations_x, estimations_y, color='lightblue')
-            legend_entries.append('Sigmoid Curve Fit')
+            legend_entries.append('Sigmoid Curve Fit (Estimated)')
 
         plt.title('Predictions: ' + experiment_name + ' ' + title_suffix + '\nSigmoid Score: ' + sigmoid_score)
         plt.legend(legend_entries, loc='best')

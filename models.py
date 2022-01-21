@@ -423,6 +423,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     f.write('Epoch;' + batch_headers)
     f.close()
 
+    # Setting up sigmoid CSV
     sigmoid_experiment_names: [str] = list(dict.fromkeys([m[0].experiment_name for m in X_metadata_sigmoid]))
     batch_sigmoid_evaluation_file = sigmoid_data_dir_live + 'sigmoid_evaluations.csv'
     f = open(batch_sigmoid_evaluation_file, 'w')
@@ -434,6 +435,12 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     batch_sigmoid_evaluation_error_file = sigmoid_data_dir_live + 'sigmoid_evaluations_errors.txt'
     f = open(batch_sigmoid_evaluation_error_file, 'w')
     f.write('Errors:')
+    f.close()
+
+    # Setting up sigmoid instructions log file
+    batch_sigmoid_instructions_file = sigmoid_data_dir_live + 'sigmoid_instructions.csv'
+    f = open(batch_sigmoid_instructions_file, 'w')
+    f.write('Epoch;Experiment;Best?;Instructions: Dose;Instructions: Response')
     f.close()
 
     # Writing Live Tile Accuracy CSV
@@ -566,17 +573,26 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         y_hats_sigmoid = None
         if r.has_connection() and X_metadata_sigmoid is not None and data_loader_sigmoid is not None:
             y_hats_sigmoid, _, _, _, _, _, _, _ = get_predictions(model, data_loader_sigmoid)
-            sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map = r.prediction_sigmoid_evaluation(
+            sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map = r.prediction_sigmoid_evaluation(
                 X_metadata=X_metadata_sigmoid,
                 y_pred=y_hats_sigmoid,
-                save_sigmoid_plot=save_sigmoid_plot,
+                save_sigmoid_plot=False,
                 file_name_suffix='-epoch' + str(epoch),
                 out_dir=sigmoid_data_dir_live)
+
+            f = open(batch_sigmoid_instructions_file, 'a')
+            for key in sigmoid_instructions_map.keys():
+                sigmoid_instructions = sigmoid_instructions_map[key]
+                f.write('\n' + str(epoch) + ';'
+                        + key + ';False;' + sigmoid_instructions[0] + ';' + sigmoid_instructions[1])
+                del key, sigmoid_instructions
+            f.close()
 
             if save_sigmoid_plot:
                 data_renderer.render_naive_response_curves(X_metadata=X_metadata_sigmoid, y_pred=y_hats_sigmoid,
                                                            sigmoid_score_map=sigmoid_score_map, dpi=350,
                                                            sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
+                                                           sigmoid_plot_fit_map=sigmoid_plot_data_map,
                                                            file_name_suffix='-epoch' + str(epoch),
                                                            title_suffix='\nTraining Epoch ' + str(epoch),
                                                            out_dir=sigmoid_data_dir_naive_live)
@@ -715,15 +731,28 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
             # Rendering the sigmoid curves again, because of new best performance
             if r.has_connection() and X_metadata_sigmoid is not None and data_loader_sigmoid is not None and y_hats_sigmoid is not None:
-                sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map = r.prediction_sigmoid_evaluation(
+                sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map = r.prediction_sigmoid_evaluation(
                     X_metadata=X_metadata_sigmoid,
                     y_pred=y_hats_sigmoid,
-                    save_sigmoid_plot=True,
+                    save_sigmoid_plot=False,
                     file_name_suffix='-best-epoch' + str(epoch),
                     out_dir=sigmoid_data_dir_live_best)
+
+                # Writing it to the CSV
+                f = open(batch_sigmoid_instructions_file, 'a')
+                for key in sigmoid_instructions_map.keys():
+                    sigmoid_instructions = sigmoid_instructions_map[key]
+                    f.write(
+                        '\n' + str(epoch) + ';' + key + ';True;' + sigmoid_instructions[0] + ';' + sigmoid_instructions[
+                            1])
+                    del key, sigmoid_instructions
+                f.close()
+
+                # Rendering the data
                 data_renderer.render_naive_response_curves(X_metadata=X_metadata_sigmoid, y_pred=y_hats_sigmoid,
                                                            sigmoid_score_map=sigmoid_score_map, dpi=350,
                                                            sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
+                                                           sigmoid_plot_fit_map=sigmoid_plot_data_map,
                                                            file_name_suffix='-best-epoch' + str(epoch),
                                                            title_suffix='\nTraining Epoch ' + str(
                                                                epoch) + ' (New Best)',

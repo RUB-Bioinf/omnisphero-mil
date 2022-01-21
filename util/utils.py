@@ -372,6 +372,7 @@ def sparse_hist(a: np.ndarray) -> ([np.float32], [int]):
 
         del current_value, current_count
 
+    plt.clf()
     bins = list(h.keys())
     n = list(h.values())
     return n, bins
