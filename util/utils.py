@@ -325,6 +325,28 @@ def shuffle_and_split_data(dataset, split_percentage: float, _recursion_depth: i
     return training_ds, validation_ds
 
 
+def lecture_shannon_entropy(n: np.ndarray) -> float:
+    # Only works for 1d arrays
+    assert len(n.shape) == 1
+    counts, values = sparse_hist(n)
+
+    # entropy = 0.0
+    # for i in range(n.min(), n.max()):
+    #     if i in values:
+    #         j = values.index(i)
+    #         p = counts[j] / sum(counts)
+    #         entropy = entropy + p * math.log(p, 2)
+
+    entropy = 0.0
+    for v in values:
+        j = values.index(v)
+        p = counts[j] / sum(counts)
+        entropy = entropy + p * math.log(p, 2)
+
+    entropy = entropy * -1
+    return entropy
+
+
 def lecture_otsu(n: np.ndarray) -> int:
     if len(n.shape) == 1:
         pixel_number = n.shape[0]

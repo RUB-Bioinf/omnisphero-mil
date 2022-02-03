@@ -25,8 +25,13 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
     assert len(doses) > 1
     import pyRserve
 
-    out_dir = os.path.dirname(out_image_filename)
-    os.makedirs(out_dir, exist_ok=True)
+    # Setting up the out dir
+    if save_sigmoid_plot:
+        out_dir = os.path.dirname(out_image_filename)
+        os.makedirs(out_dir, exist_ok=True)
+        del out_dir
+
+    # Establishing connection
     conn = pyRserve.connect()
 
     # Testing if we can receive pi from R correctly
@@ -82,12 +87,14 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
         final_score = conn.eval('final_Score')
         fitted_plot = conn.eval('plot_data')
         estimate_plot = conn.eval('estimate_data')
+        score_data = conn.eval('score_data')
 
         # Extracting sigmoid fitted curve
     except Exception as e:
         final_score = float('nan')
         fitted_plot = None
         estimate_plot = None
+        score_data = None
         log.write(' == FATAL ERROR! ==')
         log.write('R failed to evaluate the sigmoid evaluation!')
         log.write(str(e))
@@ -109,6 +116,9 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
     if math.isnan(final_score):
         estimate_plot = None
         fitted_plot = None
+        score_data = None
+    else:
+        score_data = dict(zip(score_data.keys, score_data.values))
 
     if verbose:
         log.write('Sigmoid score: ' + str(final_score))
@@ -121,12 +131,11 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
         log.write(str(e))
 
     instructions = [dose_instruction, resp_instruction]
-    return final_score, estimate_plot, fitted_plot, instructions
+    return final_score, score_data, estimate_plot, fitted_plot, instructions
 
 
 def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarray], out_dir: str,
-                                  save_sigmoid_plot: bool = False,
-                                  file_name_suffix: str = None, verbose: bool = False):
+                                  save_sigmoid_plot: bool = False, file_name_suffix: str = None, verbose: bool = False):
     if verbose:
         log.write('Running sigmoid prediction on predictions')
     os.makedirs(out_dir, exist_ok=True)
@@ -160,6 +169,7 @@ def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarra
     sigmoid_plot_estimation_map = {}
     sigmoid_instructions_map = {}
     sigmoid_fitted_plot_map = {}
+    sigmoid_plot_score_detail_map = {}
 
     for experiment_name in experiment_prediction_map.keys():
         well_index_map = experiment_prediction_map[experiment_name]
@@ -179,25 +189,33 @@ def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarra
             out_image_filename = out_image_filename + file_name_suffix
         out_image_filename = out_image_filename + '.png'
 
-        sigmoid_score, estimate_plot, fitted_plot, instructions = pooled_sigmoid_evaluation(doses=doses,
-                                                                                            responses=responses,
-                                                                                            verbose=verbose,
-                                                                                            save_sigmoid_plot=save_sigmoid_plot,
-                                                                                            out_image_filename=out_image_filename)
+        sigmoid_score, score_detail, estimate_plot, fitted_plot, instructions = pooled_sigmoid_evaluation(doses=doses,
+                                                                                                          responses=responses,
+                                                                                                          verbose=verbose,
+                                                                                                          save_sigmoid_plot=save_sigmoid_plot,
+                                                                                                          out_image_filename=out_image_filename)
         sigmoid_score_map[experiment_name] = sigmoid_score
         sigmoid_plot_estimation_map[experiment_name] = estimate_plot
+        sigmoid_plot_score_detail_map[experiment_name] = score_detail
         sigmoid_fitted_plot_map[experiment_name] = fitted_plot
         sigmoid_instructions_map[experiment_name] = instructions
         log.write('Sigmoid score for ' + experiment_name + ': ' + str(sigmoid_score))
 
-    return sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_fitted_plot_map, sigmoid_instructions_map
+    return sigmoid_score_map, sigmoid_plot_score_detail_map, sigmoid_plot_estimation_map, sigmoid_fitted_plot_map, sigmoid_instructions_map
 
 
-def has_connection() -> bool:
+def has_connection(also_test_script: bool = False) -> bool:
     try:
         import pyRserve
         conn = pyRserve.connect()
         conn.close()
+
+        if also_test_script:
+            response = [0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3, 0.4]
+            dose = [100, 100, 50, 0, 100, 100, 50, 0, 100, 100, 50, 0]
+            pooled_sigmoid_evaluation(doses=dose, responses=response, out_image_filename='test.png',
+                                      save_sigmoid_plot=False,
+                                      verbose=True)
     except Exception as e:
         # Failed to close connection.
         log.write('Cannot connect to Rserve: ' + str(e))
@@ -206,7 +224,11 @@ def has_connection() -> bool:
 
 
 def main():
-    print('This function is used to evaluate predictions using R.')
+    log.write('This function is used to evaluate predictions using R.')
+    log.write('Testing the connection:')
+    connected = has_connection(also_test_script=True)
+
+    log.write('Testing done. Test succeeded: ' + str(connected))
 
 
 if __name__ == '__main__':

@@ -10,6 +10,7 @@ import torch
 
 import hardware
 import loader
+import mil_metrics
 import models
 import r
 from util import data_renderer
@@ -31,6 +32,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  max_workers: int, image_folder: str, channel_inclusions=loader.default_channel_inclusions_all,
                  tile_constraints=loader.default_tile_constraints_nuclei, global_log_dir: str = None,
                  sigmoid_verbose: bool = False, render_attention_spheres_enabled: bool = True,
+                 render_dose_response_curves_enabled: bool = True,
                  render_merged_predicted_tiles_activation_overlays: bool = False, gpu_enabled: bool = False,
                  render_attention_histogram_enabled: bool = False, data_loader_data_saver: bool = False):
     start_time = datetime.now()
@@ -145,21 +147,14 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
 
     norm = True
     sparse = True
-    # for norm in [True, False]:
-    #    for sparse in [True, False]:
-    #        current_out_dir = out_dir + 'predictions'
-    #        if norm:
-    #            current_out_dir = current_out_dir + '-normalized'
-    #        if sparse:
-    #            current_out_dir = current_out_dir + '-sparse'
-
     predict_data(model=model, data_loader=data_loader, X_raw=X_raw, X_metadata=X_metadata,
                  experiment_names=experiment_names, input_dim=input_dim, sparse_hist=sparse,
                  normalized_attention=norm, clear_old_data=False, image_folder=image_folder,
                  sigmoid_verbose=sigmoid_verbose, render_attention_histogram_enabled=render_attention_histogram_enabled,
                  render_merged_predicted_tiles_activation_overlays=render_merged_predicted_tiles_activation_overlays,
                  render_attention_spheres_enabled=render_attention_spheres_enabled,
-                 well_names=well_names, max_workers=max_workers, out_dir=out_dir + 'predictions')
+                 render_dose_response_curves_enabled=render_dose_response_curves_enabled,
+                 well_names=well_names, out_dir=out_dir + 'predictions')
 
     del data_loader, X_raw, X_metadata
 
@@ -173,11 +168,13 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
 
 def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X_raw: [np.ndarray],
                  X_metadata: [TileMetadata], experiment_names: [str], well_names: [str], image_folder: str,
-                 input_dim: (int), max_workers: int, out_dir: str, sparse_hist: bool = True,
-                 normalized_attention: bool = True, save_sigmoid_plot: bool = True, sigmoid_verbose: bool = False,
-                 render_attention_spheres_enabled: bool = True, render_attention_histogram_enabled: bool = False,
-                 render_merged_predicted_tiles_activation_overlays: bool = False,
-                 clear_old_data: bool = False, dpi: int = 250):
+                 input_dim: (int), out_dir: str, sparse_hist: bool = True, normalized_attention: bool = True,
+                 save_sigmoid_plot: bool = True, sigmoid_verbose: bool = False,
+                 render_dose_response_curves_enabled: bool = True, histogram_bootstrap_replications: int = 1000,
+                 histogram_resample_size: int = 100, attention_normalized_metrics: bool = True,
+                 render_attention_spheres_enabled: bool = False, render_attention_histogram_enabled: bool = False,
+                 render_merged_predicted_tiles_activation_overlays: bool = False, clear_old_data: bool = False,
+                 dpi: int = 250):
     os.makedirs(out_dir, exist_ok=True)
 
     log.write('Using image folder: ' + image_folder)
@@ -187,10 +184,34 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
     log.write('Saving predictions to: ' + out_dir)
     y_hats, y_preds, _, _, y_samples_pred, _, all_attentions, original_bag_indices = models.get_predictions(
         model, data_loader)
-    log.write('Finished predictions.')
     assert len(X_metadata) == len(all_attentions)
     assert len(X_metadata) == len(X_raw)
     del data_loader, model
+
+    # Running bayesian bootstrap
+    if os.path.exists('IGNORE-DEPRECATED.txt'):
+        # DEPRECATED FUNCTIONS
+        bootstrap_list, bootstrap_threshold_indices_list, bootstrap_metadata_list = mil_metrics.bayesian_bootstrap_attention_batch(
+            all_attentions=all_attentions, X_metadata=X_metadata, n_replications=histogram_bootstrap_replications,
+            resample_size=histogram_resample_size)
+        log.write('Finished predictions.')
+        data_renderer.render_bootstrapped_histograms(out_dir=out_dir, bootstrap_list=bootstrap_list,
+                                                     n_replications=histogram_bootstrap_replications,
+                                                     bootstrap_threshold_indices_list=bootstrap_threshold_indices_list,
+                                                     metadata_list=bootstrap_metadata_list)
+        del bootstrap_list, bootstrap_threshold_indices_list, bootstrap_metadata_list
+
+    # Evaluating attention metrics (histogram, entropy, etc.)
+    attention_metadata_list, attention_n_list, attention_bins_list, attention_otsu_index_list, attention_otsu_threshold_list, attention_entropy_attention_list, attention_entropy_hist_list = mil_metrics.attention_metrics_batch(
+        all_attentions=all_attentions,
+        X_metadata=X_metadata,
+        normalized=attention_normalized_metrics)
+    data_renderer.render_attention_histograms(out_dir=out_dir, metadata_list=attention_metadata_list,
+                                              n_list=attention_n_list,
+                                              bins_list=attention_bins_list, otsu_index_list=attention_otsu_index_list,
+                                              otsu_threshold_list=attention_otsu_threshold_list,
+                                              entropy_attention_list=attention_entropy_attention_list,
+                                              entropy_hist_list=attention_entropy_hist_list, dpi=dpi * 2)
 
     # Setting up result directories and file handles
     experiment_names_unique = list(dict.fromkeys(experiment_names))
@@ -220,9 +241,11 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
     sigmoid_plot_estimation_map = None
     sigmoid_plot_data_map = None
     sigmoid_instructions_map = None
-    if r.has_connection():
-        sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map = r.prediction_sigmoid_evaluation(
-            X_metadata=X_metadata, y_pred=y_hats, out_dir=out_dir, verbose=sigmoid_verbose, save_sigmoid_plot=False)
+    sigmoid_score_detail_map = None
+    if r.has_connection(also_test_script=True) and render_dose_response_curves_enabled:
+        sigmoid_score_map, sigmoid_score_detail_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map = r.prediction_sigmoid_evaluation(
+            X_metadata=X_metadata, y_pred=y_hats, out_dir=out_dir, verbose=sigmoid_verbose,
+            save_sigmoid_plot=save_sigmoid_plot)
     else:
         log.write('Not running r evaluation. No connection.')
 
@@ -236,10 +259,13 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
         f.close()
 
     # Rendering basic response curves
-    data_renderer.render_naive_response_curves(X_metadata=X_metadata, y_pred=y_hats, out_dir=out_dir,
-                                               sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
-                                               sigmoid_plot_fit_map=sigmoid_plot_data_map,
-                                               sigmoid_score_map=sigmoid_score_map, dpi=int(dpi * 1.337))
+    if render_dose_response_curves_enabled:
+        log.write('Rendering dose response curves.')
+        data_renderer.render_response_curves(X_metadata=X_metadata, y_pred=y_hats, out_dir=out_dir,
+                                             sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
+                                             sigmoid_plot_fit_map=sigmoid_plot_data_map,
+                                             sigmoid_score_detail_map=sigmoid_score_detail_map,
+                                             sigmoid_score_map=sigmoid_score_map, dpi=int(dpi * 1.337))
 
     # Rendering attention scores
     if render_attention_spheres_enabled:
@@ -501,6 +527,7 @@ def main():
             render_attention_spheres_enabled=render_attention_spheres_enabled,
             render_merged_predicted_tiles_activation_overlays=False,
             render_attention_histogram_enabled=False,
+            render_dose_response_curves_enabled=True,
             sigmoid_verbose=True,
             out_dir='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\debug_predictions-linux\\',
             gpu_enabled=False, normalize_enum=7, max_workers=4)

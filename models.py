@@ -310,7 +310,7 @@ class BaselineMIL(OmniSpheroMil):
         y = y.unsqueeze(dim=0)
         # y = torch.argmax(y, dim=1)
 
-        y_hat, y_hat_binarized, _, y_hat_tiles, _ = self.forward(X)
+        y_hat, y_hat_binarized, attention, y_hat_tiles, _ = self.forward(X)
         y_hat = y_hat.squeeze(dim=0)
 
         bag_acc = None
@@ -327,7 +327,10 @@ class BaselineMIL(OmniSpheroMil):
             tile_acc, tile_accuracy_list, tile_prediction_list = self.compute_accuracy_tiles(y_targets=y_tiles,
                                                                                              y_predictions=y_hat_tiles)
 
-        return bag_acc, tile_acc, tile_accuracy_list, tile_prediction_list, float(y_hat), y_hat_binarized
+        if not self.enable_attention:
+            attention = None
+
+        return bag_acc, tile_acc, tile_accuracy_list, tile_prediction_list, float(y_hat), y_hat_binarized, attention
 
     def compute_accuracy_tiles(self, y_targets: Tensor, y_predictions: [Tensor]) -> (float, [float], [int]):
         accuracy_list = []
@@ -397,7 +400,10 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     best_loss = sys.float_info.max
     history = []
     history_keys = ['train_loss', 'train_acc', 'val_acc', 'val_loss', 'train_roc_auc', 'val_roc_auc',
-                    'val_mean_sigmoid_scores', 'train_dice_score', 'val_dice_score']
+                    'train_entropy_attention_label0', 'val_entropy_attention_label0', 'train_otsu_threshold_label0',
+                    'val_otsu_threshold_label0', 'train_entropy_attention_label1', 'val_entropy_attention_label1',
+                    'train_otsu_threshold_label1', 'val_otsu_threshold_label1', 'val_mean_sigmoid_scores',
+                    'train_dice_score', 'val_dice_score']
     history_keys.sort()
 
     checkpoint_out_dir = out_dir_base + 'checkpoints' + os.sep
@@ -476,6 +482,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
     epoch = 0
     while (epoch - 1 <= epochs) and not cancel_requested:
+        # Beginning of a new epoch!
         epoch = epoch + 1
 
         # TRAINING PHASE
@@ -485,6 +492,10 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         train_acc_tiles = []
         all_labels = []
         predicted_labels = []
+        otsu_threshold_label0_list = []
+        entropy_attention_label0_list = []
+        otsu_threshold_label1_list = []
+        entropy_attention_label1_list = []
         train_FP = 0
         train_TP = 0
         train_FN = 0
@@ -530,7 +541,8 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
             # https://github.com/yhenon/pytorch-retinanet/issues/3
             train_losses.append(float(loss))
-            acc, acc_tiles, _, _, y_hat, y_hat_binarized = model.compute_accuracy(data, bag_label, tile_labels)
+            acc, acc_tiles, _, _, y_hat, y_hat_binarized, attention = model.compute_accuracy(data, bag_label,
+                                                                                             tile_labels)
             train_acc.append(float(acc))
             train_acc_tiles.append(float(acc_tiles))
             predicted_labels.append(float(y_hat))
@@ -550,6 +562,23 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                 else:
                     train_TN += 1
 
+            # Evaluating Attention Histogram
+            if model.enable_attention:
+                attention = attention.cpu().squeeze().detach().numpy()
+                _, _, _, otsu_threshold, entropy_attention, _ = mil_metrics.attention_metrics(attention=attention,
+                                                                                              normalized=True)
+            else:
+                otsu_threshold = float('NaN')
+                entropy_attention = float('NaN')
+
+            # Adding the params to the respective lists, based on the current label
+            if label == 1:
+                otsu_threshold_label0_list.append(otsu_threshold)
+                entropy_attention_label0_list.append(entropy_attention)
+            else:
+                otsu_threshold_label1_list.append(otsu_threshold)
+                entropy_attention_label1_list.append(entropy_attention)
+
             # Notifying Callbacks
             for i in range(len(callbacks)):
                 callback: torch_callbacks.BaseTorchCallback = callbacks[i]
@@ -560,7 +589,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             optimizer.step()  # update parameters
             # optim.zero_grad() # reset gradients (alternative if all grads are contained in the optimizer)
             # for p in model.parameters(): p.grad=None # alternative for model.zero_grad() or optim.zero_grad()
-            del data, bag_label, label, y_hat
+            del data, bag_label, label, y_hat, attention, otsu_threshold, entropy_attention
 
         # VALIDATION PHASE
         result, _, all_losses, all_tile_lists, _ = evaluate(model, validation_data, clamp_max=clamp_max,
@@ -573,7 +602,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         y_hats_sigmoid = None
         if r.has_connection() and X_metadata_sigmoid is not None and data_loader_sigmoid is not None:
             y_hats_sigmoid, _, _, _, _, _, _, _ = get_predictions(model, data_loader_sigmoid)
-            sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map = r.prediction_sigmoid_evaluation(
+            sigmoid_score_map, sigmoid_score_detail_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map = r.prediction_sigmoid_evaluation(
                 X_metadata=X_metadata_sigmoid,
                 y_pred=y_hats_sigmoid,
                 save_sigmoid_plot=False,
@@ -589,13 +618,14 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             f.close()
 
             if save_sigmoid_plot:
-                data_renderer.render_naive_response_curves(X_metadata=X_metadata_sigmoid, y_pred=y_hats_sigmoid,
-                                                           sigmoid_score_map=sigmoid_score_map, dpi=350,
-                                                           sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
-                                                           sigmoid_plot_fit_map=sigmoid_plot_data_map,
-                                                           file_name_suffix='-epoch' + str(epoch),
-                                                           title_suffix='\nTraining Epoch ' + str(epoch),
-                                                           out_dir=sigmoid_data_dir_naive_live)
+                data_renderer.render_response_curves(X_metadata=X_metadata_sigmoid, y_pred=y_hats_sigmoid,
+                                                     sigmoid_score_map=sigmoid_score_map, dpi=350,
+                                                     sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
+                                                     sigmoid_plot_fit_map=sigmoid_plot_data_map,
+                                                     sigmoid_score_detail_map=sigmoid_score_detail_map,
+                                                     file_name_suffix='-epoch' + str(epoch),
+                                                     title_suffix='\nTraining Epoch ' + str(epoch),
+                                                     out_dir=sigmoid_data_dir_naive_live)
 
             sigmoid_mean = float('nan')
             sigmoid_successes = 0
@@ -654,7 +684,28 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             log.write(str(e))
         result['train_roc_auc'] = roc_auc
 
+        # Adding the sigmoid scores to the results dict.
+        # NOTE: This says "VAL" and that's correct, because it comes from a separate validation set
         result['val_mean_sigmoid_scores'] = val_mean_sigmoid_scores
+
+        if len(otsu_threshold_label0_list) == 0:
+            otsu_threshold_label0_list = [float('NaN')]
+        if len(entropy_attention_label0_list) == 0:
+            entropy_attention_label0_list = [float('NaN')]
+        if len(otsu_threshold_label1_list) == 0:
+            otsu_threshold_label1_list = [float('NaN')]
+        if len(entropy_attention_label1_list) == 0:
+            entropy_attention_label1_list = [float('NaN')]
+        assert len(entropy_attention_label1_list) == len(otsu_threshold_label1_list)
+        assert len(entropy_attention_label0_list) == len(otsu_threshold_label0_list)
+
+        # Adding (mean) evaluations for this epoch
+        result['train_otsu_threshold_label0'] = sum(otsu_threshold_label0_list) / len(otsu_threshold_label0_list)
+        result['train_entropy_attention_label0'] = sum(entropy_attention_label0_list) / len(
+            entropy_attention_label0_list)
+        result['train_otsu_threshold_label1'] = sum(otsu_threshold_label1_list) / len(otsu_threshold_label1_list)
+        result['train_entropy_attention_label1'] = sum(entropy_attention_label1_list) / len(
+            entropy_attention_label1_list)
         result['train_FP'] = train_FP
         result['train_TP'] = train_TP
         result['train_FN'] = train_FN
@@ -676,10 +727,17 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         history.append(result)
         log.write(
             'Epoch {}/{}: Train Loss: {:.4f}, Train Acc (Bags): {:.4f}, Val Loss: {:.4f}, '
-            'Val Acc (Bags): {:.4f},Sigmoid Scores: {:.4f} Train AUC: {:.4f}, Val AUC: {:.4f}. Duration: {}. ETA: {}'.format(
+            'Val Acc (Bags): {:.4f}, Sigmoid Scores: {:.4f}, Train AUC: {:.4f}, Val AUC: {:.4f}, '
+            'Train Otsu 0: {:.4f}, Val Otsu 0: {:.4f}, Train Entropy 0: {:.4f}, Val Entropy 0: {:.4f}. '
+            'Train Otsu 1: {:.4f}, Val Otsu 1: {:.4f}, Train Entropy 1: {:.4f}, Val Entropy 1: {:.4f}. '
+            'Duration: {}. ETA: {}'.format(
                 epoch, epochs, result['train_loss'], result['train_acc'], result['val_loss'],
                 result['val_acc'], result['val_mean_sigmoid_scores'], result['train_roc_auc'], result['val_roc_auc'],
-                time_diff, eta_timestamp))
+                result['train_otsu_threshold_label0'], result['val_otsu_threshold_label0'],
+                result['train_entropy_attention_label0'], result['val_entropy_attention_label0'],
+                result['train_otsu_threshold_label1'], result['val_otsu_threshold_label1'],
+                result['train_entropy_attention_label1'], result['val_entropy_attention_label1'], time_diff,
+                eta_timestamp))
 
         # Notifying Callbacks
         for i in range(len(callbacks)):
@@ -707,9 +765,15 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             mil_metrics.plot_dice_scores(history, metrics_dir_live, include_tikz=False)
             mil_metrics.plot_sigmoid_scores(history, metrics_dir_live, include_tikz=False)
             mil_metrics.plot_binary_roc_curves(history, metrics_dir_live, include_tikz=False)
+
+            if model.enable_attention:
+                mil_metrics.plot_attetion_otsu_threshold(history, metrics_dir_live, label=0, include_tikz=False)
+                mil_metrics.plot_attention_entropy(history, metrics_dir_live, label=0, include_tikz=False)
+                mil_metrics.plot_attetion_otsu_threshold(history, metrics_dir_live, label=1, include_tikz=False)
+                mil_metrics.plot_attention_entropy(history, metrics_dir_live, label=1, include_tikz=False)
         except Exception as e:
-            print('Failed to write metrics for this epoch.')
-            print(str(e))
+            log.write('Failed to write metrics for this epoch.')
+            log.write(str(e))
 
         # Printing each loss for every batch
         f = open(batch_losses_file, 'a')
@@ -731,7 +795,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
             # Rendering the sigmoid curves again, because of new best performance
             if r.has_connection() and X_metadata_sigmoid is not None and data_loader_sigmoid is not None and y_hats_sigmoid is not None:
-                sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map = r.prediction_sigmoid_evaluation(
+                sigmoid_score_map, sigmoid_score_detail_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map = r.prediction_sigmoid_evaluation(
                     X_metadata=X_metadata_sigmoid,
                     y_pred=y_hats_sigmoid,
                     save_sigmoid_plot=False,
@@ -749,15 +813,16 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                 f.close()
 
                 # Rendering the data
-                data_renderer.render_naive_response_curves(X_metadata=X_metadata_sigmoid, y_pred=y_hats_sigmoid,
-                                                           sigmoid_score_map=sigmoid_score_map, dpi=350,
-                                                           sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
-                                                           sigmoid_plot_fit_map=sigmoid_plot_data_map,
-                                                           file_name_suffix='-best-epoch' + str(epoch),
-                                                           title_suffix='\nTraining Epoch ' + str(
-                                                               epoch) + ' (New Best)',
-                                                           out_dir=sigmoid_data_dir_naive_live_best)
-                del sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map
+                data_renderer.render_response_curves(X_metadata=X_metadata_sigmoid, y_pred=y_hats_sigmoid,
+                                                     sigmoid_score_map=sigmoid_score_map, dpi=350,
+                                                     sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
+                                                     sigmoid_plot_fit_map=sigmoid_plot_data_map,
+                                                     sigmoid_score_detail_map=sigmoid_score_detail_map,
+                                                     file_name_suffix='-best-epoch' + str(epoch),
+                                                     title_suffix='\nTraining Epoch ' + str(
+                                                         epoch) + ' (New Best)',
+                                                     out_dir=sigmoid_data_dir_naive_live_best)
+                del sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_score_detail_map
         del y_hats_sigmoid
 
         if cancel_requested:
@@ -848,6 +913,10 @@ def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, clamp_max:
     test_losses = []
     test_acc = []
     test_acc_tiles = []
+    otsu_threshold_label0_list = []
+    entropy_attention_label0_list = []
+    otsu_threshold_label1_list = []
+    entropy_attention_label1_list = []
     acc_tiles_list_list = []
     tiles_prediction_list_list = []
     val_FP = 0
@@ -877,9 +946,10 @@ def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, clamp_max:
 
         # https://github.com/yhenon/pytorch-retinanet/issues/3
         test_losses.append(float(loss))
-        acc, acc_tiles, acc_tiles_list, tiles_prediction_list, y_hat, y_hat_binarized = model.compute_accuracy(data,
-                                                                                                               bag_label,
-                                                                                                               tile_labels)
+        acc, acc_tiles, acc_tiles_list, tiles_prediction_list, y_hat, y_hat_binarized, attention = model.compute_accuracy(
+            data,
+            bag_label,
+            tile_labels)
         test_acc_tiles.append(float(acc_tiles))
         acc_tiles_list_list.append(acc_tiles_list)
         tiles_prediction_list_list.append(tiles_prediction_list)
@@ -899,10 +969,27 @@ def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, clamp_max:
             else:
                 val_TN += 1
 
+        # Appending evaluations to lists
         bag_label_list.append(float(label))
         y_hat_list.append(float(y_hat))
 
-        del data, bag_label, tile_labels, label, y_hat
+        # Evaluating Attention Histogram
+        if model.enable_attention:
+            attention = attention.cpu().squeeze().numpy()
+            _, _, _, otsu_threshold, entropy_attention, _ = mil_metrics.attention_metrics(attention=attention,
+                                                                                          normalized=True)
+        else:
+            otsu_threshold = float('NaN')
+            entropy_attention = float('NaN')
+
+        if label == 1:
+            otsu_threshold_label1_list.append(otsu_threshold)
+            entropy_attention_label1_list.append(entropy_attention)
+        else:
+            otsu_threshold_label0_list.append(otsu_threshold)
+            entropy_attention_label0_list.append(entropy_attention)
+
+        del data, bag_label, tile_labels, label, y_hat, attention, otsu_threshold, entropy_attention
 
     fpr, tpr, thresholds = mil_metrics.binary_roc_curve(bag_label_list, y_hat_list)
     roc_auc = float('NaN')
@@ -911,6 +998,21 @@ def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, clamp_max:
     except Exception as e:
         log.write(str(e))
 
+    if len(otsu_threshold_label0_list) == 0:
+        otsu_threshold_label0_list = [float('NaN')]
+    if len(entropy_attention_label0_list) == 0:
+        entropy_attention_label0_list = [float('NaN')]
+    if len(otsu_threshold_label1_list) == 0:
+        otsu_threshold_label1_list = [float('NaN')]
+    if len(entropy_attention_label1_list) == 0:
+        entropy_attention_label1_list = [float('NaN')]
+    assert len(entropy_attention_label1_list) == len(otsu_threshold_label1_list)
+    assert len(entropy_attention_label0_list) == len(otsu_threshold_label0_list)
+
+    result['val_otsu_threshold_label0'] = sum(otsu_threshold_label0_list) / len(entropy_attention_label0_list)
+    result['val_entropy_attention_label0'] = sum(entropy_attention_label0_list) / len(entropy_attention_label0_list)
+    result['val_otsu_threshold_label1'] = sum(otsu_threshold_label1_list) / len(entropy_attention_label1_list)
+    result['val_entropy_attention_label1'] = sum(entropy_attention_label1_list) / len(entropy_attention_label1_list)
     result['val_dice_score'] = mil_metrics.calculate_dice_score(TP=val_TP, FP=val_FP, FN=val_FN)
     result['val_FP'] = val_FP
     result['val_TP'] = val_TP

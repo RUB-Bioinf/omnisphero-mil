@@ -28,6 +28,7 @@ from util import log
 from util import utils
 from util.utils import get_plt_as_tex
 from util.utils import line_print
+from util.well_metadata import TileMetadata
 
 
 def multi_class_accuracy(outputs, targets):
@@ -78,6 +79,27 @@ def plot_dice_scores(history, save_path: str, include_raw: bool = False, include
         plot_metric(history, 'train_dice_score', save_path, include_tikz=include_tikz, clamp=clamp)
         plot_metric(history, 'val_dice_score', save_path, include_tikz=include_tikz, clamp=clamp)
     plot_metric(history, 'val_dice_score', save_path, 'train_dice_score', include_tikz=include_tikz, clamp=clamp)
+
+
+def plot_attetion_otsu_threshold(history, save_path: str, label: int, include_raw: bool = False,
+                                 include_tikz: bool = False, clamp: float = None):
+    if include_raw:
+        plot_metric(history, 'train_otsu_threshold_label' + str(label), save_path, include_tikz=include_tikz,
+                    clamp=clamp)
+        plot_metric(history, 'val_otsu_threshold_label' + str(label), save_path, include_tikz=include_tikz, clamp=clamp)
+    plot_metric(history, 'val_otsu_threshold_label' + str(label), save_path, 'train_otsu_threshold_label' + str(label),
+                include_tikz=include_tikz, clamp=clamp)
+
+
+def plot_attention_entropy(history, save_path: str, label: int, include_raw: bool = False, include_tikz: bool = False,
+                           clamp: float = None):
+    if include_raw:
+        plot_metric(history, 'train_entropy_attention_label' + str(label), save_path, include_tikz=include_tikz,
+                    clamp=clamp)
+        plot_metric(history, 'val_entropy_attention_label' + str(label), save_path, include_tikz=include_tikz,
+                    clamp=clamp)
+    plot_metric(history, 'val_entropy_attention_label' + str(label), save_path,
+                'train_entropy_attention_label' + str(label), include_tikz=include_tikz, clamp=clamp)
 
 
 def plot_sigmoid_scores(history, save_path: str, include_tikz: bool = False):
@@ -202,6 +224,14 @@ def _get_metric_title(metric_name: str):
     metric_name = metric_name.replace('val_', '')
     metric_name = metric_name.replace('train_', '')
 
+    if metric_name == 'otsu_threshold_label0':
+        metric_name = 'Attention (Normalized) Otsu Threshold (Label 0)'
+    if metric_name == 'entropy_attention_label0':
+        metric_name = 'Attention Entropy (Label 0)'
+    if metric_name == 'otsu_threshold_label1':
+        metric_name = 'Attention (Normalized) Otsu Threshold (Label 1)'
+    if metric_name == 'entropy_attention_label1':
+        metric_name = 'Attention Entropy (Label 1)'
     if metric_name == 'mean_sigmoid_scores':
         metric_name = 'Mean Sigmoid Scores'
     if metric_name == 'acc':
@@ -801,3 +831,110 @@ def save_sigmoid_prediction_img(file_path: str, title: str, prediction_dict: dic
 
     plt.autoscale()
     plt.savefig(file_path, dpi=dpi, bbox_inches='tight')
+
+
+def attention_metrics(attention: np.ndarray, normalized: bool):
+    a = np.asarray(attention, dtype=np.float64)
+    if normalized:
+        a = a / a.max()
+
+    n, bins = utils.sparse_hist(a)
+    n = np.asarray(n)
+    bins = np.asarray(bins)
+
+    otsu_index = utils.lecture_otsu(n=n)
+    # otsu_threshold = bins[n[otsu_index]]
+    otsu_threshold = bins[otsu_index]
+    entropy_attention = utils.lecture_shannon_entropy(n=a)
+    entropy_hist = utils.lecture_shannon_entropy(n=n)
+
+    return n, bins, otsu_index, otsu_threshold, entropy_attention, entropy_hist
+
+
+def attention_metrics_batch(all_attentions: [np.ndarray], X_metadata: [[TileMetadata]], normalized: bool):
+    assert len(all_attentions) == len(X_metadata)
+
+    metadata_list = []
+    otsu_index_list = []
+    otsu_threshold_list = []
+    entropy_attention_list = []
+    entropy_hist_list = []
+    n_list = []
+    bins_list = []
+
+    log.write('Calculating metrics for ' + str(len(all_attentions)) + ' attentions.')
+    print('')
+    for (attention, metadata) in zip(all_attentions, X_metadata):
+        print('Len attention: ' + str(len(attention)))
+        print('Len metadata: ' + str(len(metadata)))
+
+        assert len(attention) == len(metadata)
+        metadata: TileMetadata = metadata[0]
+        line_print(
+            'Calculating metrics for: ' + metadata.experiment_name + ' - ' + metadata.get_formatted_well(long=True))
+
+        n, bins, otsu_index, otsu_threshold, entropy_attention, entropy_hist = attention_metrics(attention=attention,
+                                                                                                 normalized=normalized)
+
+        n_list.append(n)
+        bins_list.append(bins)
+        metadata_list.append(metadata)
+        otsu_index_list.append(otsu_index)
+        otsu_threshold_list.append(otsu_threshold)
+        entropy_attention_list.append(entropy_attention)
+        entropy_hist_list.append(entropy_hist)
+
+        del otsu_index, otsu_threshold, entropy_attention, entropy_hist, attention, metadata, n, bins
+
+    log.write('Finished evaluating attention metrics.')
+    return metadata_list, n_list, bins_list, otsu_index_list, otsu_threshold_list, entropy_attention_list, entropy_hist_list
+
+
+def bayesian_bootstrap_attention(attention: np.ndarray, n_replications: int = 1000, resample_size: int = 100,
+                                 seed: int = None):
+    ###
+    # DEPRECATED
+    ###
+
+    from imports import bayesian_bootstrap
+    bootstrap = bayesian_bootstrap.bayesian_bootstrap(X=np.asarray(attention, dtype=np.float64), statistic=np.mean,
+                                                      n_replications=n_replications, resample_size=resample_size,
+                                                      seed=seed)
+    bootstrap = np.asarray(bootstrap, dtype=np.float64)
+    threshold_index = utils.lecture_otsu(n=bootstrap)
+    threshold = bootstrap[threshold_index]
+
+    return bootstrap, threshold, threshold_index
+
+
+def bayesian_bootstrap_attention_batch(all_attentions: [np.ndarray], X_metadata: [[TileMetadata]],
+                                       n_replications: int = 1000, resample_size: int = 100,
+                                       seed: int = None) -> [np.ndarray]:
+    ###
+    # DEPRECATED
+    ###
+
+    bootstrap_list = []
+    threshold_indices_list = []
+    metadata_list = []
+    assert len(all_attentions) == len(X_metadata)
+
+    log.write('Bootstrapping ' + str(len(all_attentions)) + ' attentions. Replications: ' + str(
+        n_replications) + '. Re-samples: ' + str(resample_size))
+    print('')
+    for (attention, metadata) in zip(all_attentions, X_metadata):
+        assert len(attention) == len(metadata)
+        metadata: TileMetadata = metadata[0]
+        line_print(
+            'Bootstrapping attentions: ' + metadata.experiment_name + ' - ' + metadata.get_formatted_well(long=True))
+        bootstrap, threshold, threshold_index = bayesian_bootstrap_attention(attention=attention,
+                                                                             n_replications=n_replications,
+                                                                             resample_size=resample_size, seed=seed)
+
+        bootstrap_list.append(bootstrap)
+        threshold_indices_list.append(threshold_index)
+        metadata_list.append(metadata)
+        del attention, bootstrap, threshold, threshold_index, metadata
+
+    log.write('Finished bootstrapping attention histograms.')
+    return bootstrap_list, threshold_indices_list, metadata_list

@@ -202,10 +202,10 @@ def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pr
     log.write('Finished rendering all attention overlays.')
 
 
-def render_naive_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sigmoid_score_map: {str} = None,
-                                 file_name_suffix: str = None, title_suffix: str = None, out_dir: str = None,
-                                 sigmoid_plot_fit_map: {np.ndarray} = None, sigmoid_plot_estimation_map=None,
-                                 dpi: int = 650):
+def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sigmoid_score_map: {str} = None,
+                           file_name_suffix: str = None, title_suffix: str = None, out_dir: str = None,
+                           sigmoid_plot_fit_map: {np.ndarray} = None, sigmoid_plot_estimation_map=None,
+                           sigmoid_score_detail_map: {} = None, dpi: int = 650):
     # Remapping predictions so they can be evaluated
     experiment_prediction_map_pooled = {}
     experiment_prediction_map = {}
@@ -351,7 +351,21 @@ def render_naive_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray
             plt.plot(estimations_x, estimations_y, color='lightblue')
             legend_entries.append('Sigmoid Curve Fit (Estimated)')
 
-        plt.title('Predictions: ' + experiment_name + ' ' + title_suffix + '\nSigmoid Score: ' + sigmoid_score)
+        title = 'Predictions: ' + experiment_name + ' ' + title_suffix
+        if sigmoid_score_detail_map is not None and sigmoid_score_detail_map[experiment_name] is not None:
+            sigmoid_score_detail = sigmoid_score_detail_map[experiment_name]
+            title = title + '\n\nAsymptote-Score: ' + str(sigmoid_score_detail['AsympScore'])
+            title = title + '\nEffect-Score: ' + str(sigmoid_score_detail['EffectScore'])
+            title = title + '\nGradient-Score: ' + str(sigmoid_score_detail['GradientScore'])
+            title = title + '\nResidual-Score: ' + str(sigmoid_score_detail['ResidualScore'])
+            title = title + '\nRaw Score: ' + str(sigmoid_score_detail['rawScore'])
+            title = title + '\n\nFinal Sigmoid Score: ' + sigmoid_score
+
+            del sigmoid_score_detail
+        else:
+            title = title + '\nSigmoid Score: ' + sigmoid_score
+
+        plt.title(title)
         plt.legend(legend_entries, loc='best')
         plt.ylabel('Prediction Score')
         plt.xlabel('Wells')
@@ -368,6 +382,118 @@ def render_naive_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray
         plt.savefig(out_plot_name_base + '.png', dpi=dpi)
         plt.savefig(out_plot_name_base + '.svg', dpi=dpi, transparent=True)
         plt.savefig(out_plot_name_base + '.pdf', dpi=dpi)
+
+
+def render_attention_histograms(out_dir: str, n_list: [np.ndarray], bins_list: [np.ndarray],
+                                otsu_index_list: [np.ndarray], otsu_threshold_list: [np.ndarray],
+                                entropy_attention_list: [np.ndarray], entropy_hist_list: [np.ndarray],
+                                metadata_list: [TileMetadata], dpi: int = 300):
+    os.makedirs(out_dir, exist_ok=True)
+    assert len(otsu_index_list) == len(metadata_list)
+    assert len(otsu_threshold_list) == len(metadata_list)
+    assert len(entropy_attention_list) == len(metadata_list)
+    assert len(entropy_hist_list) == len(metadata_list)
+    assert len(n_list) == len(metadata_list)
+    assert len(bins_list) == len(metadata_list)
+
+    log.write('Rendering attention histograms to: ' + out_dir)
+    print('')
+
+    for n, bins, otsu_index, otsu_threshold, entropy_attention, entropy_hist, metadata, i in zip(n_list, bins_list,
+                                                                                                 otsu_index_list,
+                                                                                                 otsu_threshold_list,
+                                                                                                 entropy_attention_list,
+                                                                                                 entropy_hist_list,
+                                                                                                 metadata_list,
+                                                                                                 range(len(n_list))):
+        exp_name = metadata.experiment_name
+        well = metadata.get_formatted_well(long=True)
+
+        line_print(str(i) + '/' + str(len(n_list)) + ': Rendering histogram for ' + exp_name + ' - ' + well)
+        current_out_dir = out_dir + os.sep + exp_name + os.sep + well + os.sep
+        os.makedirs(current_out_dir, exist_ok=True)
+
+        render_attention_histogram(otsu_index=otsu_index, otsu_threshold=otsu_threshold, n=n, bins=bins,
+                                   entropy_attention=entropy_attention, entropy_hist=entropy_hist, dpi=dpi,
+                                   filename='attention-list-' + exp_name + '-' + well,
+                                   title='Attention Histogram: ' + exp_name + ' - ' + well,
+                                   file_formats=['.png', '.svg', '.pdf'], out_dir=current_out_dir)
+        del otsu_index, otsu_threshold, entropy_attention, entropy_hist, metadata, exp_name, well, i, n, bins
+
+    log.write('Finished rendering all histograms.')
+
+
+def render_attention_histogram(n: np.ndarray, bins: np.ndarray, otsu_index: int, otsu_threshold: float,
+                               entropy_attention: float, entropy_hist: float, title: str, filename: str,
+                               out_dir: str, dpi: int = 400, file_formats: [str] = ['.png', '.svg', '.pdf']):
+    os.makedirs(out_dir, exist_ok=True)
+    assert len(n) == len(bins)
+    width = min(bins[np.where(bins > 0)])
+
+    plt.clf()
+    plt.bar(x=bins, width=width, height=n)
+    plt.axvline(x=otsu_threshold, color='orange')
+
+    x_label = 'Attention'
+    if bins.min() == 0.0 and bins.max() == 1.0:
+        x_label = x_label + ' (Normalized)'
+
+    plt.title(title)
+    plt.ylabel('Count')
+    plt.xlabel(x_label)
+    plt.legend(['Otsu Threshold: ' + str(otsu_threshold), 'Histogram (Entropy: ' + str(entropy_attention) + ')'],
+               loc='best')
+
+    plt.tight_layout()
+    plt.autoscale()
+    out_file = out_dir + os.sep + filename
+
+    for f_format in file_formats:
+        plt.savefig(out_file + f_format, dpi=dpi)
+
+
+def render_bootstrapped_histograms(out_dir, bootstrap_list: [np.ndarray], bootstrap_threshold_indices_list: [int],
+                                   metadata_list: [TileMetadata], n_replications: int, dpi: int = 600):
+    ###
+    # DEPRECATED
+    ###
+
+    os.makedirs(out_dir, exist_ok=True)
+    assert len(bootstrap_list) == len(bootstrap_threshold_indices_list)
+    assert len(bootstrap_list) == len(metadata_list)
+    log.write('Writing bootstrapped histogram to: ' + out_dir)
+
+    for (boostrap_result, threshold_index, metadata, i) in zip(bootstrap_list, bootstrap_threshold_indices_list,
+                                                               metadata_list,
+                                                               range(len(metadata_list))):
+        current_out_dir = out_dir + os.sep + metadata.experiment_name + os.sep
+        os.makedirs(current_out_dir, exist_ok=True)
+
+        render_bootstrapped_histogram(boostrap_result=boostrap_result, threshold_index=threshold_index,
+                                      metadata=metadata, dpi=dpi, out_dir=current_out_dir)
+
+
+def render_bootstrapped_histogram(boostrap_result, threshold_index, metadata, out_dir, dpi: int = 600):
+    ###
+    # DEPRECATED
+    ###
+
+    x_entries = (np.asarray(list(range(len(boostrap_result))), dtype=np.float64) + 1) / float(len(boostrap_result))
+    assert len(x_entries) == len(boostrap_result)
+    threshold_normalized = float(threshold_index) / float(len(boostrap_result))
+
+    plt.clf()
+    plt.bar(x=x_entries, width=min(x_entries / 1.1337), height=boostrap_result)
+    # plt.bar(height=x_entries, width=min(x_entries / 1.1337), x=boostrap_result)
+    plt.axvline(x=threshold_normalized, color='orange')
+
+    plt.title(metadata.experiment_name + '-' + metadata.get_formatted_well() + ' - Bootstrapped Histogram')
+    plt.legend(['Otsu Threshold: ' + str(threshold_normalized), 'Histogram'], loc='best')
+
+    plt.tight_layout()
+    plt.autoscale()
+    out_file = out_dir + metadata.experiment_name + '-' + metadata.get_formatted_well() + '-bootstrap-hist.png'
+    plt.savefig(out_file, dpi=dpi)
 
 
 def rgb_to_gray(img: np.ndarray, weights_r=0.299, weights_g=0.587, weights_b=0.114):

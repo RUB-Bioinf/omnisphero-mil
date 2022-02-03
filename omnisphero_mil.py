@@ -17,6 +17,7 @@ import models
 import omnisphero_mining
 import r
 import torch_callbacks
+from util import data_renderer
 from util import log
 from util import paths
 from util import sample_preview
@@ -159,7 +160,7 @@ def train_model(
     log.write('Model classification - Use Max: ' + str(model_use_max))
     log.write('Model classification - Use Attention: ' + str(model_enable_attention))
     log.write('Model classification - Use HNM: ' + str(use_hard_negative_mining))
-    log.write('R - Is pyRserve connection available: ' + str(r.has_connection()))
+    log.write('R - Is pyRserve connection available: ' + str(r.has_connection(also_test_script=True)))
 
     log.write('Saving logs and protocols to: ' + out_dir)
     # Logging params and args
@@ -251,6 +252,10 @@ def train_model(
     log.write('Writing loading preview samples to: ' + loading_preview_dir)
     print('\n')
     for i in range(len(X)):
+        # Not doing that on windows devices
+        if os.name == 'nt':
+            continue
+
         line_print('Writing loading preview: ' + str(i + 1) + '/' + str(len(X)), include_in_log=False)
         current_x: np.ndarray = X[i]
         j = random.randint(0, current_x.shape[0] - 1)
@@ -551,6 +556,12 @@ def train_model(
         mil_metrics.plot_sigmoid_scores(history, metrics_dir, include_tikz=True)
         mil_metrics.plot_binary_roc_curves(history, metrics_dir, include_tikz=True)
 
+        if model.enable_attention:
+            mil_metrics.plot_attetion_otsu_threshold(history, metrics_dir, label=1, include_tikz=True)
+            mil_metrics.plot_attention_entropy(history, metrics_dir, label=1, include_tikz=True)
+            mil_metrics.plot_attetion_otsu_threshold(history, metrics_dir, label=0, include_tikz=True)
+            mil_metrics.plot_attention_entropy(history, metrics_dir, label=0, include_tikz=True)
+
     ##################
     # TESTING START
     ##################
@@ -646,6 +657,12 @@ def train_model(
         mil_metrics.plot_sigmoid_scores(history, metrics_dir, include_tikz=True)
         mil_metrics.plot_binary_roc_curves(history, metrics_dir, include_tikz=True)
 
+        if model.enable_attention:
+            mil_metrics.plot_attetion_otsu_threshold(history, metrics_dir, label=1, include_tikz=True)
+            mil_metrics.plot_attention_entropy(history, metrics_dir, label=1, include_tikz=True)
+            mil_metrics.plot_attetion_otsu_threshold(history, metrics_dir, label=0, include_tikz=True)
+            mil_metrics.plot_attention_entropy(history, metrics_dir, label=0, include_tikz=True)
+
         # Testing HNM models on test data
         log.write('Testing HNM best model on validation and test data to determine performance')
         test_dir = mined_out_dir + 'metrics' + os.sep + 'performance-validation-data' + os.sep
@@ -678,7 +695,9 @@ def test_model(model: models.OmniSpheroMil, model_save_path_best: str, model_opt
                data_loader: OmniSpheroDataLoader, X_raw: [np.ndarray], y_tiles: [int],
                bag_names: [str], out_dir: str):
     attention_out_dir = out_dir + 'attention' + os.sep
+    sigmoid_out_dir = out_dir + 'sigmoid' + os.sep
     os.makedirs(attention_out_dir, exist_ok=True)
+    os.makedirs(sigmoid_out_dir, exist_ok=True)
     os.makedirs(out_dir, exist_ok=True)
 
     # Get best saved model from this run
@@ -791,7 +810,7 @@ def main(debug: bool = False):
         debug = True
     print('Debug mode: ' + str(debug))
 
-    current_epochs = 800
+    current_epochs = 500
     current_max_workers = 35
     default_out_dir_base = default_out_dir_unix_base
     current_sources_dir = curated_overlapping_source_dirs_unix
@@ -852,8 +871,11 @@ def main(debug: bool = False):
     else:
         # '/mil/oligo-diff/models/linux/hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
         for l in ['binary_cross_entropy']:
-            for o in ['adam', 'adadelta']:
-                for r in [0.65]:
+            # best: binary_cross_entropy
+            for o in ['adadelta']:  # ['adam', 'adadelta']:
+                # best: adadelta
+                for p in [0.65]:
+                    # best: 0.65
                     for i in [7, 8, 6]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
@@ -863,8 +885,8 @@ def main(debug: bool = False):
                                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                                         image_folder=image_folder,
                                         normalize_enum=i,
-                                        training_label='hnm-sigmoid-overlap2-' + o + '-NoNeuron2-wells-normalize-' + str(
-                                            i) + 'repack-' + str(r),
+                                        training_label='hnm-entropy-overlap-' + o + '-NoNeuron2-wells-normalize-' + str(
+                                            i) + 'repack-' + str(p) + '-round2',
                                         global_log_dir=current_global_log_dir,
                                         data_split_percentage_validation=0.25,
                                         data_split_percentage_test=0.15,
@@ -872,7 +894,7 @@ def main(debug: bool = False):
                                         hnm_magnitude=5.5,
                                         hnm_new_bag_percentage=0.35,
                                         loss_function=l,
-                                        repack_percentage=r,
+                                        repack_percentage=p,
                                         optimizer=o,
                                         channel_inclusions=loader.default_channel_inclusions_no_neurites,
                                         model_enable_attention=True,
