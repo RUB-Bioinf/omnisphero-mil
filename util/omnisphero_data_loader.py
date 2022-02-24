@@ -52,7 +52,7 @@ class OmniSpheroDataLoader(DataLoader):
             # print('Augmenting bag: ' + str(i))
             current_X = iter_ds[i][0]
             augmented_X = []
-            hash_list.append(hash(current_X.tostring()))
+            hash_list.append(hash(current_X.tobytes()))
             # TODO Check DeprecationWarning
             # DeprecationWarning: tostring() is deprecated. Use tobytes() instead.
             #   hash_list.append(hash(current_X.tostring()))

@@ -861,6 +861,7 @@ def attention_metrics_batch(all_attentions: [np.ndarray], X_metadata: [[TileMeta
     entropy_hist_list = []
     n_list = []
     bins_list = []
+    error_list = []
 
     log.write('Calculating metrics for ' + str(len(all_attentions)) + ' attentions.')
     print('')
@@ -868,8 +869,11 @@ def attention_metrics_batch(all_attentions: [np.ndarray], X_metadata: [[TileMeta
         print('Len attention: ' + str(len(attention)))
         print('Len metadata: ' + str(len(metadata)))
 
-        assert len(attention) == len(metadata)
+        if not len(attention) == len(metadata):
+            error_list.append(metadata[0])
+            continue
         metadata: TileMetadata = metadata[0]
+
         line_print(
             'Calculating metrics for: ' + metadata.experiment_name + ' - ' + metadata.get_formatted_well(long=True))
 
@@ -887,7 +891,7 @@ def attention_metrics_batch(all_attentions: [np.ndarray], X_metadata: [[TileMeta
         del otsu_index, otsu_threshold, entropy_attention, entropy_hist, attention, metadata, n, bins
 
     log.write('Finished evaluating attention metrics.')
-    return metadata_list, n_list, bins_list, otsu_index_list, otsu_threshold_list, entropy_attention_list, entropy_hist_list
+    return metadata_list, n_list, bins_list, otsu_index_list, otsu_threshold_list, entropy_attention_list, entropy_hist_list, error_list
 
 
 def bayesian_bootstrap_attention(attention: np.ndarray, n_replications: int = 1000, resample_size: int = 100,

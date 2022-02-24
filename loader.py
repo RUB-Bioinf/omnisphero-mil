@@ -23,6 +23,9 @@ from util.utils import gct
 from util.utils import get_time_diff
 from util.utils import line_print
 from util.well_metadata import TileMetadata
+####
+# Constants
+from util.well_metadata import extract_well_info
 
 # normalize_enum is an enum to determine normalisation as follows:
 #  0 = no normalisation
@@ -36,10 +39,6 @@ from util.well_metadata import TileMetadata
 #  8 = z-score every cell individually with every color channel using the mean / std of all three from all samples in the bag
 #  9: Normalizing first, according to [4] and z-scoring afterwards according to [5]
 # 10: Normalizing first, according to [4] and z-scoring afterwards according to [6]
-
-####
-# Constants
-from util.well_metadata import extract_well_info
 
 normalize_enum_default = 1
 
@@ -81,11 +80,19 @@ thread_lock = threading.Lock()
 
 
 def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: int, include_raw: bool = True,
-                         channel_inclusions: [bool] = default_channel_inclusions_all,
-                         constraints_0: [int] = default_tile_constraints_none,
-                         constraints_1: [int] = default_tile_constraints_none,
-                         label_0_well_indices: [int] = default_well_indices_none,
-                         label_1_well_indices: [int] = default_well_indices_none):
+                         channel_inclusions=None, constraints_0=None, constraints_1=None, label_0_well_indices=None,
+                         label_1_well_indices=None):
+    if label_1_well_indices is None:
+        label_1_well_indices = default_well_indices_none
+    if label_0_well_indices is None:
+        label_0_well_indices = default_well_indices_none
+    if constraints_1 is None:
+        constraints_1 = default_tile_constraints_none
+    if constraints_0 is None:
+        constraints_0 = default_tile_constraints_none
+    if channel_inclusions is None:
+        channel_inclusions = default_channel_inclusions_all
+
     log.write('Looking for multiple source dirs to load json data from.')
     log.write('Batch dir: ' + str(batch_dirs))
     log.write('Normalization Protocol: ' + str(normalize_enum))
@@ -1043,6 +1050,10 @@ def z_score(n: np.ndarray, axis=None,
 def np_std(n: np.ndarray, axis=None, mean: float = None) -> np.ndarray:
     if mean is None:
         mean = np.mean(n, axis=axis, keepdims=True)
+
+    if len(n) == 0:
+        log.write('RuntimeWarning: Mean of empty slice!')
+        # TODO check if this is caught and handle this case!
 
     return np.sqrt(((n - mean) ** 2).mean(axis=axis, keepdims=True))
 

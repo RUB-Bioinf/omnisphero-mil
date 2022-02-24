@@ -36,6 +36,7 @@ def save_model(state, save_path: str, verbose: bool = False):
 # MODEL
 #######
 
+device_ordinals_cpu = None
 device_ordinals_local = [0, 0, 0, 0]
 device_ordinals_ehrlich = [0, 1, 2, 3]
 device_ordinals_cluster = [0, 1, 2, 3]
@@ -393,7 +394,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         checkpoint_interval: int = 1, clamp_min: float = None, clamp_max: float = None,
         save_sigmoid_plot_interval: int = 5, data_loader_sigmoid: OmniSpheroDataLoader = None,
         X_metadata_sigmoid: [np.ndarray] = None, augment_training_data: bool = False,
-        augment_validation_data: bool = False):
+        sigmoid_evaluation_enabled: bool = False, augment_validation_data: bool = False):
     """ Trains a model on the previously preprocessed train and val sets.
     Also calls evaluate in the validation phase of each epoch.
     """
@@ -405,6 +406,9 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                     'train_otsu_threshold_label1', 'val_otsu_threshold_label1', 'val_mean_sigmoid_scores',
                     'train_dice_score', 'val_dice_score']
     history_keys.sort()
+
+    sigmoid_evaluation_enabled: bool = sigmoid_evaluation_enabled and X_metadata_sigmoid is not None
+    log.write('Training a new model. Sigmoid validation enabled: ' + str(sigmoid_evaluation_enabled))
 
     checkpoint_out_dir = out_dir_base + 'checkpoints' + os.sep
     metrics_dir_live = out_dir_base + training_metrics_live_dir_name + os.sep
@@ -430,18 +434,23 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     f.close()
 
     # Setting up sigmoid CSV
-    sigmoid_experiment_names: [str] = list(dict.fromkeys([m[0].experiment_name for m in X_metadata_sigmoid]))
-    batch_sigmoid_evaluation_file = sigmoid_data_dir_live + 'sigmoid_evaluations.csv'
-    f = open(batch_sigmoid_evaluation_file, 'w')
-    f.write('Epoch;')
-    for sigmoid_experiment in sigmoid_experiment_names:
-        f.write(sigmoid_experiment + ';')
-        del sigmoid_experiment
-    f.close()
     batch_sigmoid_evaluation_error_file = sigmoid_data_dir_live + 'sigmoid_evaluations_errors.txt'
-    f = open(batch_sigmoid_evaluation_error_file, 'w')
-    f.write('Errors:')
-    f.close()
+    batch_sigmoid_evaluation_file = sigmoid_data_dir_live + 'sigmoid_evaluations.csv'
+    if not sigmoid_evaluation_enabled:
+        f = open(batch_sigmoid_evaluation_error_file, 'w')
+        f.write('Not running sigmoid evaluations.')
+        f.close()
+    else:
+        sigmoid_experiment_names: [str] = list(dict.fromkeys([m[0].experiment_name for m in X_metadata_sigmoid]))
+        f = open(batch_sigmoid_evaluation_file, 'w')
+        f.write('Epoch;')
+        for sigmoid_experiment in sigmoid_experiment_names:
+            f.write(sigmoid_experiment + ';')
+            del sigmoid_experiment
+        f.close()
+        f = open(batch_sigmoid_evaluation_error_file, 'w')
+        f.write('Errors:')
+        f.close()
 
     # Setting up sigmoid instructions log file
     batch_sigmoid_instructions_file = sigmoid_data_dir_live + 'sigmoid_instructions.csv'
@@ -504,6 +513,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         epochs_remaining = epochs - epoch
 
         for batch_id, (data, label, tile_labels, bag_index) in enumerate(training_data):
+            # TODO check if running on GPU and clear cache
             # torch.cuda.empty_cache()
 
             # Notifying Callbacks
@@ -534,6 +544,9 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             model.zero_grad()
 
             loss, _ = model.compute_loss(X=data, y=bag_label)  # forward pass
+            if loss is None:
+                log.write("WARNING: Loss is None in epoch " + str(epoch) + "!")
+                loss = float('NaN')
             if clamp_min is not None:
                 loss = torch.clamp(loss, min=clamp_min)
             if clamp_max is not None:
@@ -597,83 +610,85 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                                                             apply_data_augmentation=augment_validation_data)  # returns a results dict for metrics
 
         # Sigmoid evaluation for this epoch
-        val_mean_sigmoid_scores = float('nan')
-        save_sigmoid_plot = epoch % save_sigmoid_plot_interval == 0 or epoch == 1
+        sigmoid_mean = float('nan')
+        sigmoid_successes = 0
+        sigmoid_scores_sanitized = None
+        sigmoid_scores_raw = None
         y_hats_sigmoid = None
-        if r.has_connection() and X_metadata_sigmoid is not None and data_loader_sigmoid is not None:
-            y_hats_sigmoid, _, _, _, _, _, _, _ = get_predictions(model, data_loader_sigmoid)
-            sigmoid_score_map, sigmoid_score_detail_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map = r.prediction_sigmoid_evaluation(
-                X_metadata=X_metadata_sigmoid,
-                y_pred=y_hats_sigmoid,
-                save_sigmoid_plot=False,
-                file_name_suffix='-epoch' + str(epoch),
-                out_dir=sigmoid_data_dir_live)
+        val_mean_sigmoid_scores = float('nan')
+        if sigmoid_evaluation_enabled:
+            save_sigmoid_plot = epoch % save_sigmoid_plot_interval == 0 or epoch == 1
 
-            f = open(batch_sigmoid_instructions_file, 'a')
-            for key in sigmoid_instructions_map.keys():
-                sigmoid_instructions = sigmoid_instructions_map[key]
-                f.write('\n' + str(epoch) + ';'
-                        + key + ';False;' + sigmoid_instructions[0] + ';' + sigmoid_instructions[1])
-                del key, sigmoid_instructions
-            f.close()
+            if r.has_connection() and X_metadata_sigmoid is not None and data_loader_sigmoid is not None:
+                y_hats_sigmoid, _, _, _, _, _, _, _ = get_predictions(model, data_loader_sigmoid)
+                sigmoid_score_map, sigmoid_score_detail_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map = r.prediction_sigmoid_evaluation(
+                    X_metadata=X_metadata_sigmoid,
+                    y_pred=y_hats_sigmoid,
+                    save_sigmoid_plot=False,
+                    file_name_suffix='-epoch' + str(epoch),
+                    out_dir=sigmoid_data_dir_live)
 
-            if save_sigmoid_plot:
-                data_renderer.render_response_curves(X_metadata=X_metadata_sigmoid, y_pred=y_hats_sigmoid,
-                                                     sigmoid_score_map=sigmoid_score_map, dpi=350,
-                                                     sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
-                                                     sigmoid_plot_fit_map=sigmoid_plot_data_map,
-                                                     sigmoid_score_detail_map=sigmoid_score_detail_map,
-                                                     file_name_suffix='-epoch' + str(epoch),
-                                                     title_suffix='\nTraining Epoch ' + str(epoch),
-                                                     out_dir=sigmoid_data_dir_naive_live)
-
-            sigmoid_mean = float('nan')
-            sigmoid_successes = 0
-            sigmoid_scores_sanitized = None
-            sigmoid_scores_raw = None
-            try:
-                sigmoid_scores_raw = list(sigmoid_score_map.values())
-                sigmoid_scores_sanitized = []
-                for score in sigmoid_scores_raw:
-                    if not math.isnan(score):
-                        sigmoid_scores_sanitized.append(score)
-
-                sigmoid_successes = len(sigmoid_scores_sanitized)
-                if sigmoid_successes == 0:
-                    sigmoid_mean = float('nan')
-                    log.write('WARNING: ALL SIGMOID FITS FAILED!')
-                else:
-                    sigmoid_mean = np.mean(np.asarray(sigmoid_scores_sanitized))
-                log.write('Sigmoid successes: ' + str(sigmoid_successes) + '/' + str(
-                    len(sigmoid_scores_raw)) + '. Score: ' + str(sigmoid_mean))
-
-                f = open(batch_sigmoid_evaluation_file, 'a')
-                f.write('\n' + str(epoch))
-                for key in sigmoid_score_map.keys():
-                    f.write(';' + str(sigmoid_score_map[key]))
-                f.write(';' + str(sigmoid_mean))
-
-                val_mean_sigmoid_scores = sigmoid_mean
+                f = open(batch_sigmoid_instructions_file, 'a')
+                for key in sigmoid_instructions_map.keys():
+                    sigmoid_instructions = sigmoid_instructions_map[key]
+                    f.write('\n' + str(epoch) + ';'
+                            + key + ';False;' + sigmoid_instructions[0] + ';' + sigmoid_instructions[1])
+                    del key, sigmoid_instructions
                 f.close()
-            except Exception as e:
-                err_text = 'FATAL ERROR: Sigmoid evaluation failed! Reason: "' + str(e) + '"'
-                log.write(err_text)
+
+                if save_sigmoid_plot:
+                    data_renderer.render_response_curves(X_metadata=X_metadata_sigmoid, y_pred=y_hats_sigmoid,
+                                                         sigmoid_score_map=sigmoid_score_map, dpi=350,
+                                                         sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
+                                                         sigmoid_plot_fit_map=sigmoid_plot_data_map,
+                                                         sigmoid_score_detail_map=sigmoid_score_detail_map,
+                                                         file_name_suffix='-epoch' + str(epoch),
+                                                         title_suffix='\nTraining Epoch ' + str(epoch),
+                                                         out_dir=sigmoid_data_dir_naive_live)
+
+                try:
+                    sigmoid_scores_raw = list(sigmoid_score_map.values())
+                    sigmoid_scores_sanitized = []
+                    for score in sigmoid_scores_raw:
+                        if not math.isnan(score):
+                            sigmoid_scores_sanitized.append(score)
+
+                    sigmoid_successes = len(sigmoid_scores_sanitized)
+                    if sigmoid_successes == 0:
+                        sigmoid_mean = float('nan')
+                        log.write('WARNING: ALL SIGMOID FITS FAILED!')
+                    else:
+                        sigmoid_mean = np.mean(np.asarray(sigmoid_scores_sanitized))
+                    log.write('Sigmoid successes: ' + str(sigmoid_successes) + '/' + str(
+                        len(sigmoid_scores_raw)) + '. Score: ' + str(sigmoid_mean))
+
+                    f = open(batch_sigmoid_evaluation_file, 'a')
+                    f.write('\n' + str(epoch))
+                    for key in sigmoid_score_map.keys():
+                        f.write(';' + str(sigmoid_score_map[key]))
+                    f.write(';' + str(sigmoid_mean))
+
+                    val_mean_sigmoid_scores = sigmoid_mean
+                    f.close()
+                except Exception as e:
+                    err_text = 'FATAL ERROR: Sigmoid evaluation failed! Reason: "' + str(e) + '"'
+                    log.write(err_text)
+                    f = open(batch_sigmoid_evaluation_error_file, 'a')
+                    f.write('\nEpoch: ' + str(epoch) + ' - "' + str(e) + '"')
+                    f.close()
+
+                del sigmoid_mean, sigmoid_successes, sigmoid_scores_sanitized, sigmoid_scores_raw
+            else:
+                log.write(
+                    'Warning: Not running sigmoid evaluation. Data missing or no rServe connection.Connected: ' + str(
+                        r.has_connection()))
+                log.write('X_metadata_sigmoid is None: ' + str(X_metadata_sigmoid is None))
+                log.write('data_loader_sigmoid is None: ' + str(data_loader_sigmoid is None))
                 f = open(batch_sigmoid_evaluation_error_file, 'a')
-                f.write('\nEpoch: ' + str(epoch) + ' - "' + str(e) + '"')
+                f.write('\nEpoch: ' + str(epoch) + ' - Data missing or no rServe connection. Connected: ' + str(
+                    r.has_connection()) + '. X_metadata_sigmoid is None: ' + str(
+                    X_metadata_sigmoid is None) + '. data_loader_sigmoid is None: ' + str(data_loader_sigmoid is None))
                 f.close()
-
-            del sigmoid_mean, sigmoid_successes, sigmoid_scores_sanitized, sigmoid_scores_raw
-        else:
-            log.write(
-                'Warning: Not running sigmoid evaluation. Data missing or no rServe connection.Connected: ' + str(
-                    r.has_connection()))
-            log.write('X_metadata_sigmoid is None: ' + str(X_metadata_sigmoid is None))
-            log.write('data_loader_sigmoid is None: ' + str(data_loader_sigmoid is None))
-            f = open(batch_sigmoid_evaluation_error_file, 'a')
-            f.write('\nEpoch: ' + str(epoch) + ' - Data missing or no rServe connection. Connected: ' + str(
-                r.has_connection()) + '. X_metadata_sigmoid is None: ' + str(
-                X_metadata_sigmoid is None) + '. data_loader_sigmoid is None: ' + str(data_loader_sigmoid is None))
-            f.close()
 
         # ROC curve for this epoch
         fpr, tpr, thresholds = mil_metrics.binary_roc_curve(all_labels, predicted_labels)
@@ -939,6 +954,12 @@ def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, clamp_max:
         tile_labels = tile_labels.to(model.get_device_ordinal(3))
 
         loss, attention_weights = model.compute_loss(data, bag_label)  # forward pass
+        if loss is None:
+            log.write(' =================')
+            log.write('WARNING: Validation loss is none!')
+            log.write('Check if you picked the right loss function and optimizer!')
+            log.write(' =================')
+
         if clamp_min is not None:
             loss = torch.clamp(loss, min=clamp_min)
         if clamp_max is not None:

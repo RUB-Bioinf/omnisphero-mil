@@ -2,6 +2,7 @@ import math
 import os
 import random
 import sys
+import time
 from datetime import datetime
 from sys import getsizeof
 
@@ -17,7 +18,6 @@ import models
 import omnisphero_mining
 import r
 import torch_callbacks
-from util import data_renderer
 from util import log
 from util import paths
 from util import sample_preview
@@ -70,7 +70,34 @@ ideal_source_dirs_unix = [
 ]
 
 curated_overlapping_source_dirs_unix = [
-    # New CNN
+    # Overlapping Experiments from the ENDpoiNTs dataset #1
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK129_PG',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK153_Calcitriol',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK176_MP',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK177_SR92',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS64_GW39',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS66_SR92',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS127_GW4671',
+
+    # Overlapping Experiments from the ENDpoiNTs dataset #2
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH56_GW6471',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH55_GW7647',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH44_GW7647',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH26_FU',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS94_PGE2',
+
+    # Potentially difficult plates.
+    # The oligo channel is quite overexposed in those.
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK165_PGE2',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS102_SR92',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS104_Calcitriol',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS137_NH-3',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH41_Fu',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS96_GW0742',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS95_GW0742',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS77_GW39',
+
+    # Overlapping Experiments from the original dataset
     '/mil/oligo-diff/training_data/curated_linux_overlap/EFB18',
     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS517',
     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS637',
@@ -156,6 +183,9 @@ def train_model(
     os.makedirs(loading_preview_dir, exist_ok=True)
     os.makedirs(loading_preview_dir_whole_bag, exist_ok=True)
     os.makedirs(sigmoid_validation_dir, exist_ok=True)
+
+    if gpu_enabled:
+        log.write('Number of visible devices: ' + str(torch.cuda.device_count()))
 
     log.write('Model classification - Use Max: ' + str(model_use_max))
     log.write('Model classification - Use Attention: ' + str(model_enable_attention))
@@ -413,7 +443,8 @@ def train_model(
     f = open(out_dir + 'sigmoid_validation.txt', 'w')
     data_loader_sigmoid: OmniSpheroDataLoader = None
     X_metadata_sigmoid: [np.ndarray] = None
-    if len(sigmoid_validation_dirs) > 0:
+    sigmoid_evaluation_enabled = len(sigmoid_validation_dirs) > 0
+    if sigmoid_evaluation_enabled:
         f.write('Sigmoid validation dirs:' + str(sigmoid_validation_dirs))
 
         X_sigmoid, _, _, _, X_metadata_sigmoid, _, _, _, errors_sigmoid, loaded_files_list_sigmoid = loader.load_bags_json_batch(
@@ -445,10 +476,11 @@ def train_model(
         del X_sigmoid, errors_sigmoid, loaded_files_list_sigmoid, dataset_sigmoid, sigmoid_temp_entry
     else:
         f.write('Not sigmoid validating.')
+        log.write('Sigmoid validating: Disabled.')
     f.close()
 
     # Setting up Model
-    log.write('Setting up model...')
+    log.write('Setting up model.')
     accuracy_function = 'binary'
     model = models.BaselineMIL(input_dim=input_dim, device=device,
                                use_max=model_use_max,
@@ -460,6 +492,7 @@ def train_model(
     # Saving the raw version of this model
     torch.save(model.state_dict(), out_dir + 'model.pt')
     torch.save(model, out_dir + 'model.h5')
+    log.write('Saving trained model to: ' + out_dir + 'model.h5')
 
     model_optimizer = models.choose_optimizer(model, selection=optimizer)
     log.write('Finished loading data and model')
@@ -532,6 +565,7 @@ def train_model(
                                                              validation_data=validation_dl,
                                                              out_dir_base=out_dir,
                                                              checkpoint_interval=None,
+                                                             sigmoid_evaluation_enabled=sigmoid_evaluation_enabled,
                                                              save_sigmoid_plot_interval=save_sigmoid_plot_interval,
                                                              data_loader_sigmoid=data_loader_sigmoid,
                                                              X_metadata_sigmoid=X_metadata_sigmoid,
@@ -638,6 +672,7 @@ def train_model(
                                                                  out_dir_base=mined_out_dir,
                                                                  data_loader_sigmoid=data_loader_sigmoid,
                                                                  X_metadata_sigmoid=X_metadata_sigmoid,
+                                                                 sigmoid_evaluation_enabled=sigmoid_evaluation_enabled,
                                                                  save_sigmoid_plot_interval=save_sigmoid_plot_interval,
                                                                  checkpoint_interval=None,
                                                                  clamp_min=clamp_min, clamp_max=clamp_max,
@@ -845,7 +880,7 @@ def main(debug: bool = False):
     os.makedirs(current_out_dir, exist_ok=True)
 
     log.write('Starting Training...')
-    if debug:
+    if debug and sys.platform == 'win32':
         train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                     max_workers=current_max_workers, gpu_enabled=current_gpu_enabled, image_folder=image_folder,
                     device_ordinals=current_device_ordinals,
@@ -866,8 +901,50 @@ def main(debug: bool = False):
                     loss_function='binary_cross_entropy',
                     testing_model_enabled=True,
                     writing_metrics_enabled=True,
-                    sigmoid_validation_dirs=paths.default_sigmoid_validation_dirs_win
+                    sigmoid_validation_dirs=None
                     )
+    elif debug:
+        log.write("Testing all source dirs, if they are trainable!")
+        time.sleep(2)
+
+        for i in range(len(curated_overlapping_source_dirs_unix)):
+            source_dir = curated_overlapping_source_dirs_unix[i]
+            log.write('Source ' + str(i) + ': ' + str(source_dir) + '. Exists: ' + str(os.path.exists(source_dir)))
+            time.sleep(0.1)
+            del i
+        time.sleep(1)
+
+        c = 0
+        for source_dir in curated_overlapping_source_dirs_unix:
+            c = c + 1
+            copy_dirs = curated_overlapping_source_dirs_unix.copy()
+            random.shuffle(copy_dirs)
+            #source_dirs = [source_dir, copy_dirs[0], copy_dirs[1]]
+            source_dirs = [source_dir]
+            log.write('DEBUGGING SOURCE DIRS:\n' + str(source_dirs))
+
+            train_model(source_dirs=source_dirs,
+                        device_ordinals=current_device_ordinals,
+                        training_label='debug-sorce-test-' + str(c),
+                        image_folder=image_folder,
+                        normalize_enum=6,
+                        use_hard_negative_mining=False,
+                        model_enable_attention=True,
+                        model_use_max=False,
+                        augment_validation=True,
+                        augment_train=True,
+                        max_workers=27,
+                        optimizer='adadelta',
+                        loss_function='binary_cross_entropy',
+                        channel_inclusions=loader.default_channel_inclusions_no_neurites,
+                        tile_constraints_0=loader.default_tile_constraints_nuclei,
+                        tile_constraints_1=loader.default_tile_constraints_oligos,
+                        label_1_well_indices=loader.default_well_indices_early,
+                        label_0_well_indices=loader.default_well_indices_very_late,
+                        sigmoid_validation_dirs=None,
+                        gpu_enabled=True,
+                        epochs=5
+                        )
     else:
         # '/mil/oligo-diff/models/linux/hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
         for l in ['binary_cross_entropy']:
@@ -876,7 +953,7 @@ def main(debug: bool = False):
                 # best: adadelta
                 for p in [0.65]:
                     # best: 0.65
-                    for i in [7, 8, 6]:
+                    for i in [6, 8, 7]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
                             augment_train = aug[1]
@@ -885,12 +962,12 @@ def main(debug: bool = False):
                                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                                         image_folder=image_folder,
                                         normalize_enum=i,
-                                        training_label='hnm-entropy-overlap-' + o + '-NoNeuron2-wells-normalize-' + str(
-                                            i) + 'repack-' + str(p) + '-round2',
+                                        training_label='hnm-entropy-overlap-' + o + '-endpoints-wells-normalize-' + str(
+                                            i) + 'repack-' + str(p) + '-round7-AC',
                                         global_log_dir=current_global_log_dir,
                                         data_split_percentage_validation=0.25,
                                         data_split_percentage_test=0.15,
-                                        use_hard_negative_mining=True,
+                                        use_hard_negative_mining=False,
                                         hnm_magnitude=5.5,
                                         hnm_new_bag_percentage=0.35,
                                         loss_function=l,
@@ -914,8 +991,8 @@ def main(debug: bool = False):
 
 if __name__ == '__main__':
     print("Training OmniSphero MIL")
-    debug: bool = False
+    debug: bool = True
 
     hardware.print_gpu_status()
 
-    main(debug=False)
+    main(debug=debug)

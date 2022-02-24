@@ -26,7 +26,7 @@ def get_false_positive_bags(trained_model, train_dl: OmniSpheroDataLoader, X_raw
     print('')
     trained_model.eval()
     for batch_id, (data, label, tile_labels, bag_index) in enumerate(train_dl):
-        line_print('Finding out if bag is a FP: ' + str(batch_id) + '/' + str(len(train_dl)))
+        line_print('Finding out if bag is a FP: ' + str(batch_id + 1) + '/' + str(len(train_dl)))
 
         bag_index = int(bag_index.cpu().numpy())
         label = label.squeeze()

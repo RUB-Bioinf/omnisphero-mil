@@ -18,6 +18,7 @@ from util import log
 from util import paths
 from util import utils
 from util.omnisphero_data_loader import OmniSpheroDataLoader
+from util.paths import curated_overlapping_source_dirs_unix
 from util.paths import debug_prediction_dirs_unix
 from util.paths import debug_prediction_dirs_win
 from util.paths import default_out_dir_unix_base
@@ -32,7 +33,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  max_workers: int, image_folder: str, channel_inclusions=loader.default_channel_inclusions_all,
                  tile_constraints=loader.default_tile_constraints_nuclei, global_log_dir: str = None,
                  sigmoid_verbose: bool = False, render_attention_spheres_enabled: bool = True,
-                 render_dose_response_curves_enabled: bool = True,
+                 render_dose_response_curves_enabled: bool = True, hist_bins_override=40,
                  render_merged_predicted_tiles_activation_overlays: bool = False, gpu_enabled: bool = False,
                  render_attention_histogram_enabled: bool = False, data_loader_data_saver: bool = False):
     start_time = datetime.now()
@@ -149,6 +150,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
     sparse = True
     predict_data(model=model, data_loader=data_loader, X_raw=X_raw, X_metadata=X_metadata,
                  experiment_names=experiment_names, input_dim=input_dim, sparse_hist=sparse,
+                 hist_bins_override=hist_bins_override,
                  normalized_attention=norm, clear_old_data=False, image_folder=image_folder,
                  sigmoid_verbose=sigmoid_verbose, render_attention_histogram_enabled=render_attention_histogram_enabled,
                  render_merged_predicted_tiles_activation_overlays=render_merged_predicted_tiles_activation_overlays,
@@ -168,8 +170,8 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
 
 def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X_raw: [np.ndarray],
                  X_metadata: [TileMetadata], experiment_names: [str], well_names: [str], image_folder: str,
-                 input_dim: (int), out_dir: str, sparse_hist: bool = True, normalized_attention: bool = True,
-                 save_sigmoid_plot: bool = True, sigmoid_verbose: bool = False,
+                 input_dim: (int), out_dir: str, sparse_hist: bool = True, hist_bins_override=None,
+                 normalized_attention: bool = True, save_sigmoid_plot: bool = True, sigmoid_verbose: bool = False,
                  render_dose_response_curves_enabled: bool = True, histogram_bootstrap_replications: int = 1000,
                  histogram_resample_size: int = 100, attention_normalized_metrics: bool = True,
                  render_attention_spheres_enabled: bool = False, render_attention_histogram_enabled: bool = False,
@@ -179,6 +181,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
 
     log.write('Using image folder: ' + image_folder)
     log.write('Exists image folder: ' + str(os.path.exists(image_folder)))
+    log.write('R - Is pyRserve connection available: ' + str(r.has_connection(also_test_script=True)))
 
     log.write('Predicting ' + str(len(X_metadata)) + ' bags.')
     log.write('Saving predictions to: ' + out_dir)
@@ -202,10 +205,17 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
         del bootstrap_list, bootstrap_threshold_indices_list, bootstrap_metadata_list
 
     # Evaluating attention metrics (histogram, entropy, etc.)
-    attention_metadata_list, attention_n_list, attention_bins_list, attention_otsu_index_list, attention_otsu_threshold_list, attention_entropy_attention_list, attention_entropy_hist_list = mil_metrics.attention_metrics_batch(
+    attention_metadata_list, attention_n_list, attention_bins_list, attention_otsu_index_list, attention_otsu_threshold_list, attention_entropy_attention_list, attention_entropy_hist_list, error_list = mil_metrics.attention_metrics_batch(
         all_attentions=all_attentions,
         X_metadata=X_metadata,
         normalized=attention_normalized_metrics)
+
+    log.write(" === START ERROR LIST ===")
+    for error in error_list:
+        log.write("ERROR WHILE PREDICTING: " + str(error))
+        # TODO handle errors better
+    log.write(" === END ERROR LIST ===")
+
     data_renderer.render_attention_histograms(out_dir=out_dir, metadata_list=attention_metadata_list,
                                               n_list=attention_n_list,
                                               bins_list=attention_bins_list, otsu_index_list=attention_otsu_index_list,
@@ -548,14 +558,14 @@ def main():
         print('Predicting linux batches')
         checkpoint_file = model_path + os.sep + 'hnm/model_best.h5'
 
-        debug_prediction_dirs_used = [debug_prediction_dirs_unix]
+        debug_prediction_dirs_used = [curated_overlapping_source_dirs_unix]
         if debug:
             debug_prediction_dirs_used = [[d] for d in debug_prediction_dirs_unix]
 
         for prediction_dir in debug_prediction_dirs_used:
             try:
                 predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path, bag_paths=prediction_dir,
-                             out_dir='/mil/oligo-diff/debug_predictions/predictions-sigmoid-linux-NR/',
+                             out_dir='/mil/oligo-diff/debug_predictions/predictions-sigmoid-linux-NR2/',
                              global_log_dir=current_global_log_dir,
                              render_attention_spheres_enabled=render_attention_spheres_enabled,
                              render_merged_predicted_tiles_activation_overlays=False,

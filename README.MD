@@ -1,7 +1,7 @@
 # omnisphero-mil
 *Pytorch*-based Multiple instance learning for tiled OmniSphero wells.
 
-# Setup & Install
+# Setup and Install
 
 ### Python Environment
 
@@ -66,6 +66,9 @@ $q()
 
 # Usage
 Make sure to tweak I/O paths in all files listed below before use.
+
+### Validation
+
 
 ### Training
 To train a model, type:
