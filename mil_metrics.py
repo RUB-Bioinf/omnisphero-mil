@@ -12,17 +12,16 @@ import os
 from typing import Dict
 from typing import List
 
+import models
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
+from models import BaselineMIL
 from sklearn.metrics import auc
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import precision_recall_curve
 from sklearn.metrics import roc_curve
 from torch.utils.data import DataLoader
-
-import models
-from models import BaselineMIL
 from util import dose_response
 from util import log
 from util import utils
@@ -833,25 +832,42 @@ def save_sigmoid_prediction_img(file_path: str, title: str, prediction_dict: dic
     plt.savefig(file_path, dpi=dpi, bbox_inches='tight')
 
 
-def attention_metrics(attention: np.ndarray, normalized: bool):
+def attention_metrics(attention: np.ndarray, normalized: bool, hist_bins_override: int = None):
     a = np.asarray(attention, dtype=np.float64)
     if normalized:
-        a = a / a.max()
+        if a.max() == 0:
+            a = np.zeros((1, len(a))).squeeze()
+        else:
+            a = a / a.max()
+        a = a.astype(np.float32)
 
-    n, bins = utils.sparse_hist(a)
+    # Apllying override
+    if hist_bins_override is not None:
+        n, bins = np.histogram(a, bins=hist_bins_override - 1)
+        n = n.tolist()
+        n.append(0)
+    else:
+        n, bins = utils.sparse_hist(a)
     n = np.asarray(n)
     bins = np.asarray(bins)
 
     otsu_index = utils.lecture_otsu(n=n)
-    # otsu_threshold = bins[n[otsu_index]]
-    otsu_threshold = bins[otsu_index]
     entropy_attention = utils.lecture_shannon_entropy(n=a)
     entropy_hist = utils.lecture_shannon_entropy(n=n)
+
+    # Checking if the otsu is valid
+    if otsu_index is None or math.isnan(otsu_index) or otsu_index == len(bins):
+        log.write('Illegal otsu threshold: "' + str(otsu_index) + '"!')
+        otsu_threshold = float('nan')
+    else:
+        # otsu_threshold = bins[n[otsu_index]]
+        otsu_threshold = bins[otsu_index]
 
     return n, bins, otsu_index, otsu_threshold, entropy_attention, entropy_hist
 
 
-def attention_metrics_batch(all_attentions: [np.ndarray], X_metadata: [[TileMetadata]], normalized: bool):
+def attention_metrics_batch(all_attentions: [np.ndarray], X_metadata: [[TileMetadata]], normalized: bool,
+                            hist_bins_override: int = None):
     assert len(all_attentions) == len(X_metadata)
 
     metadata_list = []
@@ -878,6 +894,7 @@ def attention_metrics_batch(all_attentions: [np.ndarray], X_metadata: [[TileMeta
             'Calculating metrics for: ' + metadata.experiment_name + ' - ' + metadata.get_formatted_well(long=True))
 
         n, bins, otsu_index, otsu_threshold, entropy_attention, entropy_hist = attention_metrics(attention=attention,
+                                                                                                 hist_bins_override=hist_bins_override,
                                                                                                  normalized=normalized)
 
         n_list.append(n)

@@ -12,7 +12,16 @@ from torch.utils.data.dataloader import _collate_fn_t
 from torch.utils.data.dataloader import _worker_init_fn_t
 
 
+##############################
+# Data loader classes
+##############################
+
 class OmniSpheroDataLoader(DataLoader):
+    def describe(self):
+        return 'NORMAL DATA LOADER'
+
+
+class OmniSpheroAugmentedDataLoader(OmniSpheroDataLoader):
 
     def __init__(self, dataset: Dataset[T_co], batch_size: Optional[int] = 1, shuffle: bool = False,
                  sampler: Optional[Sampler[int]] = None, batch_sampler: Optional[Sampler[Sequence[int]]] = None,
@@ -103,3 +112,6 @@ class OmniSpheroDataLoader(DataLoader):
 
     def __len__(self) -> int:
         return super().__len__()
+
+    def describe(self):
+        return 'AUGMENTED_DATA_LOADER: An augmented data loader.'

@@ -6,13 +6,7 @@ from datetime import timedelta
 from typing import Union
 
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from sklearn.metrics import auc
-from torch import Tensor
-from torch.optim import Optimizer
-from torch.utils.data import DataLoader
 
 import hardware
 import loader
@@ -25,6 +19,15 @@ from util import utils
 from util.omnisphero_data_loader import OmniSpheroDataLoader
 from util.paths import training_metrics_live_dir_name
 from util.utils import line_print
+
+# setting env before importing torch
+os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch import Tensor
+from torch.optim import Optimizer
+from torch.utils.data import DataLoader
 
 
 def save_model(state, save_path: str, verbose: bool = False):
@@ -40,6 +43,8 @@ device_ordinals_cpu = None
 device_ordinals_local = [0, 0, 0, 0]
 device_ordinals_ehrlich = [0, 1, 2, 3]
 device_ordinals_cluster = [0, 1, 2, 3]
+
+os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 
 
 class OmniSpheroMil(nn.Module):
@@ -64,7 +69,7 @@ class OmniSpheroMil(nn.Module):
     def get_device_ordinals(self) -> [int]:
         return self._device_ordinals.copy()
 
-    def compute_loss(self, X: Tensor, y: Tensor):
+    def compute_loss(self, X: Tensor, y: Tensor) -> (Tensor, [Tensor]):
         pass
 
     def compute_accuracy(self, X: Tensor, y: Tensor, y_tiles: Tensor):
@@ -87,6 +92,8 @@ class BaselineMIL(OmniSpheroMil):
         self.accuracy_function: str = accuracy_function
         self.enable_attention: bool = enable_attention
         self.attention_nodes = 128
+
+        self.loss_cache = None
 
         if self.enable_attention:
             self.use_max = False
@@ -210,6 +217,8 @@ class BaselineMIL(OmniSpheroMil):
         hidden = self.feature_extractor_3(hidden.to(self.get_device_ordinal(3)))  # N x linear_nodes
 
         # Predicting the whole bag
+        pooled = None
+        attention = None
         if not self.use_max:
             pooled = torch.mean(hidden, dim=[0, 1], keepdim=True)  # N x num_classes
             attention = torch.tensor([[0.5]])
@@ -218,14 +227,12 @@ class BaselineMIL(OmniSpheroMil):
             pooled = pooled.unsqueeze(dim=0)
             pooled = pooled.unsqueeze(dim=0)
             attention = torch.tensor([[0.5]])
-
         if self.enable_attention:
             attention = self.attention(hidden)
             attention = torch.transpose(attention, 1, 0)
             attention = F.softmax(attention, dim=1)
 
             pooled = torch.mm(attention, hidden)
-
         y_hat = self.classifier(pooled)
 
         # Predicting every single tile
@@ -272,7 +279,7 @@ class BaselineMIL(OmniSpheroMil):
         return n_size
 
     # COMPUTATION METHODS
-    def compute_loss(self, X: Tensor, y: Tensor):
+    def compute_loss(self, X: Tensor, y: Tensor) -> (Tensor, [Tensor]):
         """ otherwise known as loss_fn
         Takes a data input of X,y (batches or bags) computes a forward pass and the resulting error.
         """
@@ -285,6 +292,9 @@ class BaselineMIL(OmniSpheroMil):
         y_prob = torch.clamp(y_hat, min=1e-5, max=1. - 1e-5)
         # y_prob = y_prob.squeeze(dim=0)
 
+        cache = y_hat.cpu().detach().numpy()
+        self.loss_cache = cache
+
         method = self.loss_function
         loss: Tensor = None
         if method == 'negative_log_bernoulli':
@@ -294,9 +304,16 @@ class BaselineMIL(OmniSpheroMil):
             # loss = y * torch.log(y_hat) + (1.0 - y) * torch.log(1.0 - y_hat)
             # loss = torch.clamp(loss, min=-1.0, max=1.0)
             # loss = loss * -1
+            log.write('Calculating BCE Loss: ' + str(cache) + ', ' + str(y.detach().numpy()))
 
-            b = nn.BCELoss()
-            loss = b(y_hat.squeeze(), y)
+            try:
+                b = nn.BCELoss()
+                loss = b(y_hat.squeeze(), y)
+            except Exception as e:
+                log.write(e)
+                log.write('Cannot execute loss function!')
+        else:
+            raise Exception('Unknown loss function!')
 
         # loss = F.cross_entropy(y_hat, y)
         # loss = F.binary_cross_entropy(y_hat_binarized, y)
@@ -393,7 +410,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         validation_data: OmniSpheroDataLoader, out_dir_base: str, callbacks: [torch_callbacks.BaseTorchCallback],
         checkpoint_interval: int = 1, clamp_min: float = None, clamp_max: float = None,
         save_sigmoid_plot_interval: int = 5, data_loader_sigmoid: OmniSpheroDataLoader = None,
-        X_metadata_sigmoid: [np.ndarray] = None, augment_training_data: bool = False,
+        X_metadata_sigmoid: [np.ndarray] = None, augment_training_data: bool = False, hist_bins_override=None,
         sigmoid_evaluation_enabled: bool = False, augment_validation_data: bool = False):
     """ Trains a model on the previously preprocessed train and val sets.
     Also calls evaluate in the validation phase of each epoch.
@@ -527,12 +544,34 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             # writing data from the batch
             f = open(data_batch_dirs[batch_id], 'a')
             f.write('Epoch: ' + str(epoch))
-            f.write('\nTile Index;Tile Hash;Bag Label;Tile Labels;Tile Labels (Sum)')
+            f.write('\nTile Index;Tile Hash;Bag Label;Tile Labels;Tile Labels (Sum);Finite array')
             for i in range(data.shape[1]):
-                tile = data[0, i].cpu().numpy()
+                tile = data[0, i].cpu()
+                tile_finite = tile.isfinite().numpy()
+                tile_finite = bool(tile_finite.all())
+
+                # Checking if the tile in this bag is finite!
+                if not tile_finite:
+                    log.write('WARNING! Not all tiles in this bag are completely finite! Epoch: ' + str(
+                        epoch) + '. Batch: ' + str(batch_id) + '. Bag: ' + str(int(bag_index)) + '. CSV index: ' + str(
+                        i))
+                    error_dir = data_batch_dirs[batch_id][:-4] + '-errors'
+                    os.makedirs(error_dir, exist_ok=True)
+
+                    out_name = 'data_ep' + str(epoch) + '_bag' + str(int(bag_index)) + '_batch' + str(batch_id)
+                    torch.save(data, error_dir + os.sep + out_name + '.prt')
+                    data_list = data.tolist()
+                    np.save(error_dir + os.sep + out_name + '.npy', np.asarray(data_list))
+                    with open(error_dir + os.sep + out_name + '.txt', 'w') as err:
+                        err.write(str(data_list))
+                    del error_dir, out_name, data_list
+
+                tile = tile.numpy()
                 tile_label = tile_labels[0, i].numpy()
+
                 f.write('\n' + str(i) + ';' + np.format_float_positional(hash(str(tile))) + ';' + str(
-                    label.numpy()) + ';' + str(tile_label))
+                    label.numpy()) + ';' + str(tile_label) + ';' + str(tile_finite))
+                del i, tile, tile_finite, tile_label
             f.write('\n\n')
             f.close()
 
@@ -543,17 +582,100 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             # resets gradients
             model.zero_grad()
 
-            loss, _ = model.compute_loss(X=data, y=bag_label)  # forward pass
-            if loss is None:
-                log.write("WARNING: Loss is None in epoch " + str(epoch) + "!")
-                loss = float('NaN')
-            if clamp_min is not None:
-                loss = torch.clamp(loss, min=clamp_min)
-            if clamp_max is not None:
-                loss = torch.clamp(loss, max=clamp_max)
+            cuda_device_error = False
+            loss = None
+            try:
+                loss, _ = model.compute_loss(X=data, y=bag_label)  # forward pass
+                if loss is None:
+                    log.write("WARNING: Loss is None in epoch " + str(epoch) + "!")
+                    log.write('Did you forget to define a loss function?')
+                    # If you reach here, the loss is "None". That mostly means, there is no loss function defined??
+                    cuda_device_error = True
+            except Exception as e:
+                log.write('Error while getting the loss!')
+                log.write(str(e))
+                cuda_device_error = True
 
-            # https://github.com/yhenon/pytorch-retinanet/issues/3
-            train_losses.append(float(loss))
+            model_loss_cache = model.loss_cache
+            try:
+                torch.isfinite(loss)
+                str(loss)
+                loss.item()
+            except Exception as e:
+                cuda_device_error = True
+                log.write('#### LOSS ERROR ON THE DEVICE ###')
+                log.write('cached Loss: ' + str(model_loss_cache))
+                log.write('(raw) Loss: ' + str(loss))
+                log.write('Exception: "' + str(e) + '"')
+
+            device_loss: float = float('NaN')
+            if cuda_device_error:
+                log.write('loss error in epoch ' + str(epoch) + ', batch ' + str(batch_id) + '!')
+                error_dir = out_dir_base + os.sep + 'error_recovery-ep' + str(epoch) + '-batch-' + str(
+                    batch_id) + os.sep
+                os.makedirs(error_dir, exist_ok=True)
+                log.write('Saving errors here: ' + error_dir)
+
+                # writing the recovery files as pytorch tensors
+                torch.save(data, error_dir + 'data.prt')
+                torch.save(data.isfinite(), error_dir + 'data_finite.prt')
+                torch.save(label, error_dir + 'label.prt')
+
+                data_list = data.tolist()
+                data_finite_list = data.isfinite().tolist()
+                label_list = label.tolist()
+
+                # writing recovery files as numpy formatted files
+                np.save(error_dir + 'data.npy', np.asarray(data_list))
+                np.save(error_dir + 'data_finite.npy', np.asarray(data_finite_list))
+                np.save(error_dir + 'label.npy', np.asarray(label_list))
+
+                # writing the recovery files in the log
+                log.write(str(label_list))
+                log.write(str(data_list))
+                log.write(str(data_finite_list))
+
+                # writing recovery files as text files
+                with open(error_dir + 'data.txt', 'w') as f:
+                    f.write(str(data_list))
+                with open(error_dir + 'data_finite.txt', 'w') as f:
+                    f.write(str(data_finite_list))
+                with open(error_dir + 'label.txt', 'w') as f:
+                    f.write(str(label_list))
+                with open(error_dir + 'raw_loss_cache.txt', 'w') as f:
+                    f.write(str(model_loss_cache))
+
+                if loss is not None:
+                    torch.save(loss, error_dir + 'loss.prt')
+                    loss_list = loss.tolist()
+                    np.save(error_dir + 'loss.npy', np.asarray(loss_list))
+                    log.write(str(loss_list))
+                    with open(error_dir + 'loss.txt', 'w') as f:
+                        f.write(str(loss_list))
+            else:
+                log.write('loss epoch ' + str(epoch) + ', batch ' + str(batch_id) + ': "' + str(loss) + '".')
+
+                # Clamping the loss
+                # https://github.com/yhenon/pytorch-retinanet/issues/3
+                if clamp_min is not None:
+                    loss = torch.clamp(loss, min=clamp_min)
+                if clamp_max is not None:
+                    loss = torch.clamp(loss, max=clamp_max)
+
+                # Moving the loss from a device tensor to float in RAM
+                try:
+                    if torch.isfinite(loss):
+                        # device_loss = float(torch.Tensor.float(loss).cpu().detach().numpy())
+                        device_loss = float(loss.item())
+                    else:
+                        log.write(' ==== LOSS WARNING === Loss is not finite: ' + str(loss))
+                except Exception as e:
+                    log.write('#### LOSS ERROR ###\n=======================\nFailed to move loss from tensor to float!')
+                    log.write('(raw) Loss: ' + str(loss))
+                    log.write('Exception: "' + str(e) + '"')
+                log.write('Loss processing: "' + str(loss) + '" -> "' + str(device_loss) + '".')
+
+            train_losses.append(float(device_loss))
             acc, acc_tiles, _, _, y_hat, y_hat_binarized, attention = model.compute_accuracy(data, bag_label,
                                                                                              tile_labels)
             train_acc.append(float(acc))
@@ -579,6 +701,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             if model.enable_attention:
                 attention = attention.cpu().squeeze().detach().numpy()
                 _, _, _, otsu_threshold, entropy_attention, _ = mil_metrics.attention_metrics(attention=attention,
+                                                                                              hist_bins_override=hist_bins_override,
                                                                                               normalized=True)
             else:
                 otsu_threshold = float('NaN')
@@ -596,17 +719,18 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
             for i in range(len(callbacks)):
                 callback: torch_callbacks.BaseTorchCallback = callbacks[i]
                 callback.on_batch_finished(model=model, batch_id=batch_id, data=data, label=label, batch_acc=float(acc),
-                                           batch_loss=float(loss))
+                                           batch_loss=float(device_loss))
 
             loss.backward()  # backward pass
             optimizer.step()  # update parameters
             # optim.zero_grad() # reset gradients (alternative if all grads are contained in the optimizer)
             # for p in model.parameters(): p.grad=None # alternative for model.zero_grad() or optim.zero_grad()
-            del data, bag_label, label, y_hat, attention, otsu_threshold, entropy_attention
+            del data, bag_label, label, y_hat, attention, otsu_threshold, entropy_attention, device_loss
 
         # VALIDATION PHASE
         result, _, all_losses, all_tile_lists, _ = evaluate(model, validation_data, clamp_max=clamp_max,
                                                             clamp_min=clamp_min,
+                                                            hist_bins_override=hist_bins_override,
                                                             apply_data_augmentation=augment_validation_data)  # returns a results dict for metrics
 
         # Sigmoid evaluation for this epoch
@@ -919,8 +1043,8 @@ def get_predictions(model: OmniSpheroMil, data_loader: DataLoader, verbose: bool
 
 
 @torch.no_grad()
-def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, clamp_max: float = None, clamp_min: float = None,
-             apply_data_augmentation=False):
+def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, hist_bins_override: int = None,
+             clamp_max: float = None, clamp_min: float = None, apply_data_augmentation=False):
     ''' Evaluate model / validation operation
     Can be used for validation within fit as well as testing.
     '''
@@ -998,6 +1122,7 @@ def evaluate(model: OmniSpheroMil, data_loader: OmniSpheroDataLoader, clamp_max:
         if model.enable_attention:
             attention = attention.cpu().squeeze().numpy()
             _, _, _, otsu_threshold, entropy_attention, _ = mil_metrics.attention_metrics(attention=attention,
+                                                                                          hist_bins_override=hist_bins_override,
                                                                                           normalized=True)
         else:
             otsu_threshold = float('NaN')

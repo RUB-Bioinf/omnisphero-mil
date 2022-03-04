@@ -199,7 +199,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
                    channel_inclusions: [bool], label_1_well_indices: [int], constraints_1: [int], constraints_0: [int],
                    gp_current: int = 1, gp_max: int = 1, include_raw: bool = True):
     files = os.listdir(source_dir)
-    log.write('Loading from source: ' + source_dir)
+    log.write('[' + str(gp_current) + '/' + str(gp_max) + '] Loading from source: ' + source_dir)
     loaded_files_list = []
 
     terminal_columns = None

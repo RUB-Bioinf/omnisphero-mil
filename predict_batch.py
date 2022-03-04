@@ -7,6 +7,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from torch.utils.data import DataLoader
 
 import hardware
 import loader
@@ -19,7 +20,6 @@ from util import paths
 from util import utils
 from util.omnisphero_data_loader import OmniSpheroDataLoader
 from util.paths import curated_overlapping_source_dirs_unix
-from util.paths import debug_prediction_dirs_unix
 from util.paths import debug_prediction_dirs_win
 from util.paths import default_out_dir_unix_base
 from util.utils import line_print
@@ -33,7 +33,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  max_workers: int, image_folder: str, channel_inclusions=loader.default_channel_inclusions_all,
                  tile_constraints=loader.default_tile_constraints_nuclei, global_log_dir: str = None,
                  sigmoid_verbose: bool = False, render_attention_spheres_enabled: bool = True,
-                 render_dose_response_curves_enabled: bool = True, hist_bins_override=40,
+                 render_dose_response_curves_enabled: bool = True, hist_bins_override=None,
                  render_merged_predicted_tiles_activation_overlays: bool = False, gpu_enabled: bool = False,
                  render_attention_histogram_enabled: bool = False, data_loader_data_saver: bool = False):
     start_time = datetime.now()
@@ -134,11 +134,9 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
     del X_s, y_s, X_s_raw, X_size, X_size_raw
 
     dataset, input_dim = loader.convert_bag_to_batch(bags=X, labels=None, y_tiles=None)
-    data_loader = OmniSpheroDataLoader(dataset, batch_size=1, shuffle=False,
-                                       pin_memory=False,
-                                       transform_data_saver=data_loader_data_saver,
-                                       transform_enabled=False,
-                                       num_workers=max_workers)
+    data_loader = DataLoader(dataset, batch_size=1, shuffle=False,
+                             pin_memory=False,
+                             num_workers=max_workers)
     del X, dataset, y, y_tiles
 
     # TODO react to loading errors
@@ -208,6 +206,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
     attention_metadata_list, attention_n_list, attention_bins_list, attention_otsu_index_list, attention_otsu_threshold_list, attention_entropy_attention_list, attention_entropy_hist_list, error_list = mil_metrics.attention_metrics_batch(
         all_attentions=all_attentions,
         X_metadata=X_metadata,
+        hist_bins_override=hist_bins_override,
         normalized=attention_normalized_metrics)
 
     log.write(" === START ERROR LIST ===")
@@ -335,38 +334,38 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
 
         # Saving histogram
         plt.clf()
-        if render_attention_histogram_enabled:
-            plt.clf()
-            if sparse_hist:
-                n, bins = utils.sparse_hist(a=all_attentions_used)
-                plt.bar(bins, n, width=(float(len(n)) / bars_width_mod), align='center', color='blue',
-                        edgecolor='white')
-                threshold_index = utils.lecture_otsu(n=np.array(n))
-                threshold = bins[threshold_index]
-            else:
-                n, bins, _ = plt.hist(x=all_attentions_used, bins=len(all_attentions_used), color='blue')
-                plt.clf()
-                n = list(n)
-                bins = list(bins[:-1])
-                plt.bar(bins, n, width=(float(len(n)) / bars_width_mod), align='center', color='blue',
-                        edgecolor='white')
-                threshold_index = utils.lecture_otsu(n=np.array(n))
-                threshold = bins[threshold_index]
-
-            plt.axvline(x=threshold, color='orange')
-            plt.ylabel('Count (' + str(len(all_attentions_used)) + ' tiles total)')
-            plt.xlabel('Attention Scores (Normalized)')
-            plt.title(
-                'Histogram of Normalized Attention Scores of: ' + experiment_names_current + ' - ' + well_names_current +
-                '\nPrediction: ' + str(y_hat_current) + ' -> ' + str(y_pred_current))
-            plt.legend(['Otsu Threshold: ' + str(int(threshold * 1000) / 1000)])
-            plt.xlim([0, max(bins) * 1.05])
-            plt.ylim([0, max(n) * 1.05])
-            plt.grid(True)
-            plt.autoscale()
-            plt.savefig(current_out_dir + 'attention_hist.png', dpi=int(dpi * 1.337), bbox_inches='tight')
-            plt.savefig(current_out_dir + 'attention_hist.svg', dpi=int(dpi * 1.337), bbox_inches='tight')
-            plt.savefig(current_out_dir + 'attention_hist.pdf', dpi=int(dpi * 1.337), bbox_inches='tight')
+        # if render_attention_histogram_enabled:
+        #    plt.clf()
+        #    if sparse_hist:
+        #        n, bins = utils.sparse_hist(a=all_attentions_used)
+        #        plt.bar(bins, n, width=(float(len(n)) / bars_width_mod), align='center', color='blue',
+        #                edgecolor='white')
+        #        threshold_index = utils.lecture_otsu(n=np.array(n))
+        #        threshold = bins[threshold_index]
+        #    else:
+        #        n, bins, _ = plt.hist(x=all_attentions_used, bins=len(all_attentions_used), color='blue')
+        #        plt.clf()
+        #        n = list(n)
+        #        bins = list(bins[:-1])
+        #        plt.bar(bins, n, width=(float(len(n)) / bars_width_mod), align='center', color='blue',
+        #                edgecolor='white')
+        #        threshold_index = utils.lecture_otsu(n=np.array(n))
+        #        threshold = bins[threshold_index]
+        #
+        #    plt.axvline(x=threshold, color='orange')
+        #    plt.ylabel('Count (' + str(len(all_attentions_used)) + ' tiles total)')
+        #    plt.xlabel('Attention Scores (Normalized)')
+        #    plt.title(
+        #        'Histogram of Normalized Attention Scores of: ' + experiment_names_current + ' - ' + well_names_current +
+        #        '\nPrediction: ' + str(y_hat_current) + ' -> ' + str(y_pred_current))
+        #    plt.legend(['Otsu Threshold: ' + str(int(threshold * 1000) / 1000)])
+        #    plt.xlim([0, max(bins) * 1.05])
+        #    plt.ylim([0, max(n) * 1.05])
+        #    plt.grid(True)
+        #    plt.autoscale()
+        #    plt.savefig(current_out_dir + 'attention_hist.png', dpi=int(dpi * 1.337), bbox_inches='tight')
+        #    plt.savefig(current_out_dir + 'attention_hist.svg', dpi=int(dpi * 1.337), bbox_inches='tight')
+        #    plt.savefig(current_out_dir + 'attention_hist.pdf', dpi=int(dpi * 1.337), bbox_inches='tight')
 
         # Saving raw data as CSV
         f = open(current_out_dir + experiment_names_current + '-' + well_names_current + '-attention.csv', 'w')
@@ -379,21 +378,20 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
         f.close()
 
         # Saving histogram
-        if render_attention_histogram_enabled:
-            f = open(current_out_dir + experiment_names_current + '-' + well_names_current + '-histogram.csv', 'w')
-            f.write('Index;n;bin\n')
-            for j in range(len(n)):
-                f.write(str(j) + ';')
-                f.write(str(n[j]) + ';' + str(bins[j]))
-                f.write('\n')
-            f.close()
-
-            current_well_handle['n'] = n
-            current_well_handle['bins'] = bins
-            current_well_handle['otsu'] = threshold
-            current_well_handle['y_hat'] = y_hat_current
-            current_well_handle['y_pred'] = y_pred_current
-            del n, bins, threshold, y_hat_current, y_pred_current
+        # if render_attention_histogram_enabled:
+        #    f = open(current_out_dir + experiment_names_current + '-' + well_names_current + '-histogram.csv', 'w')
+        #    f.write('Index;n;bin\n')
+        #    for j in range(len(n)):
+        #        f.write(str(j) + ';')
+        #        f.write(str(n[j]) + ';' + str(bins[j]))
+        #        f.write('\n')
+        #    f.close()
+        #    current_well_handle['n'] = n
+        #    current_well_handle['bins'] = bins
+        #    current_well_handle['otsu'] = threshold
+        #    current_well_handle['y_hat'] = y_hat_current
+        #    current_well_handle['y_pred'] = y_pred_current
+        #    del n, bins, threshold, y_hat_current, y_pred_current
 
         # writing the current handles back
         current_exp_handle[well_names_current] = current_well_handle
@@ -407,71 +405,71 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
     well_numbers_unique.sort()
     del well_letters_unique_candidates, well_numbers_unique_candidates
 
-    if render_attention_histogram_enabled:
-        print('\n')  # new line so linux systems can write a single line
-        for e in range(len(experiment_names_unique)):
-            exp = experiment_names_unique[e]
-            line_print('[' + str(e + 1) + '/' + str(
-                len(experiment_names_unique)) + '] Writing pooled histogram results for experiment: ' + exp,
-                       include_in_log=True)
+    # if render_attention_histogram_enabled:
+    #    print('\n')  # new line so linux systems can write a single line
+    #    for e in range(len(experiment_names_unique)):
+    #        exp = experiment_names_unique[e]
+    #        line_print('[' + str(e + 1) + '/' + str(
+    #            len(experiment_names_unique)) + '] Writing pooled histogram results for experiment: ' + exp,
+    #                   include_in_log=True)
+    #
+    #        current_handle = handles[exp]
+    #        current_out_dir = out_dir + os.sep + exp + os.sep
+    #
+    #        plt.clf()
+    #        plt.title('Attention Comparisons: ' + exp)
+    #        f, ax = plt.subplots(nrows=len(well_letters_unique), ncols=len(well_numbers_unique), figsize=(30, 30))
+    #        for j in range(len(well_letters_unique)):
+    #            well_letter = well_letters_unique[j]
+    #            for i in range(len(well_numbers_unique)):
+    #                well_number = well_numbers_unique[i]
+    #                well_key = well_letter + '0' + str(well_number)
+    #
+    #                # subplot_index = str(len(well_letters_unique)) + str(len(well_numbers_unique)) + str(i + 1)
+    #                axis_found = True
+    #                try:
+    #                    a = ax[j, i]
+    #                except Exception as e:
+    #                    log.write(' = WARNING = Failed to locate axis at ' + str(j) + ',' + str(i) + '!')
+    #                    axis_found = False
+    #                    continue
+    #
+    #                if well_key in current_handle.keys() and axis_found:
+    #                    a = ax[j, i]
+    #                    current_well_handle = current_handle[well_key]
+    #                    threshold = current_well_handle['otsu']
+    #                    bins = current_well_handle['bins']
+    #                    n = current_well_handle['n']
+    #                    attention = current_well_handle['attention']
+    #                    y_hat = current_well_handle['y_hat']
+    #                    y_pred = current_well_handle['y_pred']
+    #                    attention_normalized = attention / max(attention)
+    #
+    #                    # a.hist(x=attention_normalized, bins=len(attention_normalized), color='blue')
+    #                    # a.bar(bins, n, width=(float(len(n)) / 1000), color='blue', edgecolor='white')
+    #                    a.bar(bins, n, width=(float(len(n)) / bars_width_mod), color='blue', edgecolor='white')
+    #                    # a.plot([bins])
+    #                    a.grid(True)
+    #                    a.autoscale()
+    #                    a.set_xlim([0, max(bins) * 1.05])
+    #                    a.set_ylim([0, max(n) * 1.05])
+    #                    a.axvline(x=threshold, color='orange')
+    #                    a.legend(['Histogram - Bag Tiles: ' + str(len(attention_normalized)),
+    #                              'Otsu Threshold: ' + str(int(threshold * 1000) / 1000)])
+    #                    a.title.set_text(exp + ' - ' + well_key + '\nPrediction: ' + str(y_hat) + ' -> ' + str(y_pred))
+    #                else:
+    #                    ax[j, i].remove()  # remove Axes from fig
+    #                    ax[j, i] = None  # make sure that there are no 'dangling' references.
+    #
+    #        plt.tight_layout()
+    #        plt.autoscale()
+    #        plt.savefig(current_out_dir + exp + '-hist.png', dpi=dpi, bbox_inches='tight')
+    #        plt.savefig(current_out_dir + exp + '-hist.pdf', dpi=dpi, bbox_inches='tight')
+    #        plt.savefig(current_out_dir + exp + '-hist.svg', dpi=dpi, bbox_inches='tight')
+    #    log.write('All pooled results saved.')
+    #    del y_hats, y_preds, y_samples_pred, _, all_attentions, original_bag_indices
 
-            current_handle = handles[exp]
-            current_out_dir = out_dir + os.sep + exp + os.sep
-
-            plt.clf()
-            plt.title('Attention Comparisons: ' + exp)
-            f, ax = plt.subplots(nrows=len(well_letters_unique), ncols=len(well_numbers_unique), figsize=(30, 30))
-            for j in range(len(well_letters_unique)):
-                well_letter = well_letters_unique[j]
-                for i in range(len(well_numbers_unique)):
-                    well_number = well_numbers_unique[i]
-                    well_key = well_letter + '0' + str(well_number)
-
-                    # subplot_index = str(len(well_letters_unique)) + str(len(well_numbers_unique)) + str(i + 1)
-                    axis_found = True
-                    try:
-                        a = ax[j, i]
-                    except Exception as e:
-                        log.write(' = WARNING = Failed to locate axis at ' + str(j) + ',' + str(i) + '!')
-                        axis_found = False
-                        continue
-
-                    if well_key in current_handle.keys() and axis_found:
-                        a = ax[j, i]
-                        current_well_handle = current_handle[well_key]
-                        threshold = current_well_handle['otsu']
-                        bins = current_well_handle['bins']
-                        n = current_well_handle['n']
-                        attention = current_well_handle['attention']
-                        y_hat = current_well_handle['y_hat']
-                        y_pred = current_well_handle['y_pred']
-                        attention_normalized = attention / max(attention)
-
-                        # a.hist(x=attention_normalized, bins=len(attention_normalized), color='blue')
-                        # a.bar(bins, n, width=(float(len(n)) / 1000), color='blue', edgecolor='white')
-                        a.bar(bins, n, width=(float(len(n)) / bars_width_mod), color='blue', edgecolor='white')
-                        # a.plot([bins])
-                        a.grid(True)
-                        a.autoscale()
-                        a.set_xlim([0, max(bins) * 1.05])
-                        a.set_ylim([0, max(n) * 1.05])
-                        a.axvline(x=threshold, color='orange')
-                        a.legend(['Histogram - Bag Tiles: ' + str(len(attention_normalized)),
-                                  'Otsu Threshold: ' + str(int(threshold * 1000) / 1000)])
-                        a.title.set_text(exp + ' - ' + well_key + '\nPrediction: ' + str(y_hat) + ' -> ' + str(y_pred))
-                    else:
-                        ax[j, i].remove()  # remove Axes from fig
-                        ax[j, i] = None  # make sure that there are no 'dangling' references.
-
-            plt.tight_layout()
-            plt.autoscale()
-            plt.savefig(current_out_dir + exp + '-hist.png', dpi=dpi, bbox_inches='tight')
-            plt.savefig(current_out_dir + exp + '-hist.pdf', dpi=dpi, bbox_inches='tight')
-            plt.savefig(current_out_dir + exp + '-hist.svg', dpi=dpi, bbox_inches='tight')
-        log.write('All pooled results saved.')
-        del y_hats, y_preds, y_samples_pred, _, all_attentions, original_bag_indices
-
-    log.write('Finished predictions for dir: ' + out_dir)
+    log.write('Finished predictions. Your results are here: ' + out_dir)
 
 
 def generate_experiment_prediction_holders(X: [np.ndarray], experiment_names: [str], well_names: [str]):
@@ -509,10 +507,14 @@ def generate_experiment_prediction_holders(X: [np.ndarray], experiment_names: [s
 def main():
     print('Predicting and creating a Dose Response curve for a whole bag.')
     print('Platform:' + str(sys.platform))
-    debug = True
+    debug = False
+    data_saver = True
     render_attention_spheres_enabled = True
     model_path = None
     image_folder = None
+
+    if sys.platform == 'win32':
+        debug = True
 
     model_path = default_out_dir_unix_base + os.sep + 'hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
     if sys.platform == 'win32':
@@ -538,6 +540,7 @@ def main():
             render_merged_predicted_tiles_activation_overlays=False,
             render_attention_histogram_enabled=False,
             render_dose_response_curves_enabled=True,
+            hist_bins_override=50,
             sigmoid_verbose=True,
             out_dir='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\debug_predictions-linux\\',
             gpu_enabled=False, normalize_enum=7, max_workers=4)
@@ -552,24 +555,31 @@ def main():
                          out_dir=model_path + 'predictions-sigmoid\\',
                          bag_paths=[prediction_dir],
                          image_folder=image_folder,
+                         hist_bins_override=50,
                          sigmoid_verbose=True,
                          gpu_enabled=False, normalize_enum=7, max_workers=6)
     else:
         print('Predicting linux batches')
         checkpoint_file = model_path + os.sep + 'hnm/model_best.h5'
 
-        debug_prediction_dirs_used = [curated_overlapping_source_dirs_unix]
+        prediction_dirs_used = [curated_overlapping_source_dirs_unix]
         if debug:
-            debug_prediction_dirs_used = [[d] for d in debug_prediction_dirs_unix]
+            prediction_dirs_used = [prediction_dirs_used[0][0:3]]
+        if data_saver:
+            prediction_dirs_used = [[d] for d in prediction_dirs_used[0]]
 
-        for prediction_dir in debug_prediction_dirs_used:
+        prediction_dirs_used.sort()
+        for i in range(len(prediction_dirs_used)):
+            prediction_dir = prediction_dirs_used[i]
+            log.write(str(i) + '/' + str(len(prediction_dirs_used)) + ' - Predicting: ' + str(prediction_dir))
             try:
                 predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path, bag_paths=prediction_dir,
-                             out_dir='/mil/oligo-diff/debug_predictions/predictions-sigmoid-linux-NR2/',
+                             out_dir='/mil/oligo-diff/debug_predictions/endpoint-sigmoid-linux/',
                              global_log_dir=current_global_log_dir,
                              render_attention_spheres_enabled=render_attention_spheres_enabled,
                              render_merged_predicted_tiles_activation_overlays=False,
                              render_attention_histogram_enabled=False,
+                             hist_bins_override=50,
                              sigmoid_verbose=False,
                              image_folder=image_folder,
                              gpu_enabled=False, normalize_enum=7, max_workers=20)

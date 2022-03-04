@@ -8,8 +8,7 @@ from sys import getsizeof
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
-from torch.optim import Optimizer
+from torch.utils.data import DataLoader
 
 import hardware
 import loader
@@ -22,11 +21,17 @@ from util import log
 from util import paths
 from util import sample_preview
 from util import utils
+from util.omnisphero_data_loader import OmniSpheroAugmentedDataLoader
 from util.omnisphero_data_loader import OmniSpheroDataLoader
 from util.paths import default_out_dir_unix_base
 from util.paths import training_metrics_live_dir_name
 from util.utils import line_print
 from util.utils import shuffle_and_split_data
+
+# setting env before importing torch
+os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+import torch
+from torch.optim import Optimizer
 
 # On windows, if there's not enough RAM:
 # https://github.com/Spandan-Madan/Pytorch_fine_tuning_Tutorial/issues/10
@@ -144,6 +149,8 @@ def train_model(
         label_1_well_indices=loader.default_well_indices_none,
         # Enable data augmentation?
         augment_train: bool = False, augment_validation: bool = False,
+        # Training histogram bins override (if None, every histogram uses dynamic bin sizes)
+        hist_bins_override: int = None,
         # Sigmoid Evaluation parameters
         save_sigmoid_plot_interval: int = 5,
         # What channels are enabled during loading?
@@ -441,7 +448,7 @@ def train_model(
     # Loading sigmoid data
     #######################
     f = open(out_dir + 'sigmoid_validation.txt', 'w')
-    data_loader_sigmoid: OmniSpheroDataLoader = None
+    data_loader_sigmoid: DataLoader = None
     X_metadata_sigmoid: [np.ndarray] = None
     sigmoid_evaluation_enabled = len(sigmoid_validation_dirs) > 0
     if sigmoid_evaluation_enabled:
@@ -470,8 +477,7 @@ def train_model(
             log.write('Loading error: ' + str(sigmoid_temp_entry))
 
         dataset_sigmoid, _ = loader.convert_bag_to_batch(bags=X_sigmoid, labels=None, y_tiles=None)
-        data_loader_sigmoid = OmniSpheroDataLoader(dataset_sigmoid, batch_size=1, shuffle=False,
-                                                   transform_enabled=False, transform_data_saver=False, **loader_kwargs)
+        data_loader_sigmoid = DataLoader(dataset_sigmoid, batch_size=1, shuffle=False, **loader_kwargs)
 
         del X_sigmoid, errors_sigmoid, loaded_files_list_sigmoid, dataset_sigmoid, sigmoid_temp_entry
     else:
@@ -509,16 +515,22 @@ def train_model(
     ################
     # Data Generators
     test_dl = None
-    train_dl = OmniSpheroDataLoader(training_data, batch_size=1, shuffle=shuffle_data_loaders,
-                                    transform_enabled=augment_train,
-                                    transform_data_saver=False, **loader_kwargs)
-    validation_dl = OmniSpheroDataLoader(validation_data, batch_size=1, transform_enabled=augment_validation,
-                                         shuffle=shuffle_data_loaders,
-                                         transform_data_saver=False, **loader_kwargs)
+    if augment_train:
+        train_dl = OmniSpheroAugmentedDataLoader(training_data, batch_size=1, shuffle=shuffle_data_loaders,
+                                                 transform_enabled=augment_train,
+                                                 transform_data_saver=False, **loader_kwargs)
+    else:
+        train_dl = DataLoader(training_data, batch_size=1, shuffle=shuffle_data_loaders, **loader_kwargs)
+
+    if augment_validation:
+        validation_dl = OmniSpheroDataLoader(validation_data, batch_size=1, transform_enabled=augment_validation,
+                                             shuffle=shuffle_data_loaders,
+                                             transform_data_saver=False, **loader_kwargs)
+    else:
+        validation_dl = DataLoader(validation_data, batch_size=1, shuffle=shuffle_data_loaders, **loader_kwargs)
+
     if data_split_percentage_test is not None:
-        test_dl = OmniSpheroDataLoader(test_data, batch_size=1, shuffle=shuffle_data_loaders,
-                                       transform_data_saver=False, **loader_kwargs,
-                                       transform_enabled=False)
+        test_dl = DataLoader(test_data, batch_size=1, shuffle=shuffle_data_loaders, **loader_kwargs)
     del validation_data, test_data
     # test_dl = DataLoader(test_data, batch_size=1, shuffle=True, **loader_kwargs)
 
@@ -557,7 +569,7 @@ def train_model(
     # TRAINING START
     ################
     log.write(
-        'Start of training for ' + str(epochs) + ' epochs. Devices: ' + str(device_ordinals) + '. GPU enableD: ' + str(
+        'Start of training for ' + str(epochs) + ' epochs. Devices: ' + str(device_ordinals) + '. GPU enabled: ' + str(
             gpu_enabled))
     log.write('Training: "' + training_label + '"!')
     history, history_keys, model_save_path_best = models.fit(model=model, optimizer=model_optimizer, epochs=epochs,
@@ -565,6 +577,7 @@ def train_model(
                                                              validation_data=validation_dl,
                                                              out_dir_base=out_dir,
                                                              checkpoint_interval=None,
+                                                             hist_bins_override=hist_bins_override,
                                                              sigmoid_evaluation_enabled=sigmoid_evaluation_enabled,
                                                              save_sigmoid_plot_interval=save_sigmoid_plot_interval,
                                                              data_loader_sigmoid=data_loader_sigmoid,
@@ -647,8 +660,12 @@ def train_model(
                                                                                 bag_names=bag_names)
 
         # Fitting a new model with the mined bags
-        train_dl = OmniSpheroDataLoader(training_data, batch_size=1, shuffle=shuffle_data_loaders,
-                                        transform_enabled=augment_train, transform_data_saver=False, **loader_kwargs)
+        if augment_train:
+            train_dl = OmniSpheroAugmentedDataLoader(training_data, batch_size=1, shuffle=shuffle_data_loaders,
+                                                     transform_enabled=augment_train, transform_data_saver=False,
+                                                     **loader_kwargs)
+        else:
+            train_dl = DataLoader(training_data, batch_size=1, shuffle=shuffle_data_loaders, **loader_kwargs)
 
         mined_out_dir = out_dir + os.sep + 'hnm' + os.sep
         os.makedirs(mined_out_dir, exist_ok=True)
@@ -744,10 +761,6 @@ def test_model(model: models.OmniSpheroMil, model_save_path_best: str, model_opt
     y_samples_pred = [item for sublist in y_samples_pred for item in sublist]
     y_samples_true = [item for sublist in y_samples_true for item in sublist]
 
-    # Disabling data augmentation during testing
-    transform_cache = data_loader.transform_enabled
-    data_loader.transform_enabled = False
-
     # Saving attention scores for every tile in every bag!
     log.write('Writing attention scores to: ' + attention_out_dir)
     try:
@@ -807,9 +820,6 @@ def test_model(model: models.OmniSpheroMil, model_save_path_best: str, model_opt
         f.write('\nError: ' + str(e.__class__) + '\n' + str(e))
         f.close()
     log.write('Finished writing confidence binary PR-Curve.')
-
-    # Resetting augmentation status
-    data_loader.transform_enabled = transform_cache
 
 
 def print_bag_metadata(X, y, y_tiles, bag_names, file_name: str):
@@ -892,8 +902,8 @@ def main(debug: bool = False):
                     model_use_max=False,
                     model_enable_attention=True,
                     positive_bag_min_samples=0,
-                    augment_validation=True,
-                    augment_train=True,
+                    augment_validation=False,
+                    augment_train=False,
                     tile_constraints_0=loader.default_tile_constraints_nuclei,
                     tile_constraints_1=loader.default_tile_constraints_oligos,
                     label_1_well_indices=loader.default_well_indices_early,
@@ -914,12 +924,12 @@ def main(debug: bool = False):
             del i
         time.sleep(1)
 
-        c = 0
-        for source_dir in curated_overlapping_source_dirs_unix:
-            c = c + 1
+        for c in range(17, len(curated_overlapping_source_dirs_unix)):
+            source_dir = curated_overlapping_source_dirs_unix[c]
+
             copy_dirs = curated_overlapping_source_dirs_unix.copy()
             random.shuffle(copy_dirs)
-            #source_dirs = [source_dir, copy_dirs[0], copy_dirs[1]]
+            # source_dirs = [source_dir, copy_dirs[0], copy_dirs[1]]
             source_dirs = [source_dir]
             log.write('DEBUGGING SOURCE DIRS:\n' + str(source_dirs))
 
@@ -931,8 +941,8 @@ def main(debug: bool = False):
                         use_hard_negative_mining=False,
                         model_enable_attention=True,
                         model_use_max=False,
-                        augment_validation=True,
-                        augment_train=True,
+                        augment_validation=False,
+                        augment_train=False,
                         max_workers=27,
                         optimizer='adadelta',
                         loss_function='binary_cross_entropy',
@@ -963,7 +973,7 @@ def main(debug: bool = False):
                                         image_folder=image_folder,
                                         normalize_enum=i,
                                         training_label='hnm-entropy-overlap-' + o + '-endpoints-wells-normalize-' + str(
-                                            i) + 'repack-' + str(p) + '-round7-AC',
+                                            i) + 'repack-' + str(p) + '-round10-AC',
                                         global_log_dir=current_global_log_dir,
                                         data_split_percentage_validation=0.25,
                                         data_split_percentage_test=0.15,
@@ -975,8 +985,8 @@ def main(debug: bool = False):
                                         optimizer=o,
                                         channel_inclusions=loader.default_channel_inclusions_no_neurites,
                                         model_enable_attention=True,
-                                        augment_validation=augment_validation,
-                                        augment_train=augment_train,
+                                        augment_validation=False,
+                                        augment_train=False,
                                         model_use_max=False,
                                         positive_bag_min_samples=4,
                                         tile_constraints_0=loader.default_tile_constraints_nuclei,
@@ -991,7 +1001,7 @@ def main(debug: bool = False):
 
 if __name__ == '__main__':
     print("Training OmniSphero MIL")
-    debug: bool = True
+    debug: bool = False
 
     hardware.print_gpu_status()
 
