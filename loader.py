@@ -13,9 +13,8 @@ from typing import Union
 from zipfile import ZipFile
 
 import matplotlib.pyplot as plt
-import numpy as np
-
 import mil_metrics
+import numpy as np
 import r
 from util import log
 from util.sample_preview import z_score_to_rgb
@@ -711,6 +710,22 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
         # Actually writing bag labels
         y_tiles.append(label)
 
+    # Checking for NaNs (last thing to do, after normalizing)
+    for i in range(len(X)):
+        current_rgb = X[i]
+
+        # Checking if there is 'NaN' in the stack?
+        if np.any(np.isnan(current_rgb)):
+            num_nan = np.count_nonzero(np.isnan(current_rgb))
+
+            nan_msg = 'Warning! Tile "' + str(X_metadata[i]) + '" has NaNs! Count: ' + str(num_nan)
+            log.write(nan_msg, print_to_console=worker_verbose)
+
+            # Setting NaNs to 0
+            current_rgb[np.where(np.isnan(current_rgb))] = 0
+
+            X[i] = current_rgb
+
     # Checking if there is actually something loaded
     if len(X) == 0:
         X = None
@@ -722,6 +737,11 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     else:
         X = np.asarray(X)
         X_raw = np.asarray(X_raw)
+
+        # Checking if X_raw is a 8 bit unsigned int
+        assert X_raw.dtype == np.uint8
+        X = X.astype(np.float16)
+        # TODO make this optional via argument
 
         # Saving preview (if it exists)
         if used_constraints is not None:

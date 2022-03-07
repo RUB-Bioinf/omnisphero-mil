@@ -524,8 +524,7 @@ def train_model(
 
     if augment_validation:
         validation_dl = OmniSpheroDataLoader(validation_data, batch_size=1, transform_enabled=augment_validation,
-                                             shuffle=shuffle_data_loaders,
-                                             transform_data_saver=False, **loader_kwargs)
+                                             shuffle=shuffle_data_loaders, **loader_kwargs)
     else:
         validation_dl = DataLoader(validation_data, batch_size=1, shuffle=shuffle_data_loaders, **loader_kwargs)
 
@@ -576,6 +575,7 @@ def train_model(
                                                              training_data=train_dl,
                                                              validation_data=validation_dl,
                                                              out_dir_base=out_dir,
+                                                             bag_names=bag_names,
                                                              checkpoint_interval=None,
                                                              hist_bins_override=hist_bins_override,
                                                              sigmoid_evaluation_enabled=sigmoid_evaluation_enabled,
@@ -858,7 +858,8 @@ def main(debug: bool = False):
     current_epochs = 500
     current_max_workers = 35
     default_out_dir_base = default_out_dir_unix_base
-    current_sources_dir = curated_overlapping_source_dirs_unix
+    current_sources_dir = paths.curated_overlapping_source_dirs_unix
+    current_sources_dir = paths.curated_overlapping_source_dirs_ep_unix
     current_gpu_enabled = True
     if debug:
         current_sources_dir = [current_sources_dir[0]]
@@ -924,7 +925,7 @@ def main(debug: bool = False):
             del i
         time.sleep(1)
 
-        for c in range(17, len(curated_overlapping_source_dirs_unix)):
+        for c in range(len(curated_overlapping_source_dirs_unix)):
             source_dir = curated_overlapping_source_dirs_unix[c]
 
             copy_dirs = curated_overlapping_source_dirs_unix.copy()
@@ -973,7 +974,7 @@ def main(debug: bool = False):
                                         image_folder=image_folder,
                                         normalize_enum=i,
                                         training_label='hnm-entropy-overlap-' + o + '-endpoints-wells-normalize-' + str(
-                                            i) + 'repack-' + str(p) + '-round10-AC',
+                                            i) + 'repack-' + str(p) + '-round13EP-AC',
                                         global_log_dir=current_global_log_dir,
                                         data_split_percentage_validation=0.25,
                                         data_split_percentage_test=0.15,

@@ -304,7 +304,8 @@ class BaselineMIL(OmniSpheroMil):
             # loss = y * torch.log(y_hat) + (1.0 - y) * torch.log(1.0 - y_hat)
             # loss = torch.clamp(loss, min=-1.0, max=1.0)
             # loss = loss * -1
-            log.write('Calculating BCE Loss: ' + str(cache) + ', ' + str(y.detach().numpy()))
+            log.write('Calculating BCE Loss: ' + str(cache) + ', ' + str(y.cpu().detach().numpy()),
+                      print_to_console=False)
 
             try:
                 b = nn.BCELoss()
@@ -406,7 +407,7 @@ def choose_optimizer(model: OmniSpheroMil, selection: str) -> Optimizer:
     return optimizer
 
 
-def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: OmniSpheroDataLoader,
+def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: OmniSpheroDataLoader, bag_names: [str],
         validation_data: OmniSpheroDataLoader, out_dir_base: str, callbacks: [torch_callbacks.BaseTorchCallback],
         checkpoint_interval: int = 1, clamp_min: float = None, clamp_max: float = None,
         save_sigmoid_plot_interval: int = 5, data_loader_sigmoid: OmniSpheroDataLoader = None,
@@ -540,11 +541,12 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
             label = label.squeeze()
             bag_label = label
+            bag_name = bag_names[int(bag_index)]
 
             # writing data from the batch
             f = open(data_batch_dirs[batch_id], 'a')
             f.write('Epoch: ' + str(epoch))
-            f.write('\nTile Index;Tile Hash;Bag Label;Tile Labels;Tile Labels (Sum);Finite array')
+            f.write('\nTile Index;Tile Hash;Bag Label;Finite array;Bag Name')
             for i in range(data.shape[1]):
                 tile = data[0, i].cpu()
                 tile_finite = tile.isfinite().numpy()
@@ -552,25 +554,30 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
                 # Checking if the tile in this bag is finite!
                 if not tile_finite:
-                    log.write('WARNING! Not all tiles in this bag are completely finite! Epoch: ' + str(
+                    warn_text = 'WARNING! Not all tiles in this bag are completely finite! Epoch: ' + str(
                         epoch) + '. Batch: ' + str(batch_id) + '. Bag: ' + str(int(bag_index)) + '. CSV index: ' + str(
-                        i))
+                        i)+'. Bag Name: '+bag_name
+                    log.write(warn_text)
                     error_dir = data_batch_dirs[batch_id][:-4] + '-errors'
                     os.makedirs(error_dir, exist_ok=True)
 
                     out_name = 'data_ep' + str(epoch) + '_bag' + str(int(bag_index)) + '_batch' + str(batch_id)
                     torch.save(data, error_dir + os.sep + out_name + '.prt')
+                    torch.save(label.cpu(), error_dir + os.sep + out_name + '-label.prt')
+
                     data_list = data.tolist()
                     np.save(error_dir + os.sep + out_name + '.npy', np.asarray(data_list))
                     with open(error_dir + os.sep + out_name + '.txt', 'w') as err:
                         err.write(str(data_list))
-                    del error_dir, out_name, data_list
+                    with open(error_dir + os.sep + out_name + '-meta.txt', 'w') as err:
+                        err.write(str(warn_text))
+                    del error_dir, out_name, data_list,warn_text
 
                 tile = tile.numpy()
                 tile_label = tile_labels[0, i].numpy()
 
                 f.write('\n' + str(i) + ';' + np.format_float_positional(hash(str(tile))) + ';' + str(
-                    label.numpy()) + ';' + str(tile_label) + ';' + str(tile_finite))
+                    label.numpy()) + ';' + str(tile_label) + ';' + str(tile_finite)+';'+bag_name)
                 del i, tile, tile_finite, tile_label
             f.write('\n\n')
             f.close()
@@ -592,7 +599,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                     # If you reach here, the loss is "None". That mostly means, there is no loss function defined??
                     cuda_device_error = True
             except Exception as e:
-                log.write('Error while getting the loss!')
+                log.write('Error while getting the loss for bag: '+bag_name)
                 log.write(str(e))
                 cuda_device_error = True
 
@@ -610,7 +617,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
             device_loss: float = float('NaN')
             if cuda_device_error:
-                log.write('loss error in epoch ' + str(epoch) + ', batch ' + str(batch_id) + '!')
+                log.write('loss error in epoch ' + str(epoch) + ', batch ' + str(batch_id) + '! Bag name: '+bag_name)
                 error_dir = out_dir_base + os.sep + 'error_recovery-ep' + str(epoch) + '-batch-' + str(
                     batch_id) + os.sep
                 os.makedirs(error_dir, exist_ok=True)
@@ -631,9 +638,9 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                 np.save(error_dir + 'label.npy', np.asarray(label_list))
 
                 # writing the recovery files in the log
-                log.write(str(label_list))
-                log.write(str(data_list))
-                log.write(str(data_finite_list))
+                log.write(str(label_list), print_to_console=False)
+                log.write(str(data_list), print_to_console=False)
+                log.write(str(data_finite_list), print_to_console=False)
 
                 # writing recovery files as text files
                 with open(error_dir + 'data.txt', 'w') as f:
@@ -649,11 +656,12 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                     torch.save(loss, error_dir + 'loss.prt')
                     loss_list = loss.tolist()
                     np.save(error_dir + 'loss.npy', np.asarray(loss_list))
-                    log.write(str(loss_list))
+                    log.write(str(loss_list), print_to_console=False)
                     with open(error_dir + 'loss.txt', 'w') as f:
                         f.write(str(loss_list))
             else:
-                log.write('loss epoch ' + str(epoch) + ', batch ' + str(batch_id) + ': "' + str(loss) + '".')
+                log.write('loss epoch ' + str(epoch) + ', batch ' + str(batch_id) + ': "' + str(loss) + '".',
+                          print_to_console=False)
 
                 # Clamping the loss
                 # https://github.com/yhenon/pytorch-retinanet/issues/3
@@ -673,7 +681,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                     log.write('#### LOSS ERROR ###\n=======================\nFailed to move loss from tensor to float!')
                     log.write('(raw) Loss: ' + str(loss))
                     log.write('Exception: "' + str(e) + '"')
-                log.write('Loss processing: "' + str(loss) + '" -> "' + str(device_loss) + '".')
+                log.write('Loss processing: "' + str(loss) + '" -> "' + str(device_loss) + '".', print_to_console=False)
 
             train_losses.append(float(device_loss))
             acc, acc_tiles, _, _, y_hat, y_hat_binarized, attention = model.compute_accuracy(data, bag_label,
