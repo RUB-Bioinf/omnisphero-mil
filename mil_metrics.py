@@ -12,16 +12,17 @@ import os
 from typing import Dict
 from typing import List
 
-import models
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
-from models import BaselineMIL
 from sklearn.metrics import auc
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import precision_recall_curve
 from sklearn.metrics import roc_curve
 from torch.utils.data import DataLoader
+
+import models
+from models import BaselineMIL
 from util import dose_response
 from util import log
 from util import utils
@@ -841,13 +842,17 @@ def attention_metrics(attention: np.ndarray, normalized: bool, hist_bins_overrid
             a = a / a.max()
         a = a.astype(np.float32)
 
-    # Apllying override
+    # Applying override
+    log.write('Histogram bin overrides: ' + str(hist_bins_override), print_to_console=False)
     if hist_bins_override is not None:
+        log.write('Applying override.', print_to_console=False)
         n, bins = np.histogram(a, bins=hist_bins_override - 1)
         n = n.tolist()
         n.append(0)
     else:
+        log.write('Not applying override.', print_to_console=False)
         n, bins = utils.sparse_hist(a)
+    log.write('Histogram done. Length of "n": ' + str(len(n)) + ', "bins": ' + str(len(bins)), print_to_console=False)
     n = np.asarray(n)
     bins = np.asarray(bins)
 

@@ -740,7 +740,8 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
 
         # Checking if X_raw is a 8 bit unsigned int
         assert X_raw.dtype == np.uint8
-        X = X.astype(np.float16)
+
+        # X = X.astype(np.float16)
         # TODO make this optional via argument
 
         # Saving preview (if it exists)

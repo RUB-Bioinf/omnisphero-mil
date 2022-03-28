@@ -523,8 +523,10 @@ def train_model(
         train_dl = DataLoader(training_data, batch_size=1, shuffle=shuffle_data_loaders, **loader_kwargs)
 
     if augment_validation:
-        validation_dl = OmniSpheroDataLoader(validation_data, batch_size=1, transform_enabled=augment_validation,
-                                             shuffle=shuffle_data_loaders, **loader_kwargs)
+        validation_dl = OmniSpheroAugmentedDataLoader(validation_data, batch_size=1,
+                                                      transform_enabled=augment_validation,
+                                                      transform_data_saver=False,
+                                                      shuffle=shuffle_data_loaders, **loader_kwargs)
     else:
         validation_dl = DataLoader(validation_data, batch_size=1, shuffle=shuffle_data_loaders, **loader_kwargs)
 
@@ -859,7 +861,6 @@ def main(debug: bool = False):
     current_max_workers = 35
     default_out_dir_base = default_out_dir_unix_base
     current_sources_dir = paths.curated_overlapping_source_dirs_unix
-    current_sources_dir = paths.curated_overlapping_source_dirs_ep_unix
     current_gpu_enabled = True
     if debug:
         current_sources_dir = [current_sources_dir[0]]
@@ -964,7 +965,7 @@ def main(debug: bool = False):
                 # best: adadelta
                 for p in [0.65]:
                     # best: 0.65
-                    for i in [6, 8, 7]:
+                    for i in [4, 6, 7, 8]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
                             augment_train = aug[1]
@@ -973,8 +974,8 @@ def main(debug: bool = False):
                                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                                         image_folder=image_folder,
                                         normalize_enum=i,
-                                        training_label='hnm-entropy-overlap-' + o + '-endpoints-wells-normalize-' + str(
-                                            i) + 'repack-' + str(p) + '-round13EP-AC',
+                                        training_label='ep-aug-overlap-' + o + '-endpoints-wells-normalize-' + str(
+                                            i) + 'repack-' + str(p) + '-round1',
                                         global_log_dir=current_global_log_dir,
                                         data_split_percentage_validation=0.25,
                                         data_split_percentage_test=0.15,
@@ -986,8 +987,8 @@ def main(debug: bool = False):
                                         optimizer=o,
                                         channel_inclusions=loader.default_channel_inclusions_no_neurites,
                                         model_enable_attention=True,
-                                        augment_validation=False,
-                                        augment_train=False,
+                                        augment_validation=augment_validation,
+                                        augment_train=augment_train,
                                         model_use_max=False,
                                         positive_bag_min_samples=4,
                                         tile_constraints_0=loader.default_tile_constraints_nuclei,

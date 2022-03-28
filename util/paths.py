@@ -62,14 +62,14 @@ curated_overlapping_source_dirs_unix = [
 
     # Potentially difficult plates.
     # The oligo channel is quite overexposed in those.
-    # '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK165_PGE2',
-    # '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS102_SR92',
-    # '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS104_Calcitriol',
-    # '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS137_NH-3',
-    # '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH41_Fu',
-    # '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS96_GW0742',
-    # '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS95_GW0742',
-    # '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS77_GW39',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK165_PGE2',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS102_SR92',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS104_Calcitriol',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS137_NH-3',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH41_Fu',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS96_GW0742',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS95_GW0742',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS77_GW39',
 
     # Overlapping Experiments from the original dataset
     '/mil/oligo-diff/training_data/curated_linux_overlap/EFB18',

@@ -516,6 +516,7 @@ def main():
     if sys.platform == 'win32':
         debug = True
 
+    normalize_enum = 6
     model_path = default_out_dir_unix_base + os.sep + 'hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
     if sys.platform == 'win32':
         image_folder = paths.nucleus_predictions_image_folder_win
@@ -523,8 +524,8 @@ def main():
         log.add_file('U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\all_logs.txt')
         model_path = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\'
     else:
-        model_path = '/mil/oligo-diff/models/linux/hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
-        current_global_log_dir = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65'
+        model_path = '/mil/oligo-diff/models/linux/ep-entropy-overlap-adadelta-endpoints-wells-normalize-6repack-0.65-round1/'
+        current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log/linux/'
         image_folder = paths.nucleus_predictions_image_folder_unix
 
     assert os.path.exists(model_path)
@@ -543,7 +544,7 @@ def main():
             hist_bins_override=50,
             sigmoid_verbose=True,
             out_dir='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\debug_predictions-linux\\',
-            gpu_enabled=False, normalize_enum=7, max_workers=4)
+            gpu_enabled=False, normalize_enum=normalize_enum, max_workers=4)
     elif sys.platform == 'win32':
         for prediction_dir in paths.all_prediction_dirs_win:
             predict_path(model_save_path=model_path,
@@ -557,10 +558,14 @@ def main():
                          image_folder=image_folder,
                          hist_bins_override=50,
                          sigmoid_verbose=True,
-                         gpu_enabled=False, normalize_enum=7, max_workers=6)
+                         gpu_enabled=False, normalize_enum=normalize_enum, max_workers=6)
     else:
         print('Predicting linux batches')
-        checkpoint_file = model_path + os.sep + 'hnm/model_best.h5'
+
+        checkpoint_file = model_path + os.sep + 'hnm' + os.sep + 'model_best.h5'
+        if not os.path.exists(checkpoint_file):
+            checkpoint_file = model_path + os.sep + 'model_best.h5'
+        assert os.path.exists(checkpoint_file)
 
         prediction_dirs_used = [curated_overlapping_source_dirs_unix]
         if debug:
@@ -574,7 +579,7 @@ def main():
             log.write(str(i) + '/' + str(len(prediction_dirs_used)) + ' - Predicting: ' + str(prediction_dir))
             try:
                 predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path, bag_paths=prediction_dir,
-                             out_dir='/mil/oligo-diff/debug_predictions/endpoint-sigmoid-linux/',
+                             out_dir='/mil/oligo-diff/debug_predictions/endpoint-sigmoid-linux4/',
                              global_log_dir=current_global_log_dir,
                              render_attention_spheres_enabled=render_attention_spheres_enabled,
                              render_merged_predicted_tiles_activation_overlays=False,
@@ -582,7 +587,9 @@ def main():
                              hist_bins_override=50,
                              sigmoid_verbose=False,
                              image_folder=image_folder,
-                             gpu_enabled=False, normalize_enum=7, max_workers=20)
+                             # tile_constraints=loader.default_tile_constraints_nuclei,
+                             channel_inclusions=loader.default_channel_inclusions_no_neurites,
+                             gpu_enabled=False, normalize_enum=normalize_enum, max_workers=20)
             except Exception as e:
                 # TODO handle this exception better
                 log.write('\n\n============================================================')
