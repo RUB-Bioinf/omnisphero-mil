@@ -524,7 +524,14 @@ def main():
         log.add_file('U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\all_logs.txt')
         model_path = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\'
     else:
-        model_path = '/mil/oligo-diff/models/linux/ep-entropy-overlap-adadelta-endpoints-wells-normalize-6repack-0.65-round1/'
+        # good one:
+        model_path = '/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-endpoints-wells-normalize-6no-repack-round1/'
+
+        # testing:
+        model_path = '/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-endpoints-wells-normalize-8repack-0.5-round1/'
+        model_path = '/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-endpoints-wells-normalize-6repack-0.3-round1/'
+
+
         current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log/linux/'
         image_folder = paths.nucleus_predictions_image_folder_unix
 
@@ -579,7 +586,7 @@ def main():
             log.write(str(i) + '/' + str(len(prediction_dirs_used)) + ' - Predicting: ' + str(prediction_dir))
             try:
                 predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path, bag_paths=prediction_dir,
-                             out_dir='/mil/oligo-diff/debug_predictions/endpoint-sigmoid-linux4/',
+                             out_dir='/mil/oligo-diff/debug_predictions/endpoint-sigmoid-linux-norm6/',
                              global_log_dir=current_global_log_dir,
                              render_attention_spheres_enabled=render_attention_spheres_enabled,
                              render_merged_predicted_tiles_activation_overlays=False,

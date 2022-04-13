@@ -355,6 +355,9 @@ def train_model(
     # Printing Bag Shapes
     # Setting up bags for MIL
     if repack_percentage > 0:
+        log.write('Repack percent: ' + str(
+            repack_percentage) +
+                  '.That means, to build a positive bag, x% of positive samples will be added to a negative bag.')
         print_bag_metadata(X, y, y_tiles, bag_names, file_name=out_dir + 'bags_pre-packed.csv')
         X, X_raw, y, y_tiles, bag_names = loader.repack_bags_merge(X=X, X_raw=X_raw, y=y, bag_names=bag_names,
                                                                    repack_percentage=repack_percentage,
@@ -950,10 +953,11 @@ def main(debug: bool = False):
                         loss_function='binary_cross_entropy',
                         channel_inclusions=loader.default_channel_inclusions_no_neurites,
                         tile_constraints_0=loader.default_tile_constraints_nuclei,
-                        tile_constraints_1=loader.default_tile_constraints_oligos,
+                        tile_constraints_1=loader.default_tile_constraints_nuclei,
+                        repack_percentage=0,
                         label_1_well_indices=loader.default_well_indices_early,
                         label_0_well_indices=loader.default_well_indices_very_late,
-                        sigmoid_validation_dirs=None,
+                        sigmoid_validation_dirs=paths.default_sigmoid_validation_dirs_win,
                         gpu_enabled=True,
                         epochs=5
                         )
@@ -963,9 +967,9 @@ def main(debug: bool = False):
             # best: binary_cross_entropy
             for o in ['adadelta']:  # ['adam', 'adadelta']:
                 # best: adadelta
-                for p in [0.65]:
+                for p in [0.10, 0.15, 0.30, 0.5]:
                     # best: 0.65
-                    for i in [4, 6, 7, 8]:
+                    for i in [6, 8]:  # [4, 6, 7, 8]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
                             augment_train = aug[1]

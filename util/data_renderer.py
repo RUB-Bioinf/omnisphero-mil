@@ -1,14 +1,13 @@
 import math
-
-import mil_metrics
-import nucleus_predictions
-from util import log
-import numpy as np
 import os
 
+import matplotlib.pyplot as plt
+import mil_metrics
+import nucleus_predictions
+import numpy as np
+from util import log
 from util.utils import line_print
 from util.well_metadata import TileMetadata
-import matplotlib.pyplot as plt
 
 
 def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pred: [np.ndarray],
@@ -273,7 +272,7 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
         if sigmoid_score_map is None:
             sigmoid_score = 'Not evaluated.'
         if experiment_name in sigmoid_score_map:
-            sigmoid_score = str(sigmoid_score_map[experiment_name])
+            sigmoid_score = str(round(sigmoid_score_map[experiment_name], 4))
             sigmoid_plot_estimations = sigmoid_plot_estimation_map[experiment_name]
             sigmoid_plot_fit = sigmoid_plot_fit_map[experiment_name]
         else:
@@ -354,11 +353,11 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
         title = 'Predictions: ' + experiment_name + ' ' + title_suffix
         if sigmoid_score_detail_map is not None and sigmoid_score_detail_map[experiment_name] is not None:
             sigmoid_score_detail = sigmoid_score_detail_map[experiment_name]
-            title = title + '\n\nAsymptote-Score: ' + str(sigmoid_score_detail['AsympScore'])
-            title = title + '\nEffect-Score: ' + str(sigmoid_score_detail['EffectScore'])
-            title = title + '\nGradient-Score: ' + str(sigmoid_score_detail['GradientScore'])
-            title = title + '\nResidual-Score: ' + str(sigmoid_score_detail['ResidualScore'])
-            title = title + '\nRaw Score: ' + str(sigmoid_score_detail['rawScore'])
+            title = title + '\n\nAsymptote-Score: ' + str(round(sigmoid_score_detail['AsympScore'], 4))
+            title = title + '\nEffect-Score: ' + str(round(sigmoid_score_detail['EffectScore'], 4))
+            title = title + '\nGradient-Score: ' + str(round(sigmoid_score_detail['GradientScore'], 4))
+            title = title + '\nResidual-Score: ' + str(round(sigmoid_score_detail['ResidualScore'], 4))
+            title = title + '\nRaw Score: ' + str(round(sigmoid_score_detail['rawScore'], 4))
             title = title + '\n\nFinal Sigmoid Score: ' + sigmoid_score
 
             del sigmoid_score_detail
