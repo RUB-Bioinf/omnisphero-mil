@@ -556,7 +556,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                 if not tile_finite:
                     warn_text = 'WARNING! Not all tiles in this bag are completely finite! Epoch: ' + str(
                         epoch) + '. Batch: ' + str(batch_id) + '. Bag: ' + str(int(bag_index)) + '. CSV index: ' + str(
-                        i)+'. Bag Name: '+bag_name
+                        i) + '. Bag Name: ' + bag_name
                     log.write(warn_text)
                     error_dir = data_batch_dirs[batch_id][:-4] + '-errors'
                     os.makedirs(error_dir, exist_ok=True)
@@ -571,13 +571,13 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                         err.write(str(data_list))
                     with open(error_dir + os.sep + out_name + '-meta.txt', 'w') as err:
                         err.write(str(warn_text))
-                    del error_dir, out_name, data_list,warn_text
+                    del error_dir, out_name, data_list, warn_text
 
                 tile = tile.numpy()
                 tile_label = tile_labels[0, i].numpy()
 
                 f.write('\n' + str(i) + ';' + np.format_float_positional(hash(str(tile))) + ';' + str(
-                    label.numpy()) + ';' + str(tile_label) + ';' + str(tile_finite)+';'+bag_name)
+                    label.numpy()) + ';' + str(tile_label) + ';' + str(tile_finite) + ';' + bag_name)
                 del i, tile, tile_finite, tile_label
             f.write('\n\n')
             f.close()
@@ -599,7 +599,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                     # If you reach here, the loss is "None". That mostly means, there is no loss function defined??
                     cuda_device_error = True
             except Exception as e:
-                log.write('Error while getting the loss for bag: '+bag_name)
+                log.write('Error while getting the loss for bag: ' + bag_name)
                 log.write(str(e))
                 cuda_device_error = True
 
@@ -617,7 +617,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
             device_loss: float = float('NaN')
             if cuda_device_error:
-                log.write('loss error in epoch ' + str(epoch) + ', batch ' + str(batch_id) + '! Bag name: '+bag_name)
+                log.write('loss error in epoch ' + str(epoch) + ', batch ' + str(batch_id) + '! Bag name: ' + bag_name)
                 error_dir = out_dir_base + os.sep + 'error_recovery-ep' + str(epoch) + '-batch-' + str(
                     batch_id) + os.sep
                 os.makedirs(error_dir, exist_ok=True)
@@ -753,7 +753,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
             if r.has_connection() and X_metadata_sigmoid is not None and data_loader_sigmoid is not None:
                 y_hats_sigmoid, _, _, _, _, _, _, _ = get_predictions(model, data_loader_sigmoid)
-                sigmoid_score_map, sigmoid_score_detail_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map = r.prediction_sigmoid_evaluation(
+                sigmoid_score_map, sigmoid_score_detail_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map, sigmoid_ic50_map = r.prediction_sigmoid_evaluation(
                     X_metadata=X_metadata_sigmoid,
                     y_pred=y_hats_sigmoid,
                     save_sigmoid_plot=False,
@@ -774,6 +774,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                                                          sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
                                                          sigmoid_plot_fit_map=sigmoid_plot_data_map,
                                                          sigmoid_score_detail_map=sigmoid_score_detail_map,
+                                                         sigmoid_ic50_map=sigmoid_ic50_map,
                                                          file_name_suffix='-epoch' + str(epoch),
                                                          title_suffix='\nTraining Epoch ' + str(epoch),
                                                          out_dir=sigmoid_data_dir_naive_live)
@@ -942,7 +943,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
             # Rendering the sigmoid curves again, because of new best performance
             if r.has_connection() and X_metadata_sigmoid is not None and data_loader_sigmoid is not None and y_hats_sigmoid is not None:
-                sigmoid_score_map, sigmoid_score_detail_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map = r.prediction_sigmoid_evaluation(
+                sigmoid_score_map, sigmoid_score_detail_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map, sigmoid_ic50_map = r.prediction_sigmoid_evaluation(
                     X_metadata=X_metadata_sigmoid,
                     y_pred=y_hats_sigmoid,
                     save_sigmoid_plot=False,
@@ -965,6 +966,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                                                      sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
                                                      sigmoid_plot_fit_map=sigmoid_plot_data_map,
                                                      sigmoid_score_detail_map=sigmoid_score_detail_map,
+                                                     sigmoid_ic50_map=sigmoid_ic50_map,
                                                      file_name_suffix='-best-epoch' + str(epoch),
                                                      title_suffix='\nTraining Epoch ' + str(
                                                          epoch) + ' (New Best)',

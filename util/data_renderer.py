@@ -1,10 +1,10 @@
-import math
 import os
 
 import matplotlib.pyplot as plt
+import numpy as np
+
 import mil_metrics
 import nucleus_predictions
-import numpy as np
 from util import log
 from util.utils import line_print
 from util.well_metadata import TileMetadata
@@ -70,18 +70,24 @@ def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pr
             assert current_raw_tile.shape == (tile_w, tile_h, 3)
             current_raw_tile = current_raw_tile.astype(np.uint8)
 
-            pos_x = int(current_raw_metadata.pos_x)
-            pos_y = int(current_raw_metadata.pos_y)
-            assert not math.isnan(pos_x) and not math.isnan(pos_y)
-            # TODO handle this better than assertion
+            # Getting the metadata location.
+            # Since it's in float format we need to check for NaN entries and convert to int for coordinates.
+            # assert not math.isnan(pos_x) and not math.isnan(pos_y)
+            pos_x = current_raw_metadata.pos_x
+            pos_y = current_raw_metadata.pos_y
+            if current_raw_metadata.has_valid_position():
+                pos_x = int(pos_x)
+                pos_y = int(pos_y)
 
-            # Debugging output
-            # log.write('Rendered image size: ' + str(image_width) + 'x' + str(image_height))
-            # log.write('Tile size: ' + str(tile_w) + 'x' + str(tile_h))
-            # log.write('Tile insertion: ' + str(pos_y) + ':' + str(pos_y + tile_h) + ',' + str(pos_x) + ':' + str(
-            #     pos_x + tile_w))
-
-            rendered_image[pos_y:pos_y + tile_h, pos_x:pos_x + tile_w] = current_raw_tile
+                # Debugging output
+                # log.write('Rendered image size: ' + str(image_width) + 'x' + str(image_height))
+                # log.write('Tile size: ' + str(tile_w) + 'x' + str(tile_h))
+                # log.write('Tile insertion: ' + str(pos_y) + ':' + str(pos_y + tile_h) + ',' + str(pos_x) + ':' + str(
+                #     pos_x + tile_w))
+                rendered_image[pos_y:pos_y + tile_h, pos_x:pos_x + tile_w] = current_raw_tile
+            else:
+                log.write('Warning: No X/Y tile position for a tile in ' + current_raw_metadata.experiment_name
+                          + ' - ' + current_raw_metadata.get_formatted_well())
             del pos_x, pos_y, current_raw_tile
 
         # Saving the rendered image
@@ -95,9 +101,12 @@ def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pr
         activation_grayscale_overlay = np.zeros((image_width, image_height, 3), dtype=np.uint8)
         activation_map_mask = np.zeros((image_width, image_height, 3), dtype=bool)
         for attention, current_raw_metadata in zip(y_attention_current_normalized, X_metadata_current):
-            pos_x = current_raw_metadata.pos_x
-            pos_y = current_raw_metadata.pos_y
+            if not current_raw_metadata.has_valid_position():
+                # If the metadata cannot be placed, nothing shall be displayed.
+                continue
 
+            pos_x = int(current_raw_metadata.pos_x)
+            pos_y = int(current_raw_metadata.pos_y)
             existing_attention = activation_map[pos_y:pos_y + tile_h, pos_x:pos_x + tile_w]
             activation_map_mask[pos_y:pos_y + tile_h, pos_x:pos_x + tile_w] = True
             if np.sum(existing_attention) == 0:
@@ -137,8 +146,8 @@ def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pr
             activation_grayscale_overlay[x, y, :] = (255, 255, 255)
             del x, y
 
-        assert activation_map.min() == 0
-        assert activation_map.max() == 1
+        # assert activation_map.min() == 0
+        # assert activation_map.max() == 1
         activation_map = activation_map * 255
         activation_map = activation_map.astype(np.uint8)
         activation_map_mask = activation_map_mask.astype(np.uint8)
@@ -204,6 +213,8 @@ def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pr
 def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sigmoid_score_map: {str} = None,
                            file_name_suffix: str = None, title_suffix: str = None, out_dir: str = None,
                            sigmoid_plot_fit_map: {np.ndarray} = None, sigmoid_plot_estimation_map=None,
+                           sigmoid_ic50_map: {float} = None,
+                           # TODO why are they all None? This should be checked or something?
                            sigmoid_score_detail_map: {} = None, dpi: int = 650):
     # Remapping predictions so they can be evaluated
     experiment_prediction_map_pooled = {}
@@ -271,18 +282,35 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
         sigmoid_plot_fit: np.ndarray = None
         if sigmoid_score_map is None:
             sigmoid_score = 'Not evaluated.'
-        if experiment_name in sigmoid_score_map:
-            sigmoid_score = str(round(sigmoid_score_map[experiment_name], 4))
-            sigmoid_plot_estimations = sigmoid_plot_estimation_map[experiment_name]
-            sigmoid_plot_fit = sigmoid_plot_fit_map[experiment_name]
         else:
-            sigmoid_score = 'Not available.'
+            if experiment_name in sigmoid_score_map:
+                sigmoid_score = str(round(sigmoid_score_map[experiment_name], 4))
+                sigmoid_plot_estimations = sigmoid_plot_estimation_map[experiment_name]
+                sigmoid_plot_fit = sigmoid_plot_fit_map[experiment_name]
+            else:
+                sigmoid_score = 'Not available.'
+
+        # Extracting IC50
+        ic50: float = float('NaN')
+        ic50_text: str = None
+        if sigmoid_ic50_map is None:
+            ic50_text = 'IC50 not available.'
+        else:
+            if experiment_name in sigmoid_ic50_map:
+                ic50 = sigmoid_ic50_map[experiment_name]
+                ic50_text = str(ic50)
+                if np.isnan(ic50):
+                    ic50_text = 'IC50 failed.'
+                else:
+                    ic50_text = str(round(ic50, 3))
+            else:
+                ic50_text = 'IC50 not calculated.'
 
         # writing to CSV
         out_csv = experiment_dir + os.sep + experiment_name + '-prediction_map' + file_name_suffix + '.csv'
         log.write('Saving prediction matrix to: ' + out_csv)
         f = open(out_csv, 'w')
-        f.write(experiment_name + ' [' + str(sigmoid_score) + '];')
+        f.write(experiment_name + ' [Score: ' + str(sigmoid_score) + ', IC50: ' + ic50_text + '];')
         [f.write(str(i) + ';') for i in all_well_indices]
         for w in all_well_letters:
             f.write('\n' + w)
@@ -309,6 +337,8 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
         y_error = []
         well_indices.sort()
         for i in range(len(well_indices)):
+            # TODO Read metadata of compound concentrations here!
+
             k = well_indices[i]
             predictions: [float] = well_index_map[k]
             predictions = np.array(predictions)
@@ -349,6 +379,10 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
             estimations_x[0] = float(well_indices[0])
             plt.plot(estimations_x, estimations_y, color='lightblue')
             legend_entries.append('Sigmoid Curve Fit (Estimated)')
+
+        # Plotting the IC 50
+        plt.plot([ic50, ic50], [0, 1], color='lightgreen')
+        legend_entries.append('IC50: ' + ic50_text)
 
         title = 'Predictions: ' + experiment_name + ' ' + title_suffix
         if sigmoid_score_detail_map is not None and sigmoid_score_detail_map[experiment_name] is not None:
@@ -496,6 +530,9 @@ def render_bootstrapped_histogram(boostrap_result, threshold_index, metadata, ou
 
 
 def rgb_to_gray(img: np.ndarray, weights_r=0.299, weights_g=0.587, weights_b=0.114):
+    assert weights_r + weights_g + weights_b < 1.1
+    # so, there would be a check of the sum to be equal to 1.0. But we all know floating points....
+
     gray_image = np.zeros(img.shape)
     r = np.array(img[:, :, 0])
     g = np.array(img[:, :, 1])
@@ -512,6 +549,68 @@ def rgb_to_gray(img: np.ndarray, weights_r=0.299, weights_g=0.587, weights_b=0.1
         gray_image[:, :, i] = avg
 
     return gray_image
+
+
+def render_attention_cell_distributions(out_dir, distributions, X_metadata, alpha: float = 0.3, dpi: int = 600,
+                                        include_neuron: bool = True, include_oligo: bool = True,
+                                        include_nucleus: bool = True,
+                                        filename_suffix: str = None, title_suffix: str = None
+                                        ):
+    assert len(distributions) == len(X_metadata)
+    os.makedirs(out_dir, exist_ok=True)
+
+    if filename_suffix is None:
+        filename_suffix = ''
+    if title_suffix is None:
+        title_suffix = ''
+
+    for (current_distributions, current_metadata) in zip(distributions, X_metadata):
+        attention_min = current_distributions['attention_min']
+        attention_max = current_distributions['attention_max']
+        neuron_count = current_distributions['neuron']
+        oligo_count = current_distributions['oligo']
+        nucleus_count = current_distributions['nucleus']
+
+        assert len(neuron_count) == len(current_metadata)
+        assert len(oligo_count) == len(current_metadata)
+        assert len(nucleus_count) == len(current_metadata)
+
+        experiment_name = current_metadata[0].experiment_name
+        well_name = current_metadata[0].get_formatted_well()
+        log.write('Saving cell / attention density for: ' + experiment_name + '-' + well_name)
+
+        current_out_dir = out_dir + os.sep + experiment_name + os.sep + well_name
+        os.makedirs(current_out_dir, exist_ok=True)
+
+        y = []
+        x_neuron = []
+        x_oligo = []
+        x_nucleus = []
+        for i in range(len(current_metadata)):
+            assert neuron_count[i][0] == oligo_count[i][0]
+            assert neuron_count[i][0] == nucleus_count[i][0]
+            y.append(neuron_count[i][0])
+            x_neuron.append(neuron_count[i][1])
+            x_oligo.append(oligo_count[i][1])
+            x_nucleus.append(nucleus_count[i][1])
+
+        plt.clf()
+        if include_neuron:
+            plt.scatter(x=y, y=x_neuron, c='red', alpha=alpha, label='Neurons')
+        if include_oligo:
+            plt.scatter(x=y, y=x_oligo, c='green', alpha=alpha, label='Oligodendrocytes')
+        if include_nucleus:
+            plt.scatter(x=y, y=x_nucleus, c='blue', alpha=alpha, label='Nuclei')
+
+        plt.xlabel('Attention (' + str(len(current_metadata)) + ' tiles)')
+        plt.ylabel('Cell Count')
+        plt.title('Attention Nuclei Density: ' + experiment_name + '-' + well_name + title_suffix)
+        plt.legend(loc='best')
+
+        out_filename = current_out_dir + os.sep + experiment_name + '-' + well_name + '-attention_nuclei_density' + filename_suffix
+        plt.savefig(out_filename + '.png', dpi=dpi)
+        plt.savefig(out_filename + '.svg', dpi=dpi)
+        plt.savefig(out_filename + '.pdf', dpi=dpi)
 
 
 if __name__ == '__main__':

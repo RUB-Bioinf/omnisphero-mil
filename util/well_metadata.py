@@ -11,12 +11,18 @@ class TileMetadata:
 
     def __init__(self, experiment_name: str, well_letter: str = '', well_number: int = math.nan, pos_x: int = 0,
                  pos_y: int = 0, well_image_width: int = 0, well_image_height: int = 0,
+                 count_nuclei: int = 0, count_oligos: int = 0, count_neurons: int = 0,
                  read_from_source: bool = True) -> None:
         super().__init__()
 
         # Setting fields
         self.experiment_name = experiment_name
         self.read_from_source = read_from_source
+
+        self.count_nuclei = count_nuclei
+        self.count_oligos = count_oligos
+        self.count_neurons = count_neurons
+
         if read_from_source:
             self.well_letter = well_letter
             self.well_number = well_number
@@ -39,6 +45,9 @@ class TileMetadata:
 
     def get_bag_name(self):
         return self.experiment_name + ' - ' + self.get_formatted_well()
+
+    def has_valid_position(self):
+        return not math.isnan(self.pos_x) and not math.isnan(self.pos_y)
 
     def __str__(self) -> str:
         if self.read_from_source:

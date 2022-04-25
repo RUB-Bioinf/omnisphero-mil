@@ -13,8 +13,9 @@ from typing import Union
 from zipfile import ZipFile
 
 import matplotlib.pyplot as plt
-import mil_metrics
 import numpy as np
+
+import mil_metrics
 import r
 from util import log
 from util.sample_preview import z_score_to_rgb
@@ -500,6 +501,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
             pos_y = int(current_tile['y'])
         metadata = TileMetadata(experiment_name=experiment_name, well_letter=well_letter, well_number=well_number,
                                 pos_x=pos_x, pos_y=pos_y, well_image_width=well_image_width,
+                                count_nuclei=count_nuclei, count_oligos=count_oligos, count_neurons=count_neurons,
                                 well_image_height=well_image_height, read_from_source=True)
         X_metadata.append(metadata)
 

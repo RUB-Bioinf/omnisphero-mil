@@ -698,6 +698,8 @@ def train_model(
                                                                  save_sigmoid_plot_interval=save_sigmoid_plot_interval,
                                                                  checkpoint_interval=None,
                                                                  clamp_min=clamp_min, clamp_max=clamp_max,
+                                                                 bag_names=None,
+                                                                 # TODO add bag names
                                                                  callbacks=hnm_callbacks)
 
         # Plotting HNM metrics
@@ -916,6 +918,7 @@ def main(debug: bool = False):
                     loss_function='binary_cross_entropy',
                     testing_model_enabled=True,
                     writing_metrics_enabled=True,
+                    use_hard_negative_mining=False,
                     sigmoid_validation_dirs=None
                     )
     elif debug:

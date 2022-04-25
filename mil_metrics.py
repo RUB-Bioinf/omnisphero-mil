@@ -12,17 +12,16 @@ import os
 from typing import Dict
 from typing import List
 
+import models
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
+from models import BaselineMIL
 from sklearn.metrics import auc
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import precision_recall_curve
 from sklearn.metrics import roc_curve
 from torch.utils.data import DataLoader
-
-import models
-from models import BaselineMIL
 from util import dose_response
 from util import log
 from util import utils
@@ -964,3 +963,46 @@ def bayesian_bootstrap_attention_batch(all_attentions: [np.ndarray], X_metadata:
 
     log.write('Finished bootstrapping attention histograms.')
     return bootstrap_list, threshold_indices_list, metadata_list
+
+
+def get_cells_per_attention(all_attentions: [[float]], X_metadata: [[TileMetadata]], normalized: bool = True):
+    assert len(all_attentions) == len(X_metadata)
+
+    distributions = []
+    for (attention, metadata) in zip(all_attentions, X_metadata):
+        assert len(attention) == len(metadata)
+
+        current_distributions = {}
+        current_distributions['attention_min'] = attention.min()
+        current_distributions['attention_max'] = attention.max()
+
+        if normalized and attention.max() > 0:
+            attention = (attention - np.min(attention)) / np.ptp(attention)
+
+        experiment_name = metadata[0].experiment_name
+        well_name = metadata[0].get_formatted_well()
+        log.write('Calculation cell / attention density for: ' + experiment_name + '-' + well_name)
+
+        attention = np.array(attention)
+        metadata = np.array(metadata)
+
+        sort_indices = np.argsort(attention)
+        attention = attention[sort_indices]
+        metadata = metadata[sort_indices]
+        del sort_indices
+
+        nucleus_distributions = []
+        neuron_distributions = []
+        oligo_distributions = []
+        for (current_attention, current_metadata) in zip(attention, metadata):
+            nucleus_distributions.append((current_attention, current_metadata.count_nuclei))
+            neuron_distributions.append((current_attention, current_metadata.count_neurons))
+            oligo_distributions.append((current_attention, current_metadata.count_oligos))
+
+        current_distributions['nucleus'] = nucleus_distributions
+        current_distributions['neuron'] = neuron_distributions
+        current_distributions['oligo'] = oligo_distributions
+
+        distributions.append(current_distributions)
+
+    return distributions

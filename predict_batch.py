@@ -35,6 +35,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  sigmoid_verbose: bool = False, render_attention_spheres_enabled: bool = True,
                  render_dose_response_curves_enabled: bool = True, hist_bins_override=None,
                  render_merged_predicted_tiles_activation_overlays: bool = False, gpu_enabled: bool = False,
+                 render_attention_cell_distributions: bool = False,
                  render_attention_histogram_enabled: bool = False, data_loader_data_saver: bool = False):
     start_time = datetime.now()
     log_label = str(start_time.strftime("%d-%m-%Y-%H-%M-%S"))
@@ -154,6 +155,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  render_merged_predicted_tiles_activation_overlays=render_merged_predicted_tiles_activation_overlays,
                  render_attention_spheres_enabled=render_attention_spheres_enabled,
                  render_dose_response_curves_enabled=render_dose_response_curves_enabled,
+                 render_attention_cell_distributions=render_attention_cell_distributions,
                  well_names=well_names, out_dir=out_dir + 'predictions')
 
     del data_loader, X_raw, X_metadata
@@ -174,7 +176,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                  histogram_resample_size: int = 100, attention_normalized_metrics: bool = True,
                  render_attention_spheres_enabled: bool = False, render_attention_histogram_enabled: bool = False,
                  render_merged_predicted_tiles_activation_overlays: bool = False, clear_old_data: bool = False,
-                 dpi: int = 250):
+                 render_attention_cell_distributions: bool = False, dpi: int = 250):
     os.makedirs(out_dir, exist_ok=True)
 
     log.write('Using image folder: ' + image_folder)
@@ -189,19 +191,6 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
     assert len(X_metadata) == len(X_raw)
     del data_loader, model
 
-    # Running bayesian bootstrap
-    if os.path.exists('IGNORE-DEPRECATED.txt'):
-        # DEPRECATED FUNCTIONS
-        bootstrap_list, bootstrap_threshold_indices_list, bootstrap_metadata_list = mil_metrics.bayesian_bootstrap_attention_batch(
-            all_attentions=all_attentions, X_metadata=X_metadata, n_replications=histogram_bootstrap_replications,
-            resample_size=histogram_resample_size)
-        log.write('Finished predictions.')
-        data_renderer.render_bootstrapped_histograms(out_dir=out_dir, bootstrap_list=bootstrap_list,
-                                                     n_replications=histogram_bootstrap_replications,
-                                                     bootstrap_threshold_indices_list=bootstrap_threshold_indices_list,
-                                                     metadata_list=bootstrap_metadata_list)
-        del bootstrap_list, bootstrap_threshold_indices_list, bootstrap_metadata_list
-
     # Evaluating attention metrics (histogram, entropy, etc.)
     attention_metadata_list, attention_n_list, attention_bins_list, attention_otsu_index_list, attention_otsu_threshold_list, attention_entropy_attention_list, attention_entropy_hist_list, error_list = mil_metrics.attention_metrics_batch(
         all_attentions=all_attentions,
@@ -214,6 +203,38 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
         log.write("ERROR WHILE PREDICTING: " + str(error))
         # TODO handle errors better
     log.write(" === END ERROR LIST ===")
+
+    if render_attention_cell_distributions:
+        # calculating the cell count distribution for every attention value
+        distributions = mil_metrics.get_cells_per_attention(all_attentions, X_metadata)
+        data_renderer.render_attention_cell_distributions(out_dir=out_dir, distributions=distributions,
+                                                          X_metadata=X_metadata, alpha=0.45,
+                                                          title_suffix=' (Oligodendrocytes)', filename_suffix='_oligo',
+                                                          include_oligo=True,
+                                                          include_neuron=False,
+                                                          include_nucleus=False,
+                                                          dpi=dpi)
+        data_renderer.render_attention_cell_distributions(out_dir=out_dir, distributions=distributions,
+                                                          X_metadata=X_metadata, alpha=0.45,
+                                                          title_suffix=' (Neurons)', filename_suffix='_neuron',
+                                                          include_oligo=False,
+                                                          include_neuron=True,
+                                                          include_nucleus=False,
+                                                          dpi=dpi)
+        data_renderer.render_attention_cell_distributions(out_dir=out_dir, distributions=distributions,
+                                                          X_metadata=X_metadata, alpha=0.45,
+                                                          title_suffix=' (Nuclei)', filename_suffix='_nucleus',
+                                                          include_oligo=False,
+                                                          include_neuron=False,
+                                                          include_nucleus=True,
+                                                          dpi=dpi)
+        data_renderer.render_attention_cell_distributions(out_dir=out_dir, distributions=distributions,
+                                                          X_metadata=X_metadata,
+                                                          title_suffix=None, filename_suffix='_all',
+                                                          include_oligo=True,
+                                                          include_neuron=True,
+                                                          include_nucleus=True,
+                                                          dpi=dpi)
 
     data_renderer.render_attention_histograms(out_dir=out_dir, metadata_list=attention_metadata_list,
                                               n_list=attention_n_list,
@@ -251,8 +272,9 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
     sigmoid_plot_data_map = None
     sigmoid_instructions_map = None
     sigmoid_score_detail_map = None
+    sigmoid_ic50_map = None
     if r.has_connection(also_test_script=True) and render_dose_response_curves_enabled:
-        sigmoid_score_map, sigmoid_score_detail_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map = r.prediction_sigmoid_evaluation(
+        sigmoid_score_map, sigmoid_score_detail_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map, sigmoid_ic50_map = r.prediction_sigmoid_evaluation(
             X_metadata=X_metadata, y_pred=y_hats, out_dir=out_dir, verbose=sigmoid_verbose,
             save_sigmoid_plot=save_sigmoid_plot)
     else:
@@ -274,6 +296,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                                              sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
                                              sigmoid_plot_fit_map=sigmoid_plot_data_map,
                                              sigmoid_score_detail_map=sigmoid_score_detail_map,
+                                             sigmoid_ic50_map=sigmoid_ic50_map,
                                              sigmoid_score_map=sigmoid_score_map, dpi=int(dpi * 1.337))
 
     # Rendering attention scores
@@ -509,7 +532,7 @@ def main():
     print('Platform:' + str(sys.platform))
     debug = False
     data_saver = True
-    render_attention_spheres_enabled = True
+    render_attention_spheres_enabled = False
     model_path = None
     image_folder = None
 
@@ -522,7 +545,7 @@ def main():
         image_folder = paths.nucleus_predictions_image_folder_win
         current_global_log_dir = 'U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\'
         log.add_file('U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\all_logs.txt')
-        model_path = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\'
+        model_path = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\ep-aug-overlap-adadelta-endpoints-wells-normalize-6repack-0.3-round1\\'
     else:
         # good one:
         model_path = '/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-endpoints-wells-normalize-6no-repack-round1/'
@@ -531,26 +554,32 @@ def main():
         model_path = '/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-endpoints-wells-normalize-8repack-0.5-round1/'
         model_path = '/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-endpoints-wells-normalize-6repack-0.3-round1/'
 
-
         current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log/linux/'
         image_folder = paths.nucleus_predictions_image_folder_unix
 
     assert os.path.exists(model_path)
+
+    checkpoint_file = model_path + os.sep + 'hnm' + os.sep + 'model_best.h5'
+    if not os.path.exists(checkpoint_file):
+        checkpoint_file = model_path + os.sep + 'model_best.h5'
+    assert os.path.exists(checkpoint_file)
+
     if debug and sys.platform == 'win32':
         predict_path(
             model_save_path=model_path,
             global_log_dir=current_global_log_dir,
-            checkpoint_file='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\hnm\\model_best.h5',
+            checkpoint_file=checkpoint_file,
             bag_paths=debug_prediction_dirs_win,
             image_folder=image_folder,
             data_loader_data_saver=True,
             render_attention_spheres_enabled=render_attention_spheres_enabled,
+            channel_inclusions=loader.default_channel_inclusions_no_neurites,
             render_merged_predicted_tiles_activation_overlays=False,
             render_attention_histogram_enabled=False,
             render_dose_response_curves_enabled=True,
             hist_bins_override=50,
             sigmoid_verbose=True,
-            out_dir='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\debug_predictions-linux\\',
+            out_dir='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\debug_predictions-win\\',
             gpu_enabled=False, normalize_enum=normalize_enum, max_workers=4)
     elif sys.platform == 'win32':
         for prediction_dir in paths.all_prediction_dirs_win:
@@ -562,17 +591,14 @@ def main():
                          checkpoint_file='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\hnm\\model_best.h5',
                          out_dir=model_path + 'predictions-sigmoid\\',
                          bag_paths=[prediction_dir],
+                         channel_inclusions=loader.default_channel_inclusions_no_neurites,
                          image_folder=image_folder,
                          hist_bins_override=50,
                          sigmoid_verbose=True,
+                         render_dose_response_curves_enabled=True,
                          gpu_enabled=False, normalize_enum=normalize_enum, max_workers=6)
     else:
         print('Predicting linux batches')
-
-        checkpoint_file = model_path + os.sep + 'hnm' + os.sep + 'model_best.h5'
-        if not os.path.exists(checkpoint_file):
-            checkpoint_file = model_path + os.sep + 'model_best.h5'
-        assert os.path.exists(checkpoint_file)
 
         prediction_dirs_used = [curated_overlapping_source_dirs_unix]
         if debug:
@@ -586,11 +612,13 @@ def main():
             log.write(str(i) + '/' + str(len(prediction_dirs_used)) + ' - Predicting: ' + str(prediction_dir))
             try:
                 predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path, bag_paths=prediction_dir,
-                             out_dir='/mil/oligo-diff/debug_predictions/endpoint-sigmoid-linux-norm6/',
+                             out_dir='/mil/oligo-diff/debug_predictions/endpoint-sigmoid-linux-norm6-ic/',
                              global_log_dir=current_global_log_dir,
                              render_attention_spheres_enabled=render_attention_spheres_enabled,
                              render_merged_predicted_tiles_activation_overlays=False,
-                             render_attention_histogram_enabled=False,
+                             render_attention_histogram_enabled=True,
+                             render_attention_cell_distributions=False,
+                             render_dose_response_curves_enabled=True,
                              hist_bins_override=50,
                              sigmoid_verbose=False,
                              image_folder=image_folder,

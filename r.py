@@ -1,8 +1,9 @@
 import math
 import os
-import numpy as np
-from util import log
 
+import numpy as np
+
+from util import log
 # local r test file inside this project
 from util.well_metadata import TileMetadata
 
@@ -20,10 +21,14 @@ prodi_r_test_file = os.path.abspath(prodi_r_test_file)
 
 
 def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_filename: str,
-                              save_sigmoid_plot: bool = False, verbose: bool = False):
+                              testing_connection: bool = False, save_sigmoid_plot: bool = False, verbose: bool = False):
     assert len(doses) == len(responses)
     assert len(doses) > 1
     import pyRserve
+
+    if testing_connection:
+        save_sigmoid_plot = False
+        verbose = False
 
     # Setting up the out dir
     if save_sigmoid_plot:
@@ -106,10 +111,27 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
             estimate_plot = np.asarray([e[0] for e in estimate_plot])
 
             fitted_plot = np.asarray(fitted_plot, dtype=np.float64)
+            # min(myList, key=lambda x: abs(x - myNumber))
+            # fitted_plot[1][int(len(fitted_plot) / 2)]
         except Exception as e:
             estimate_plot = None
             log.write(' == FATAL ERROR! ==')
             log.write('Failed to extract the curve fitted values!')
+            log.write(str(e))
+
+    # Getting IC50
+    ic50 = float('NaN')
+    if estimate_plot is not None:
+        try:
+            dose_curve = fitted_plot[1]
+            mid_point = (dose_curve.min() + dose_curve.max()) / 2
+            mid_point_value = min(dose_curve, key=lambda x: abs(x - mid_point))
+            mid_point_index = np.where(dose_curve == mid_point_value)[0]
+            ic50 = float(fitted_plot[0][mid_point_index])
+        except Exception as e:
+            ic50 = float('NaN')
+            log.write(' == Failed to estimate IC50 ==')
+            # TODO check on these errors later!
             log.write(str(e))
 
     # Checking if final score is nan, so the plot data is set to None
@@ -131,7 +153,7 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
         log.write(str(e))
 
     instructions = [dose_instruction, resp_instruction]
-    return final_score, score_data, estimate_plot, fitted_plot, instructions
+    return final_score, score_data, estimate_plot, fitted_plot, instructions, ic50
 
 
 def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarray], out_dir: str,
@@ -170,6 +192,7 @@ def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarra
     sigmoid_instructions_map = {}
     sigmoid_fitted_plot_map = {}
     sigmoid_plot_score_detail_map = {}
+    sigmoid_ic50_map = {}
 
     for experiment_name in experiment_prediction_map.keys():
         well_index_map = experiment_prediction_map[experiment_name]
@@ -189,19 +212,22 @@ def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarra
             out_image_filename = out_image_filename + file_name_suffix
         out_image_filename = out_image_filename + '.png'
 
-        sigmoid_score, score_detail, estimate_plot, fitted_plot, instructions = pooled_sigmoid_evaluation(doses=doses,
-                                                                                                          responses=responses,
-                                                                                                          verbose=verbose,
-                                                                                                          save_sigmoid_plot=save_sigmoid_plot,
-                                                                                                          out_image_filename=out_image_filename)
+        sigmoid_score, score_detail, estimate_plot, fitted_plot, instructions, ic50 = pooled_sigmoid_evaluation(
+            doses=doses,
+            responses=responses,
+            verbose=verbose,
+            save_sigmoid_plot=save_sigmoid_plot,
+            out_image_filename=out_image_filename)
+
         sigmoid_score_map[experiment_name] = sigmoid_score
         sigmoid_plot_estimation_map[experiment_name] = estimate_plot
         sigmoid_plot_score_detail_map[experiment_name] = score_detail
         sigmoid_fitted_plot_map[experiment_name] = fitted_plot
         sigmoid_instructions_map[experiment_name] = instructions
-        log.write('Sigmoid score for ' + experiment_name + ': ' + str(sigmoid_score))
+        sigmoid_ic50_map[experiment_name] = ic50
+        log.write('Sigmoid score for ' + experiment_name + ': ' + str(sigmoid_score) + '. IC50: ' + str(ic50))
 
-    return sigmoid_score_map, sigmoid_plot_score_detail_map, sigmoid_plot_estimation_map, sigmoid_fitted_plot_map, sigmoid_instructions_map
+    return sigmoid_score_map, sigmoid_plot_score_detail_map, sigmoid_plot_estimation_map, sigmoid_fitted_plot_map, sigmoid_instructions_map, sigmoid_ic50_map
 
 
 def has_connection(also_test_script: bool = False) -> bool:
@@ -214,8 +240,7 @@ def has_connection(also_test_script: bool = False) -> bool:
             response = [0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3, 0.4]
             dose = [100, 100, 50, 0, 100, 100, 50, 0, 100, 100, 50, 0]
             pooled_sigmoid_evaluation(doses=dose, responses=response, out_image_filename='test.png',
-                                      save_sigmoid_plot=False,
-                                      verbose=True)
+                                      save_sigmoid_plot=False, testing_connection=True, verbose=True)
     except Exception as e:
         # Failed to close connection.
         log.write('Cannot connect to Rserve: ' + str(e))
