@@ -1,3 +1,5 @@
+import os
+
 from util import log
 
 default_out_dir_unix_base = '/mil/oligo-diff/models/linux'
@@ -82,7 +84,6 @@ curated_overlapping_source_dirs_unix = [
     # '/mil/oligo-diff/training_data/curated_linux_overlap/ELS682'
 ]
 
-
 curated_overlapping_source_dirs_ep_unix = [
     # Overlapping Experiments from the ENDpoiNTs dataset #1
     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK129_PG',
@@ -121,6 +122,9 @@ curated_overlapping_debug_dirs_unix = [
 
 nucleus_predictions_image_folder_win = 'U:\\bioinfdata\\work\\OmniSphero\\Bilderordner\\'
 nucleus_predictions_image_folder_unix = '/bilderordner'
+
+mil_metadata_file_win = nucleus_predictions_image_folder_win + 'mil_experiment_metadata.csv'
+mil_metadata_file_linux = nucleus_predictions_image_folder_unix + os.sep + 'mil_experiment_metadata.csv'
 
 all_prediction_dirs_win.sort()
 curated_overlapping_source_dirs_unix.sort()

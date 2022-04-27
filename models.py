@@ -313,6 +313,9 @@ class BaselineMIL(OmniSpheroMil):
             except Exception as e:
                 log.write(e)
                 log.write('Cannot execute loss function!')
+        elif method == 'mean_square_error':
+            b = nn.MSELoss()
+            loss = b(y_hat.squeeze(), y)
         else:
             raise Exception('Unknown loss function!')
 

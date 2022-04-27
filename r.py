@@ -2,7 +2,6 @@ import math
 import os
 
 import numpy as np
-
 from util import log
 # local r test file inside this project
 from util.well_metadata import TileMetadata
@@ -21,6 +20,7 @@ prodi_r_test_file = os.path.abspath(prodi_r_test_file)
 
 
 def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_filename: str,
+                              global_ic_50: bool = True,
                               testing_connection: bool = False, save_sigmoid_plot: bool = False, verbose: bool = False):
     assert len(doses) == len(responses)
     assert len(doses) > 1
@@ -123,8 +123,16 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
     ic50 = float('NaN')
     if estimate_plot is not None:
         try:
+            well_curve = fitted_plot[0]
             dose_curve = fitted_plot[1]
-            mid_point = (dose_curve.min() + dose_curve.max()) / 2
+
+            if global_ic_50:
+                # When trying to find IC50 at a 'global' scale, aka at 50% inhibitation
+                mid_point = 0.5
+            else:
+                # When trying to find IC50 at a 'local' scale, based on normalized curve points
+                mid_point = (dose_curve.min() + dose_curve.max()) / 2
+
             mid_point_value = min(dose_curve, key=lambda x: abs(x - mid_point))
             mid_point_index = np.where(dose_curve == mid_point_value)[0]
             ic50 = float(fitted_plot[0][mid_point_index])

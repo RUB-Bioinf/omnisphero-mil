@@ -862,7 +862,7 @@ def main(debug: bool = False):
         debug = True
     print('Debug mode: ' + str(debug))
 
-    current_epochs = 500
+    current_epochs = 700
     current_max_workers = 35
     default_out_dir_base = default_out_dir_unix_base
     current_sources_dir = paths.curated_overlapping_source_dirs_unix
@@ -915,7 +915,7 @@ def main(debug: bool = False):
                     tile_constraints_1=loader.default_tile_constraints_oligos,
                     label_1_well_indices=loader.default_well_indices_early,
                     label_0_well_indices=loader.default_well_indices_very_late,
-                    loss_function='binary_cross_entropy',
+                    loss_function='mean_square_error',
                     testing_model_enabled=True,
                     writing_metrics_enabled=True,
                     use_hard_negative_mining=False,
@@ -966,13 +966,13 @@ def main(debug: bool = False):
                         )
     else:
         # '/mil/oligo-diff/models/linux/hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
-        for l in ['binary_cross_entropy']:
+        for l in ['mean_square_error']:
             # best: binary_cross_entropy
-            for o in ['adadelta']:  # ['adam', 'adadelta']:
+            for o in ['adadelta', 'adam']:  # ['adam', 'adadelta']:
                 # best: adadelta
-                for p in [0.10, 0.15, 0.30, 0.5]:
-                    # best: 0.65
-                    for i in [6, 8]:  # [4, 6, 7, 8]:
+                for p in [0.30]:
+                    # best: 0.65 or 0.3
+                    for i in [6]:  # [4, 6, 7, 8]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
                             augment_train = aug[1]
@@ -981,8 +981,8 @@ def main(debug: bool = False):
                                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                                         image_folder=image_folder,
                                         normalize_enum=i,
-                                        training_label='ep-aug-overlap-' + o + '-endpoints-wells-normalize-' + str(
-                                            i) + 'repack-' + str(p) + '-round1',
+                                        training_label='ep-aug-overlap-' + o + '-wells-normalize-' + str(
+                                            i) + 'repack-' + str(p) + '-mse1',
                                         global_log_dir=current_global_log_dir,
                                         data_split_percentage_validation=0.25,
                                         data_split_percentage_test=0.15,
