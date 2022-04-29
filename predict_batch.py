@@ -143,6 +143,13 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
     # TODO react to loading errors
     log.write('Number of files loaded: ' + str(len(loaded_files_list)))
     log.write('Number of loading errors: ' + str(len(errors)))
+    if len(errors) > 1:
+        log.write("[!!]\n[ERRORS WHILE LOADING EXPERIMENTS!]\n[!!]", include_timestamp=False)
+        for i in range(len(errors)):
+            e = errors[i]
+            log.write('Error #' + str(i) + ': "' + str(e) + '".')
+            del e
+            del i
     del errors, loaded_files_list
 
     norm = True
@@ -257,7 +264,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                 shutil.rmtree(out_dir + os.sep + exp + os.sep)
             except Exception as e:
                 log.write("Cannot remove path for " + exp + ". Msg: " + str(e))
-    del exp
+        del exp
 
     # Setting up the instructions out file
     sigmoid_instructions_file = out_dir + os.sep + 'sigmoid_instructions.csv'
@@ -272,9 +279,9 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
     sigmoid_plot_data_map = None
     sigmoid_instructions_map = None
     sigmoid_score_detail_map = None
-    sigmoid_ic50_map = None
+    sigmoid_bmc30_map = None
     if r.has_connection(also_test_script=True) and render_dose_response_curves_enabled:
-        sigmoid_score_map, sigmoid_score_detail_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map, sigmoid_ic50_map = r.prediction_sigmoid_evaluation(
+        sigmoid_score_map, sigmoid_score_detail_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map, sigmoid_bmc30_map = r.prediction_sigmoid_evaluation(
             X_metadata=X_metadata, y_pred=y_hats, out_dir=out_dir, verbose=sigmoid_verbose,
             save_sigmoid_plot=save_sigmoid_plot)
     else:
@@ -296,7 +303,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                                              sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
                                              sigmoid_plot_fit_map=sigmoid_plot_data_map,
                                              sigmoid_score_detail_map=sigmoid_score_detail_map,
-                                             sigmoid_ic50_map=sigmoid_ic50_map,
+                                             sigmoid_bmc30_map=sigmoid_bmc30_map,
                                              sigmoid_score_map=sigmoid_score_map, dpi=int(dpi * 1.337))
 
     # Rendering attention scores
@@ -554,6 +561,9 @@ def main():
         model_path = '/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-endpoints-wells-normalize-8repack-0.5-round1/'
         model_path = '/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-endpoints-wells-normalize-6repack-0.3-round1/'
 
+        # mse
+        model_path = '/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-wells-normalize-6repack-0.3-mse1/'
+
         current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log/linux/'
         image_folder = paths.nucleus_predictions_image_folder_unix
 
@@ -612,7 +622,7 @@ def main():
             log.write(str(i) + '/' + str(len(prediction_dirs_used)) + ' - Predicting: ' + str(prediction_dir))
             try:
                 predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path, bag_paths=prediction_dir,
-                             out_dir='/mil/oligo-diff/debug_predictions/endpoint-sigmoid-linux-norm6-ic/',
+                             out_dir='/mil/oligo-diff/debug_predictions/endpoint-sigmoid-linux-norm6-mse-bmc/',
                              global_log_dir=current_global_log_dir,
                              render_attention_spheres_enabled=render_attention_spheres_enabled,
                              render_merged_predicted_tiles_activation_overlays=False,

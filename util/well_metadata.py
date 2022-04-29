@@ -7,15 +7,123 @@ from util import log
 well_regex = '([A-Z]+)(\\d+)'
 
 
+class PlateMetadata:
+
+    def __init__(self, compound_name: str,
+                 experiment_id: str,
+                 compound_cas: str,
+                 compound_concentration_max: float,
+                 compound_concentration_dilution: float,
+                 well_max_compound_concentration: int,
+                 well_control: int,
+                 compound_bmc30: float,
+                 plate_bmc30: float) -> None:
+        super().__init__()
+
+        assert well_control < well_max_compound_concentration
+
+        self.experiment_id = experiment_id
+        self.compound_name = compound_name
+        self.compound_cas = compound_cas
+        self.compound_concentration_max = compound_concentration_max
+        self.compound_concentration_dilution = compound_concentration_dilution
+        self.well_max_compound_concentration = well_max_compound_concentration
+        self.well_control = well_control
+        self.plate_bmc30 = plate_bmc30
+        self.compound_bmc30 = compound_bmc30
+
+    def __str__(self) -> str:
+        return 'Compound: "' + self.compound_name + '" with ' + str(self.compound_concentration_max) + '@' + str(
+            self.well_max_compound_concentration) + ' (1:' + str(
+            self.compound_concentration_dilution) + ' until ' + str(self.well_control) + '.)'
+
+    def has_valid_bmcs(self):
+        return not math.isnan(self.plate_bmc30) and not math.isnan(self.compound_bmc30)
+
+    def get_concentration_at(self, well_index: int) -> float:
+        # check for control case
+        if well_index == self.well_control:
+            return 0.0
+
+        # Check if in range of well indices
+        assert well_index >= self.well_control
+        assert well_index <= self.well_max_compound_concentration
+
+        current_concentration = self.compound_concentration_max
+        for i in range(self.well_max_compound_concentration - well_index):
+            current_concentration = current_concentration / self.compound_concentration_dilution
+
+        return current_concentration
+
+    def interpolate_well_index_to_concentration(self, well: float) -> float:
+        if math.isnan(well):
+            return float('NaN')
+
+        # check if we want to have for an exact well entry
+        if well.is_integer():
+            return self.get_concentration_at(int(well))
+
+        current_well = int(math.floor(well))
+        well_remainder = well - float(current_well)
+
+        current_concentration = self.get_concentration_at(current_well)
+        next_concentration = self.get_concentration_at(current_well + 1)
+        concentration_step = next_concentration - current_concentration
+
+        interpolated_concentration = lerp(a=next_concentration, b=current_concentration, c=well_remainder)
+        return interpolated_concentration
+
+    def interpolate_concentration_to_well(self, concentration: float) -> float:
+        if math.isnan(concentration):
+            return float('NaN')
+
+        closest_well = float('NaN')
+        concentration_remainder = float('NaN')
+        for i in range(self.well_control, self.well_max_compound_concentration):
+            current_concentration = self.get_concentration_at(i)
+            next_concentration = self.get_concentration_at(i + 1)
+
+            # checking if the given concentration matches one in the metadata
+            if round(concentration, 8) == round(current_concentration, 8):
+                return float(i)
+            if round(concentration, 8) == round(next_concentration, 8):
+                return float(i + 1)
+
+            if current_concentration <= concentration <= next_concentration:
+                closest_well = i
+
+                concentration_step = next_concentration - current_concentration
+                step_progress = lerp(concentration_step, 0, current_concentration - concentration)
+
+                lerped_well = lerp(closest_well + 1, closest_well, step_progress)
+                concentration_remainder = current_concentration / next_concentration
+                return lerped_well
+
+        # closest_well=float(closest_well)
+        # concentration_min = self.get_concentration_at(self.well_control)
+        # concentration_max = self.get_concentration_at(self.well_max_compound_concentration)
+        # if concentration_min <= concentration <= concentration_max:
+        #    concentration_normalized = (concentration + concentration_min) / concentration_max
+        #    concentration_lerp = lerp(a=self.well_max_compound_concentration, b=self.well_control,
+        #                              c=concentration_normalized)
+        #    return concentration_lerp
+        #    # print(str(current_concentration) + ' - ' + str(next_concentration))
+
+        # the concentration we are looking for, is not in the concentration range
+        return float('NaN')
+
+
 class TileMetadata:
 
     def __init__(self, experiment_name: str, well_letter: str = '', well_number: int = math.nan, pos_x: int = 0,
                  pos_y: int = 0, well_image_width: int = 0, well_image_height: int = 0,
                  count_nuclei: int = 0, count_oligos: int = 0, count_neurons: int = 0,
+                 plate_metadata: PlateMetadata = None,
                  read_from_source: bool = True) -> None:
         super().__init__()
 
         # Setting fields
+        self.plate_metadata = plate_metadata
         self.experiment_name = experiment_name
         self.read_from_source = read_from_source
 
@@ -51,11 +159,26 @@ class TileMetadata:
 
     def __str__(self) -> str:
         if self.read_from_source:
+            metadata_text = 'No plate metadata available.'
+            if self.has_plate_metadata():
+                metadata_text = 'Plate metadata: '
+                str(self.plate_metadata) + '.'
+
             return "Tile from bag: " + self.get_bag_name() + " at well " + str(self.well_letter) + str(
                 self.well_number) + ". Pos: x: " + str(self.pos_x) + ' y: ' + str(
-                self.pos_y) + '. Original image size: ' + str(self.well_image_width) + 'x' + str(self.well_image_height)
+                self.pos_y) + '. Original image size: ' + str(self.well_image_width) + 'x' + str(
+                self.well_image_height) + '. ' + metadata_text
         else:
             return 'Unknown tile, created at runtime.'
+
+    def has_plate_metadata(self) -> PlateMetadata:
+        return self.plate_metadata is not None
+
+    def get_concentration(self) -> float:
+        if not self.has_plate_metadata():
+            return float('nan')
+
+        return self.plate_metadata.get_concentration_at(self.well_number)
 
 
 def extract_well_info(well: str, verbose: bool = False) -> (str, int):
@@ -66,6 +189,16 @@ def extract_well_info(well: str, verbose: bool = False) -> (str, int):
         log.write('Reconstructing well: "' + well + '" -> "' + well_letter + str(well_number) + '".')
 
     return well_letter, well_number
+
+
+def lerp(a: float,  # the maximum value to be lerped
+         b: float,  # the minimum value to be lerped
+         c: float  # the lerping index (should be between 0.0 and 1.0)
+         ):
+    a = float(a)
+    b = float(b)
+    c = float(c)
+    return (c * a) + ((1 - c) * b)
 
 
 def main():

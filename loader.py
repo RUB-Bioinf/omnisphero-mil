@@ -4,6 +4,7 @@ import json
 import math
 import os
 import random
+import sys
 import threading
 import time
 import traceback
@@ -18,10 +19,12 @@ import numpy as np
 import mil_metrics
 import r
 from util import log
+from util import paths
 from util.sample_preview import z_score_to_rgb
 from util.utils import gct
 from util.utils import get_time_diff
 from util.utils import line_print
+from util.well_metadata import PlateMetadata
 from util.well_metadata import TileMetadata
 ####
 # Constants
@@ -401,6 +404,7 @@ def read_JSON_file(filepath: str, worker_verbose: bool, normalize_enum: int, lab
 
 ####
 
+
 def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: bool, normalize_enum: int,
                label_0_well_indices: [int], label_1_well_indices: [int], constraints_1: [int], constraints_0: [int],
                channel_inclusions: [bool], include_raw: bool = True) -> (np.ndarray, int, [int], np.ndarray, str):
@@ -419,7 +423,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     assert len(constraints_0) == 3
     inclusions_count = sum([float(channel_inclusions[i]) for i in range(len(channel_inclusions))])
 
-    # Reading meta data
+    # Reading JSON meta data
     width = json_data['tileWidth']
     height = json_data['tileHeight']
     bit_depth = json_data['bit_depth']
@@ -434,6 +438,15 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
         well_image_width = int(json_data['w'])
         well_image_height = int(json_data['h'])
     well_letter, well_number = extract_well_info(well, verbose=worker_verbose)
+
+    # Reading metadata for the experiment
+    metadata_path = paths.mil_metadata_file_linux
+    if sys.platform == 'win32':
+        metadata_path = paths.mil_metadata_file_win
+    if not os.path.exists(metadata_path):
+        log.write('Failed to locate metadata file: ' + metadata_path)
+        assert False
+    plate_metadata = get_experiment_metadata(metadata_path=metadata_path, experiment_name=experiment_name)
 
     # bit_max = np.info('uint' + str(bit_depth)).max
     bit_max = pow(2, bit_depth) - 1
@@ -502,6 +515,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
         metadata = TileMetadata(experiment_name=experiment_name, well_letter=well_letter, well_number=well_number,
                                 pos_x=pos_x, pos_y=pos_y, well_image_width=well_image_width,
                                 count_nuclei=count_nuclei, count_oligos=count_oligos, count_neurons=count_neurons,
+                                plate_metadata=plate_metadata,
                                 well_image_height=well_image_height, read_from_source=True)
         X_metadata.append(metadata)
 
@@ -1265,6 +1279,57 @@ def repack_bags(X: [np.array], y: [int], repack_percentage: float = 0.2):
         X[bag_index] = current_x
 
     return X
+
+
+####
+
+
+def get_experiment_metadata(metadata_path, experiment_name):
+    assert os.path.exists(metadata_path)
+
+    f = open(metadata_path, 'r')
+    lines = f.readlines()
+    f.close()
+    del f
+
+    plate_metadata = None
+    found_experiment = False
+    for l in lines:
+        l = l.strip()
+        l = l.split(';')
+
+        line_experiment = l[1].lower()
+        if line_experiment.startswith(experiment_name.lower()):
+            assert not found_experiment
+            found_experiment = True
+
+            assert len(l) == 10
+            experiment_id = l[1]
+            compound_name = str(l[2])
+            compound_cas = str(l[3])
+            compound_concentration_max = float(l[4])
+            compound_concentration_dilution = float(l[5])
+            well_max_compound_concentration = int(l[6])
+            well_control = int(l[7])
+            plate_bmc30 = float(l[8])
+            compound_bmc30 = float(l[9])
+            plate_metadata = PlateMetadata(compound_name=compound_name,
+                                           compound_cas=compound_cas,
+                                           compound_concentration_max=compound_concentration_max,
+                                           compound_concentration_dilution=compound_concentration_dilution,
+                                           well_max_compound_concentration=well_max_compound_concentration,
+                                           well_control=well_control,
+                                           plate_bmc30=plate_bmc30,
+                                           experiment_id=experiment_id,
+                                           compound_bmc30=compound_bmc30
+                                           )
+
+            log.write('Comparing experiments: ' + experiment_name + ' VS ' + experiment_id)
+
+    if not found_experiment:
+        log.write('WARNING: ' + experiment_name + ' has no compound metadata in: ' + metadata_path)
+
+    return plate_metadata
 
 
 ####

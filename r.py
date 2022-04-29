@@ -20,7 +20,7 @@ prodi_r_test_file = os.path.abspath(prodi_r_test_file)
 
 
 def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_filename: str,
-                              global_ic_50: bool = True,
+                              global_bmc_30: bool = True,
                               testing_connection: bool = False, save_sigmoid_plot: bool = False, verbose: bool = False):
     assert len(doses) == len(responses)
     assert len(doses) > 1
@@ -119,26 +119,26 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
             log.write('Failed to extract the curve fitted values!')
             log.write(str(e))
 
-    # Getting IC50
-    ic50 = float('NaN')
+    # Getting BMC30
+    bmc_50 = float('NaN')
     if estimate_plot is not None:
         try:
             well_curve = fitted_plot[0]
             dose_curve = fitted_plot[1]
 
-            if global_ic_50:
-                # When trying to find IC50 at a 'global' scale, aka at 50% inhibitation
-                mid_point = 0.5
+            if global_bmc_30:
+                # When trying to find BMC50 at a 'global' scale, aka at 50% inhibitation
+                mid_point = 0.3
             else:
-                # When trying to find IC50 at a 'local' scale, based on normalized curve points
+                # When trying to find BMC50 at a 'local' scale, based on normalized curve points
                 mid_point = (dose_curve.min() + dose_curve.max()) / 2
 
             mid_point_value = min(dose_curve, key=lambda x: abs(x - mid_point))
             mid_point_index = np.where(dose_curve == mid_point_value)[0]
-            ic50 = float(fitted_plot[0][mid_point_index])
+            bmc_50 = float(fitted_plot[0][mid_point_index])
         except Exception as e:
-            ic50 = float('NaN')
-            log.write(' == Failed to estimate IC50 ==')
+            bmc_50 = float('NaN')
+            log.write(' == Failed to estimate BMC30 ==')
             # TODO check on these errors later!
             log.write(str(e))
 
@@ -161,7 +161,7 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
         log.write(str(e))
 
     instructions = [dose_instruction, resp_instruction]
-    return final_score, score_data, estimate_plot, fitted_plot, instructions, ic50
+    return final_score, score_data, estimate_plot, fitted_plot, instructions, bmc_50
 
 
 def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarray], out_dir: str,
@@ -200,7 +200,7 @@ def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarra
     sigmoid_instructions_map = {}
     sigmoid_fitted_plot_map = {}
     sigmoid_plot_score_detail_map = {}
-    sigmoid_ic50_map = {}
+    sigmoid_bmc50_map = {}
 
     for experiment_name in experiment_prediction_map.keys():
         well_index_map = experiment_prediction_map[experiment_name]
@@ -220,7 +220,7 @@ def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarra
             out_image_filename = out_image_filename + file_name_suffix
         out_image_filename = out_image_filename + '.png'
 
-        sigmoid_score, score_detail, estimate_plot, fitted_plot, instructions, ic50 = pooled_sigmoid_evaluation(
+        sigmoid_score, score_detail, estimate_plot, fitted_plot, instructions, bmc_50 = pooled_sigmoid_evaluation(
             doses=doses,
             responses=responses,
             verbose=verbose,
@@ -232,10 +232,10 @@ def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarra
         sigmoid_plot_score_detail_map[experiment_name] = score_detail
         sigmoid_fitted_plot_map[experiment_name] = fitted_plot
         sigmoid_instructions_map[experiment_name] = instructions
-        sigmoid_ic50_map[experiment_name] = ic50
-        log.write('Sigmoid score for ' + experiment_name + ': ' + str(sigmoid_score) + '. IC50: ' + str(ic50))
+        sigmoid_bmc50_map[experiment_name] = bmc_50
+        log.write('Sigmoid score for ' + experiment_name + ': ' + str(sigmoid_score) + '. BMC50: ' + str(bmc_50))
 
-    return sigmoid_score_map, sigmoid_plot_score_detail_map, sigmoid_plot_estimation_map, sigmoid_fitted_plot_map, sigmoid_instructions_map, sigmoid_ic50_map
+    return sigmoid_score_map, sigmoid_plot_score_detail_map, sigmoid_plot_estimation_map, sigmoid_fitted_plot_map, sigmoid_instructions_map, sigmoid_bmc50_map
 
 
 def has_connection(also_test_script: bool = False) -> bool:

@@ -756,7 +756,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
             if r.has_connection() and X_metadata_sigmoid is not None and data_loader_sigmoid is not None:
                 y_hats_sigmoid, _, _, _, _, _, _, _ = get_predictions(model, data_loader_sigmoid)
-                sigmoid_score_map, sigmoid_score_detail_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map, sigmoid_ic50_map = r.prediction_sigmoid_evaluation(
+                sigmoid_score_map, sigmoid_score_detail_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map, sigmoid_bmc30_map = r.prediction_sigmoid_evaluation(
                     X_metadata=X_metadata_sigmoid,
                     y_pred=y_hats_sigmoid,
                     save_sigmoid_plot=False,
@@ -777,7 +777,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                                                          sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
                                                          sigmoid_plot_fit_map=sigmoid_plot_data_map,
                                                          sigmoid_score_detail_map=sigmoid_score_detail_map,
-                                                         sigmoid_ic50_map=sigmoid_ic50_map,
+                                                         sigmoid_bmc30_map=sigmoid_bmc30_map,
                                                          file_name_suffix='-epoch' + str(epoch),
                                                          title_suffix='\nTraining Epoch ' + str(epoch),
                                                          out_dir=sigmoid_data_dir_naive_live)
@@ -946,7 +946,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
             # Rendering the sigmoid curves again, because of new best performance
             if r.has_connection() and X_metadata_sigmoid is not None and data_loader_sigmoid is not None and y_hats_sigmoid is not None:
-                sigmoid_score_map, sigmoid_score_detail_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map, sigmoid_ic50_map = r.prediction_sigmoid_evaluation(
+                sigmoid_score_map, sigmoid_score_detail_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_instructions_map, sigmoid_bmc30_map = r.prediction_sigmoid_evaluation(
                     X_metadata=X_metadata_sigmoid,
                     y_pred=y_hats_sigmoid,
                     save_sigmoid_plot=False,
@@ -969,7 +969,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                                                      sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
                                                      sigmoid_plot_fit_map=sigmoid_plot_data_map,
                                                      sigmoid_score_detail_map=sigmoid_score_detail_map,
-                                                     sigmoid_ic50_map=sigmoid_ic50_map,
+                                                     sigmoid_bmc30_map=sigmoid_bmc30_map,
                                                      file_name_suffix='-best-epoch' + str(epoch),
                                                      title_suffix='\nTraining Epoch ' + str(
                                                          epoch) + ' (New Best)',

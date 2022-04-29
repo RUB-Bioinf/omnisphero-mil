@@ -1,3 +1,4 @@
+import math
 import os
 
 import matplotlib.pyplot as plt
@@ -213,13 +214,14 @@ def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pr
 def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sigmoid_score_map: {str} = None,
                            file_name_suffix: str = None, title_suffix: str = None, out_dir: str = None,
                            sigmoid_plot_fit_map: {np.ndarray} = None, sigmoid_plot_estimation_map=None,
-                           sigmoid_ic50_map: {float} = None,
+                           sigmoid_bmc30_map: {float} = None,
                            # TODO why are they all None? This should be checked or something?
                            sigmoid_score_detail_map: {} = None, dpi: int = 650):
     # Remapping predictions so they can be evaluated
     experiment_prediction_map_pooled = {}
     experiment_prediction_map = {}
     experiment_well_tick_map = {}
+    experiment_compound_metadata_map = {}
     all_experiment_names = []
     all_well_names = []
     all_well_indices = []
@@ -241,6 +243,7 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
 
         if experiment_name not in all_experiment_names:
             all_experiment_names.append(experiment_name)
+            experiment_compound_metadata_map[experiment_name] = metadata.plate_metadata
         if well not in all_well_names:
             all_well_names.append(well)
         if well_number not in all_well_indices:
@@ -276,6 +279,28 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
         experiment_dir = out_dir + os.sep + experiment_name + os.sep
         os.makedirs(experiment_dir, exist_ok=True)
 
+        # # Loading plate metadata
+        # metadata_path = paths.mil_metadata_file_linux
+        # if sys.platform == 'win32':
+        #     metadata_path = paths.mil_metadata_file_win
+        # if not os.path.exists(metadata_path):
+        #     log.write('Failed to locate metadata file: ' + metadata_path)
+        #     assert False
+        # TODO delete this??
+
+        # plate_metadata = loader.get_experiment_metadata(metadata_path=metadata_path, experiment_name=experiment_name)
+        plate_metadata = experiment_compound_metadata_map[experiment_name]
+        bmc30_plate = float('NaN')
+        bmc30_compound = float('NaN')
+        bmc30_plate_text = '?'
+        bmc30_compound_text = '?'
+        if plate_metadata is not None:
+            bmc30_plate_text = '{:0.2f}'.format(plate_metadata.plate_bmc30) + ' µM'
+            bmc30_compound_text = '{:0.2f}'.format(plate_metadata.compound_bmc30) + ' µM'
+
+            bmc30_plate = plate_metadata.interpolate_concentration_to_well(plate_metadata.plate_bmc30)
+            bmc30_compound = plate_metadata.interpolate_concentration_to_well(plate_metadata.compound_bmc30)
+
         # Extracting sigmoid score
         sigmoid_score: str = str(float('nan'))
         sigmoid_plot_estimations: np.ndarray = None
@@ -290,27 +315,31 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
             else:
                 sigmoid_score = 'Not available.'
 
-        # Extracting IC50
-        ic50: float = float('NaN')
-        ic50_text: str = None
-        if sigmoid_ic50_map is None:
-            ic50_text = 'IC50 not available.'
+        # Extracting BMC30
+        bmc30_prediction: float = float('NaN')
+        bmc30_prediction_text: str = None
+        bmc30_prediction_um = float('NaN')
+        if sigmoid_bmc30_map is None:
+            bmc30_prediction_text = 'BMC30 not available.'
         else:
-            if experiment_name in sigmoid_ic50_map:
-                ic50 = sigmoid_ic50_map[experiment_name]
-                ic50_text = str(ic50)
-                if np.isnan(ic50):
-                    ic50_text = 'IC50 failed.'
+            if experiment_name in sigmoid_bmc30_map:
+                bmc30_prediction = sigmoid_bmc30_map[experiment_name]
+                bmc30_prediction_text = str(bmc30_prediction)
+                if np.isnan(bmc30_prediction):
+                    bmc30_prediction_text = 'BMC30 failed.'
                 else:
-                    ic50_text = str(round(ic50, 3))
+                    bmc30_prediction_text = str(round(bmc30_prediction, 3))
+                    if plate_metadata is not None:
+                        bmc30_prediction_um = plate_metadata.interpolate_well_index_to_concentration(bmc30_prediction)
+                        bmc30_prediction_text = str(round(bmc30_prediction_um, 3)) + ' µM'
             else:
-                ic50_text = 'IC50 not calculated.'
+                bmc30_prediction_text = 'BMC30 not calculated.'
 
         # writing to CSV
         out_csv = experiment_dir + os.sep + experiment_name + '-prediction_map' + file_name_suffix + '.csv'
         log.write('Saving prediction matrix to: ' + out_csv)
         f = open(out_csv, 'w')
-        f.write(experiment_name + ' [Score: ' + str(sigmoid_score) + ', IC50: ' + ic50_text + '];')
+        f.write(experiment_name + ' [Score: ' + str(sigmoid_score) + ', BMC30: ' + bmc30_prediction_text + '];')
         [f.write(str(i) + ';') for i in all_well_indices]
         for w in all_well_letters:
             f.write('\n' + w)
@@ -337,18 +366,29 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
         y_error = []
         well_indices.sort()
         for i in range(len(well_indices)):
-            # TODO Read metadata of compound concentrations here!
-
+            # Getting the predicted value and adding it to the 'plot'
             k = well_indices[i]
             predictions: [float] = well_index_map[k]
             predictions = np.array(predictions)
             prediction_entries.append(np.mean(predictions))
+
+            # Writing x axis ticks
+            # Well names as ticks
             ticks: [str] = experiment_well_tick_map[experiment_name][k]
             ticks.sort()
             ticks = str(ticks)
             ticks = ticks.replace("'", "").replace("]", "").replace("[", "")
+
+            # Adding compound concentrations to ticks
+            if plate_metadata is not None:
+                concentration = plate_metadata.get_concentration_at(well_indices[i])
+                concentration = '{:0.2f}'.format(concentration)
+                ticks = ticks + ' (' + concentration + ')'
+
+            # Storing the ticks for later
             prediction_ticks.append(ticks)
 
+            # Error Bar
             error = np.std(predictions, ddof=1) / np.sqrt(np.size(predictions))
             y_error.append(error)
 
@@ -381,10 +421,19 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
             legend_entries.append('Sigmoid Curve Fit (Estimated)')
 
         # Plotting the IC 50
-        plt.plot([ic50, ic50], [0, 1], color='lightgreen')
-        legend_entries.append('IC50: ' + ic50_text)
+        plt.plot([bmc30_prediction, bmc30_prediction], [0, 1], color='lightgreen')
+        legend_entries.append('BMC30 (predictions): ' + bmc30_prediction_text)
+        if not math.isnan(bmc30_plate):
+            plt.plot([bmc30_plate, bmc30_plate], [0, 1], color='green')
+            legend_entries.append('BMC30 (plate): ' + bmc30_plate_text)
+        if not math.isnan(bmc30_compound):
+            plt.plot([bmc30_compound, bmc30_compound], [0, 1], color='darkgreen')
+            legend_entries.append('BMC30 (compound): ' + bmc30_compound_text)
 
         title = 'Predictions: ' + experiment_name + ' ' + title_suffix
+        if plate_metadata is not None:
+            title = title + '\n' + plate_metadata.compound_name + ' [' + plate_metadata.compound_cas + ']'
+
         if sigmoid_score_detail_map is not None and sigmoid_score_detail_map[experiment_name] is not None:
             sigmoid_score_detail = sigmoid_score_detail_map[experiment_name]
             title = title + '\n\nAsymptote-Score: ' + str(round(sigmoid_score_detail['AsympScore'], 4))
@@ -398,10 +447,21 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
         else:
             title = title + '\nSigmoid Score: ' + sigmoid_score
 
-        plt.title(title)
+        # Setting the legend (should be done first)
+        # if plate_metadata is not None and plate_metadata.has_valid_bmcs():
+        #     plt.legend(legend_entries, bbox_to_anchor=(1.05, 1.0), loc='upper left')
+        # else:
         plt.legend(legend_entries, loc='best')
+
+        # Setting the x label
+        x_label_text = 'Wells'
+        if plate_metadata is not None:
+            x_label_text = x_label_text + ' / Concentration (µM)'
+
+        # Setting plot texts and labels
+        plt.title(title)
         plt.ylabel('Prediction Score')
-        plt.xlabel('Wells')
+        plt.xlabel(x_label_text)
         plt.xticks(well_indices, prediction_ticks, rotation=90)
 
         plt.tight_layout()
@@ -415,6 +475,8 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
         plt.savefig(out_plot_name_base + '.png', dpi=dpi)
         plt.savefig(out_plot_name_base + '.svg', dpi=dpi, transparent=True)
         plt.savefig(out_plot_name_base + '.pdf', dpi=dpi)
+
+        # TODO save as .tex!!
 
 
 def render_attention_histograms(out_dir: str, n_list: [np.ndarray], bins_list: [np.ndarray],
