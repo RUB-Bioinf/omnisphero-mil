@@ -1,18 +1,26 @@
 import math
 import os
 import random
+import sys
 from datetime import datetime
 from sys import platform
-import sys
-from scipy.optimize import curve_fit
 
 import matplotlib.pyplot as plt
 import numpy as np
 
+from util import log
+
+# ###############################
+# UTIL CONSTANTS
+# ###############################
+
+# unicode for the greek character 'mu'. To be used in plots and prints.
+mu = '\u03BC'
+
+
 # ###############################
 # OTHER UTIL FUNCTIONS
 # ###############################
-from util import log
 
 
 def gct(raw: bool = False) -> [str, datetime]:

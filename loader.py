@@ -446,7 +446,13 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     if not os.path.exists(metadata_path):
         log.write('Failed to locate metadata file: ' + metadata_path)
         assert False
-    plate_metadata = get_experiment_metadata(metadata_path=metadata_path, experiment_name=experiment_name)
+
+    plate_metadata_out_path = os.path.dirname(filepath)
+    if not sys.platform == 'win32':
+        plate_metadata_out_path = os.path.dirname(plate_metadata_out_path)
+    plate_metadata_out_path = plate_metadata_out_path + os.sep + 'bmc_metadata_preview'
+    plate_metadata = get_experiment_metadata(metadata_path=metadata_path, experiment_name=experiment_name,
+                                             out_dir=plate_metadata_out_path)
 
     # bit_max = np.info('uint' + str(bit_depth)).max
     bit_max = pow(2, bit_depth) - 1
@@ -1284,8 +1290,9 @@ def repack_bags(X: [np.array], y: [int], repack_percentage: float = 0.2):
 ####
 
 
-def get_experiment_metadata(metadata_path, experiment_name):
+def get_experiment_metadata(metadata_path: str, experiment_name: str, out_dir: str):
     assert os.path.exists(metadata_path)
+    os.makedirs(out_dir, exist_ok=True)
 
     f = open(metadata_path, 'r')
     lines = f.readlines()
@@ -1303,7 +1310,10 @@ def get_experiment_metadata(metadata_path, experiment_name):
             assert not found_experiment
             found_experiment = True
 
-            assert len(l) == 10
+            # checking if the metadata is in the right format
+            assert len(l) == 18
+
+            # extracting the CSV values
             experiment_id = l[1]
             compound_name = str(l[2])
             compound_cas = str(l[3])
@@ -1313,6 +1323,17 @@ def get_experiment_metadata(metadata_path, experiment_name):
             well_control = int(l[7])
             plate_bmc30 = float(l[8])
             compound_bmc30 = float(l[9])
+
+            # reading normalized oligo diff
+            compound_oligo_diff = [float(l[10]) / 100.0,
+                                   float(l[11]) / 100.0,
+                                   float(l[12]) / 100.0,
+                                   float(l[13]) / 100.0,
+                                   float(l[14]) / 100.0,
+                                   float(l[15]) / 100.0,
+                                   float(l[16]) / 100.0,
+                                   float(l[17]) / 100.0]
+
             plate_metadata = PlateMetadata(compound_name=compound_name,
                                            compound_cas=compound_cas,
                                            compound_concentration_max=compound_concentration_max,
@@ -1320,9 +1341,21 @@ def get_experiment_metadata(metadata_path, experiment_name):
                                            well_max_compound_concentration=well_max_compound_concentration,
                                            well_control=well_control,
                                            plate_bmc30=plate_bmc30,
+                                           compound_oligo_diff=compound_oligo_diff,
                                            experiment_id=experiment_id,
                                            compound_bmc30=compound_bmc30
                                            )
+
+            # baking the BMC30 for this plate.
+            # But since we use an R connection, it's best to do this via thread lock.
+            global thread_lock
+            thread_lock.acquire(blocking=True)
+            try:
+                plate_metadata.bake_plate_bmc30(out_dir=out_dir, bmc_30_compound_concentration=compound_bmc30)
+            except Exception as e:
+                log.write('Failed to bake plate BMC30 for compound: ' + compound_name)
+                log.write(str(e))
+            thread_lock.release()
 
             log.write('Comparing experiments: ' + experiment_name + ' VS ' + experiment_id)
 

@@ -2,11 +2,11 @@ import math
 import os
 
 import matplotlib.pyplot as plt
-import numpy as np
-
 import mil_metrics
 import nucleus_predictions
+import numpy as np
 from util import log
+from util import utils
 from util.utils import line_print
 from util.well_metadata import TileMetadata
 
@@ -215,7 +215,6 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
                            file_name_suffix: str = None, title_suffix: str = None, out_dir: str = None,
                            sigmoid_plot_fit_map: {np.ndarray} = None, sigmoid_plot_estimation_map=None,
                            sigmoid_bmc30_map: {float} = None,
-                           # TODO why are they all None? This should be checked or something?
                            sigmoid_score_detail_map: {} = None, dpi: int = 650):
     # Remapping predictions so they can be evaluated
     experiment_prediction_map_pooled = {}
@@ -295,8 +294,8 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
         bmc30_plate_text = '?'
         bmc30_compound_text = '?'
         if plate_metadata is not None:
-            bmc30_plate_text = '{:0.2f}'.format(plate_metadata.plate_bmc30) + ' µM'
-            bmc30_compound_text = '{:0.2f}'.format(plate_metadata.compound_bmc30) + ' µM'
+            bmc30_plate_text = '{:0.2f}'.format(plate_metadata.plate_bmc30) + ' ' + utils.mu + 'M'
+            bmc30_compound_text = '{:0.2f}'.format(plate_metadata.compound_bmc30) + ' ' + utils.mu + 'M'
 
             bmc30_plate = plate_metadata.interpolate_concentration_to_well(plate_metadata.plate_bmc30)
             bmc30_compound = plate_metadata.interpolate_concentration_to_well(plate_metadata.compound_bmc30)
@@ -331,7 +330,7 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
                     bmc30_prediction_text = str(round(bmc30_prediction, 3))
                     if plate_metadata is not None:
                         bmc30_prediction_um = plate_metadata.interpolate_well_index_to_concentration(bmc30_prediction)
-                        bmc30_prediction_text = str(round(bmc30_prediction_um, 3)) + ' µM'
+                        bmc30_prediction_text = str(round(bmc30_prediction_um, 3)) + ' ' + utils.mu + 'M'
             else:
                 bmc30_prediction_text = 'BMC30 not calculated.'
 
@@ -339,7 +338,8 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
         out_csv = experiment_dir + os.sep + experiment_name + '-prediction_map' + file_name_suffix + '.csv'
         log.write('Saving prediction matrix to: ' + out_csv)
         f = open(out_csv, 'w')
-        f.write(experiment_name + ' [Score: ' + str(sigmoid_score) + ', BMC30: ' + bmc30_prediction_text + '];')
+        f.write(experiment_name + ' [Score: ' + str(sigmoid_score) + ', BMC30 (Well): ' + str(
+            bmc30_prediction) + ', BMC30 (uM): ' + str(bmc30_prediction_um) + '];')
         [f.write(str(i) + ';') for i in all_well_indices]
         for w in all_well_letters:
             f.write('\n' + w)
@@ -377,13 +377,13 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
             ticks: [str] = experiment_well_tick_map[experiment_name][k]
             ticks.sort()
             ticks = str(ticks)
-            ticks = ticks.replace("'", "").replace("]", "").replace("[", "")
+            ticks = ticks.replace("'", "").replace("]", "").replace("[", "").replace("0", "")
 
             # Adding compound concentrations to ticks
             if plate_metadata is not None:
                 concentration = plate_metadata.get_concentration_at(well_indices[i])
                 concentration = '{:0.2f}'.format(concentration)
-                ticks = ticks + ' (' + concentration + ')'
+                ticks = ticks + '\n(' + concentration + ' ' + utils.mu + 'M)'
 
             # Storing the ticks for later
             prediction_ticks.append(ticks)
@@ -422,7 +422,7 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
 
         # Plotting the IC 50
         plt.plot([bmc30_prediction, bmc30_prediction], [0, 1], color='lightgreen')
-        legend_entries.append('BMC30 (predictions): ' + bmc30_prediction_text)
+        legend_entries.append('BMC30 (pred.): ' + bmc30_prediction_text)
         if not math.isnan(bmc30_plate):
             plt.plot([bmc30_plate, bmc30_plate], [0, 1], color='green')
             legend_entries.append('BMC30 (plate): ' + bmc30_plate_text)
@@ -456,7 +456,7 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
         # Setting the x label
         x_label_text = 'Wells'
         if plate_metadata is not None:
-            x_label_text = x_label_text + ' / Concentration (µM)'
+            x_label_text = x_label_text + ' / Concentration (' + utils.mu + 'M)'
 
         # Setting plot texts and labels
         plt.title(title)

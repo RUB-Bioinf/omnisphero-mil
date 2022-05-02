@@ -135,7 +135,12 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
 
             mid_point_value = min(dose_curve, key=lambda x: abs(x - mid_point))
             mid_point_index = np.where(dose_curve == mid_point_value)[0]
-            bmc_50 = float(fitted_plot[0][mid_point_index])
+            bmc_50 = float(well_curve[mid_point_index])
+
+            # Checking if the BMC is equal to min or max of the curve.
+            # If so, that means, the BMC is actually NOT on the curve
+            if not well_curve.min() < bmc_50 < well_curve.max():
+                bmc_50 = float('NaN')
         except Exception as e:
             bmc_50 = float('NaN')
             log.write(' == Failed to estimate BMC30 ==')
@@ -200,7 +205,7 @@ def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarra
     sigmoid_instructions_map = {}
     sigmoid_fitted_plot_map = {}
     sigmoid_plot_score_detail_map = {}
-    sigmoid_bmc50_map = {}
+    sigmoid_bmc30_map = {}
 
     for experiment_name in experiment_prediction_map.keys():
         well_index_map = experiment_prediction_map[experiment_name]
@@ -220,7 +225,7 @@ def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarra
             out_image_filename = out_image_filename + file_name_suffix
         out_image_filename = out_image_filename + '.png'
 
-        sigmoid_score, score_detail, estimate_plot, fitted_plot, instructions, bmc_50 = pooled_sigmoid_evaluation(
+        sigmoid_score, score_detail, estimate_plot, fitted_plot, instructions, bmc_30 = pooled_sigmoid_evaluation(
             doses=doses,
             responses=responses,
             verbose=verbose,
@@ -232,10 +237,10 @@ def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarra
         sigmoid_plot_score_detail_map[experiment_name] = score_detail
         sigmoid_fitted_plot_map[experiment_name] = fitted_plot
         sigmoid_instructions_map[experiment_name] = instructions
-        sigmoid_bmc50_map[experiment_name] = bmc_50
-        log.write('Sigmoid score for ' + experiment_name + ': ' + str(sigmoid_score) + '. BMC50: ' + str(bmc_50))
+        sigmoid_bmc30_map[experiment_name] = bmc_30
+        log.write('Sigmoid score for ' + experiment_name + ': ' + str(sigmoid_score) + '. BMC50: ' + str(bmc_30))
 
-    return sigmoid_score_map, sigmoid_plot_score_detail_map, sigmoid_plot_estimation_map, sigmoid_fitted_plot_map, sigmoid_instructions_map, sigmoid_bmc50_map
+    return sigmoid_score_map, sigmoid_plot_score_detail_map, sigmoid_plot_estimation_map, sigmoid_fitted_plot_map, sigmoid_instructions_map, sigmoid_bmc30_map
 
 
 def has_connection(also_test_script: bool = False) -> bool:
