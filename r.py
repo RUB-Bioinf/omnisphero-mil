@@ -2,6 +2,7 @@ import math
 import os
 
 import numpy as np
+
 from util import log
 # local r test file inside this project
 from util.well_metadata import TileMetadata
@@ -120,29 +121,29 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
             log.write(str(e))
 
     # Getting BMC30
-    bmc_50 = float('NaN')
+    bmc_30 = float('NaN')
     if estimate_plot is not None:
         try:
             well_curve = fitted_plot[0]
             dose_curve = fitted_plot[1]
 
             if global_bmc_30:
-                # When trying to find BMC50 at a 'global' scale, aka at 50% inhibitation
+                # When trying to find BMC30 at a 'global' scale, aka at 50% inhibitation
                 mid_point = 0.3
             else:
-                # When trying to find BMC50 at a 'local' scale, based on normalized curve points
+                # When trying to find BMC30 at a 'local' scale, based on normalized curve points
                 mid_point = (dose_curve.min() + dose_curve.max()) / 2
 
             mid_point_value = min(dose_curve, key=lambda x: abs(x - mid_point))
             mid_point_index = np.where(dose_curve == mid_point_value)[0]
-            bmc_50 = float(well_curve[mid_point_index])
+            bmc_30 = float(well_curve[mid_point_index])
 
             # Checking if the BMC is equal to min or max of the curve.
             # If so, that means, the BMC is actually NOT on the curve
-            if not well_curve.min() < bmc_50 < well_curve.max():
-                bmc_50 = float('NaN')
+            if not well_curve.min() < bmc_30 < well_curve.max():
+                bmc_30 = float('NaN')
         except Exception as e:
-            bmc_50 = float('NaN')
+            bmc_30 = float('NaN')
             log.write(' == Failed to estimate BMC30 ==')
             # TODO check on these errors later!
             log.write(str(e))
@@ -166,7 +167,7 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
         log.write(str(e))
 
     instructions = [dose_instruction, resp_instruction]
-    return final_score, score_data, estimate_plot, fitted_plot, instructions, bmc_50
+    return final_score, score_data, estimate_plot, fitted_plot, instructions, bmc_30
 
 
 def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarray], out_dir: str,
@@ -238,7 +239,7 @@ def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarra
         sigmoid_fitted_plot_map[experiment_name] = fitted_plot
         sigmoid_instructions_map[experiment_name] = instructions
         sigmoid_bmc30_map[experiment_name] = bmc_30
-        log.write('Sigmoid score for ' + experiment_name + ': ' + str(sigmoid_score) + '. BMC50: ' + str(bmc_30))
+        log.write('Sigmoid score for ' + experiment_name + ': ' + str(sigmoid_score) + '. BMC30: ' + str(bmc_30))
 
     return sigmoid_score_map, sigmoid_plot_score_detail_map, sigmoid_plot_estimation_map, sigmoid_fitted_plot_map, sigmoid_instructions_map, sigmoid_bmc30_map
 

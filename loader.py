@@ -72,6 +72,9 @@ default_well_indices_late = [7, 8, 9]
 default_well_indices_very_early = [0, 1, 2, 3]
 default_well_indices_very_late = [8, 9]
 
+default_well_bmc_threshold_control = 0.7
+default_well_bmc_threshold_effect = 0.3
+
 default_channel_inclusions_all = [True, True, True]
 default_channel_inclusions_no_neurites = [True, True, False]
 
@@ -80,6 +83,9 @@ default_channel_inclusions_no_neurites = [True, True, False]
 # Threading lock
 global thread_lock
 thread_lock = threading.Lock()
+
+global plate_metadata_cache
+plate_metadata_cache = {}
 
 
 def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: int, include_raw: bool = True,
@@ -458,12 +464,35 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     bit_max = pow(2, bit_depth) - 1
 
     # Setting label to match the param
-    if well_number in label_1_well_indices:
-        label = 1
-    elif well_number in label_0_well_indices:
-        label = 0
-    else:
-        # Label not in the ranges. This bag is not to be used!
+    label = -1
+    if type(label_1_well_indices) == list and type(label_0_well_indices) == list:
+        # Checking if the labels are in 'List' Format. If so, those bags are assigned the specific label
+        # Example #1: label_1_well_indices = [0, 1, 2, 3, 4]
+        if well_number in label_1_well_indices:
+            label = 1
+        elif well_number in label_0_well_indices:
+            label = 0
+    elif type(label_1_well_indices) == float and type(label_0_well_indices) == float:
+        # Checking if the labels are in 'List' Format. If so, those bags are assigned the specific label
+        # Example #1: label_1_well_indices = 0.2
+
+        # First, checking if the metadata is None
+        if plate_metadata is None or plate_metadata.compound_oligo_diff is None:
+            log.write('\n\n== WARNING ==\n'
+                      'Cannot set label based on plate BMC for: ' + zipped_data_name + '! No metadata found!')
+        else:
+            oligo_diff = plate_metadata.compound_oligo_diff[well_number - plate_metadata.well_control]
+
+            if worker_verbose:
+                log.write('\n\n' + zipped_data_name + ' read BMC: ' + str(oligo_diff) + '. Compare to: <=' + str(
+                    label_1_well_indices) + ' | >=' + str(label_0_well_indices) + '\n\n')
+            if oligo_diff <= label_1_well_indices:
+                label = 1
+            elif oligo_diff >= label_0_well_indices:
+                label = 0
+
+    if label == -1:
+        # Labels were not set. Skipping this bag.
         if worker_verbose:
             log.write('This bag has no label assigned. Removing.')
 
@@ -1290,7 +1319,7 @@ def repack_bags(X: [np.array], y: [int], repack_percentage: float = 0.2):
 ####
 
 
-def get_experiment_metadata(metadata_path: str, experiment_name: str, out_dir: str):
+def get_experiment_metadata(metadata_path: str, experiment_name: str, out_dir: str, verbose: bool = False):
     assert os.path.exists(metadata_path)
     os.makedirs(out_dir, exist_ok=True)
 
@@ -1312,52 +1341,59 @@ def get_experiment_metadata(metadata_path: str, experiment_name: str, out_dir: s
 
             # checking if the metadata is in the right format
             assert len(l) == 18
-
-            # extracting the CSV values
             experiment_id = l[1]
-            compound_name = str(l[2])
-            compound_cas = str(l[3])
-            compound_concentration_max = float(l[4])
-            compound_concentration_dilution = float(l[5])
-            well_max_compound_concentration = int(l[6])
-            well_control = int(l[7])
-            plate_bmc30 = float(l[8])
-            compound_bmc30 = float(l[9])
 
-            # reading normalized oligo diff
-            compound_oligo_diff = [float(l[10]) / 100.0,
-                                   float(l[11]) / 100.0,
-                                   float(l[12]) / 100.0,
-                                   float(l[13]) / 100.0,
-                                   float(l[14]) / 100.0,
-                                   float(l[15]) / 100.0,
-                                   float(l[16]) / 100.0,
-                                   float(l[17]) / 100.0]
+            global plate_metadata_cache
+            if experiment_id in plate_metadata_cache.keys():
+                # This experiment ID has already been processed and can be read to the cache!
+                plate_metadata = plate_metadata_cache[experiment_id]
+            else:
+                # extracting the CSV values
+                compound_name = str(l[2])
+                compound_cas = str(l[3])
+                compound_concentration_max = float(l[4])
+                compound_concentration_dilution = float(l[5])
+                well_max_compound_concentration = int(l[6])
+                well_control = int(l[7])
+                plate_bmc30 = float(l[8])
+                compound_bmc30 = float(l[9])
 
-            plate_metadata = PlateMetadata(compound_name=compound_name,
-                                           compound_cas=compound_cas,
-                                           compound_concentration_max=compound_concentration_max,
-                                           compound_concentration_dilution=compound_concentration_dilution,
-                                           well_max_compound_concentration=well_max_compound_concentration,
-                                           well_control=well_control,
-                                           plate_bmc30=plate_bmc30,
-                                           compound_oligo_diff=compound_oligo_diff,
-                                           experiment_id=experiment_id,
-                                           compound_bmc30=compound_bmc30
-                                           )
+                # reading normalized oligo diff
+                compound_oligo_diff = [float(l[10]) / 100.0,
+                                       float(l[11]) / 100.0,
+                                       float(l[12]) / 100.0,
+                                       float(l[13]) / 100.0,
+                                       float(l[14]) / 100.0,
+                                       float(l[15]) / 100.0,
+                                       float(l[16]) / 100.0,
+                                       float(l[17]) / 100.0]
 
-            # baking the BMC30 for this plate.
-            # But since we use an R connection, it's best to do this via thread lock.
-            global thread_lock
-            thread_lock.acquire(blocking=True)
-            try:
-                plate_metadata.bake_plate_bmc30(out_dir=out_dir, bmc_30_compound_concentration=compound_bmc30)
-            except Exception as e:
-                log.write('Failed to bake plate BMC30 for compound: ' + compound_name)
-                log.write(str(e))
-            thread_lock.release()
+                plate_metadata = PlateMetadata(compound_name=compound_name,
+                                               compound_cas=compound_cas,
+                                               compound_concentration_max=compound_concentration_max,
+                                               compound_concentration_dilution=compound_concentration_dilution,
+                                               well_max_compound_concentration=well_max_compound_concentration,
+                                               well_control=well_control,
+                                               plate_bmc30=plate_bmc30,
+                                               compound_oligo_diff=compound_oligo_diff,
+                                               experiment_id=experiment_id,
+                                               compound_bmc30=compound_bmc30
+                                               )
+                plate_metadata_cache[experiment_id] = plate_metadata
 
-            log.write('Comparing experiments: ' + experiment_name + ' VS ' + experiment_id)
+                # baking the BMC30 for this plate.
+                # But since we use an R connection, it's best to do this via thread lock.
+                global thread_lock
+                thread_lock.acquire(blocking=True)
+                try:
+                    plate_metadata.bake_plate_bmc30(out_dir=out_dir, bmc_30_compound_concentration=compound_bmc30,
+                                                    verbose=verbose)
+                except Exception as e:
+                    log.write('Failed to bake plate BMC30 for compound: ' + compound_name)
+                    log.write(str(e), print_to_console=verbose)
+                thread_lock.release()
+
+            log.write('Comparing experiments: ' + experiment_name + ' VS ' + experiment_id, print_to_console=verbose)
 
     if not found_experiment:
         log.write('WARNING: ' + experiment_name + ' has no compound metadata in: ' + metadata_path)

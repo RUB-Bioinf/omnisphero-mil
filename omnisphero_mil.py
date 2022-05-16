@@ -173,8 +173,9 @@ def train_model(
         sigmoid_validation_dirs = []
 
     # This param is unused and should not be "True"!
-    assert len(label_0_well_indices) > 0
-    assert len(label_1_well_indices) > 0
+    if type(label_0_well_indices) == list and type(label_1_well_indices) == list:
+        assert len(label_0_well_indices) > 0
+        assert len(label_1_well_indices) > 0
 
     data_loader_cores = math.ceil(os.cpu_count() * 0.5 + 1)
     data_loader_cores = int(min(data_loader_cores, 4))
@@ -283,6 +284,7 @@ def train_model(
     f = open(out_dir + 'loading_errors.txt', 'w')
     for e in errors:
         f.write(str(e))
+        f.write('\n')
     f.close()
 
     # Saving one random image from every bag to the disk
@@ -861,6 +863,7 @@ def main(debug: bool = False):
     if sys.platform == 'win32':
         debug = True
     print('Debug mode: ' + str(debug))
+    log.write('Python: '+str(sys.version_info))
 
     current_epochs = 700
     current_max_workers = 35
@@ -913,8 +916,8 @@ def main(debug: bool = False):
                     augment_train=False,
                     tile_constraints_0=loader.default_tile_constraints_nuclei,
                     tile_constraints_1=loader.default_tile_constraints_oligos,
-                    label_1_well_indices=loader.default_well_indices_early,
-                    label_0_well_indices=loader.default_well_indices_very_late,
+                    label_1_well_indices=loader.default_well_bmc_threshold_effect,
+                    label_0_well_indices=loader.default_well_bmc_threshold_control,
                     loss_function='mean_square_error',
                     testing_model_enabled=True,
                     writing_metrics_enabled=True,
@@ -958,8 +961,8 @@ def main(debug: bool = False):
                         tile_constraints_0=loader.default_tile_constraints_nuclei,
                         tile_constraints_1=loader.default_tile_constraints_nuclei,
                         repack_percentage=0,
-                        label_1_well_indices=loader.default_well_indices_early,
-                        label_0_well_indices=loader.default_well_indices_very_late,
+                        label_1_well_indices=loader.default_well_bmc_threshold_effect,
+                        label_0_well_indices=loader.default_well_bmc_threshold_control,
                         sigmoid_validation_dirs=paths.default_sigmoid_validation_dirs_win,
                         gpu_enabled=True,
                         epochs=5
@@ -972,7 +975,7 @@ def main(debug: bool = False):
                 # best: adadelta
                 for p in [0.30]:
                     # best: 0.65 or 0.3
-                    for i in [6]:  # [4, 6, 7, 8]:
+                    for i in [6,7]:  # [4, 6, 7, 8]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
                             augment_train = aug[1]
@@ -982,7 +985,7 @@ def main(debug: bool = False):
                                         image_folder=image_folder,
                                         normalize_enum=i,
                                         training_label='ep-aug-overlap-' + o + '-wells-normalize-' + str(
-                                            i) + 'repack-' + str(p) + '-mse1',
+                                            i) + 'repack-' + str(p) + '-compoundBMC',
                                         global_log_dir=current_global_log_dir,
                                         data_split_percentage_validation=0.25,
                                         data_split_percentage_test=0.15,
@@ -993,15 +996,15 @@ def main(debug: bool = False):
                                         repack_percentage=p,
                                         optimizer=o,
                                         channel_inclusions=loader.default_channel_inclusions_no_neurites,
-                                        model_enable_attention=True,
                                         augment_validation=augment_validation,
                                         augment_train=augment_train,
                                         model_use_max=False,
+                                        model_enable_attention=True,
                                         positive_bag_min_samples=4,
                                         tile_constraints_0=loader.default_tile_constraints_nuclei,
                                         tile_constraints_1=loader.default_tile_constraints_oligos,
-                                        label_1_well_indices=loader.default_well_indices_early,
-                                        label_0_well_indices=loader.default_well_indices_very_late,
+                                        label_1_well_indices=loader.default_well_bmc_threshold_effect,
+                                        label_0_well_indices=loader.default_well_bmc_threshold_control,
                                         device_ordinals=current_device_ordinals,
                                         sigmoid_validation_dirs=sigmoid_input_dirs
                                         )

@@ -3,7 +3,6 @@ import os
 import re
 
 import matplotlib.pyplot as plt
-
 import r
 # A regex to extract well info
 from util import log
@@ -48,7 +47,7 @@ class PlateMetadata:
         return not math.isnan(self.plate_bmc30) and not math.isnan(self.compound_bmc30)
 
     def bake_plate_bmc30(self, out_dir: str, replicates: int = 5, dpi: int = 600,
-                         bmc_30_compound_concentration: float = None):
+                         bmc_30_compound_concentration: float = None, verbose: bool = False):
         os.makedirs(out_dir, exist_ok=True)
         out_name = out_dir + os.sep + self.experiment_id
         if not r.has_connection():
@@ -64,6 +63,7 @@ class PlateMetadata:
             bmc_30_compound_concentration = float('NaN')
 
         wells = self.well_max_compound_concentration - self.well_control + 1
+        assert self.compound_oligo_diff is not None
         assert wells == len(self.compound_oligo_diff)
 
         doses = []
@@ -93,12 +93,14 @@ class PlateMetadata:
         plt.clf()
         plt.plot(doses, responses, linestyle='-', marker='o', color='blue')
         plt.plot(fitted_plot[0], fitted_plot[1], color='lightblue')
+        legend_entries = ['Raw Measurements', 'Curve Fit']
 
         bmc_30_plate_concentration = self.interpolate_well_index_to_concentration(bmc_30_plate_well)
         self.plate_bmc30 = bmc_30_plate_concentration
         bmc_30_plate_text = 'BMC30 (Plate): ' + str(round(bmc_30_plate_concentration, 3)) + ' ' + utils.mu + 'M'
-        plt.plot([bmc_30_plate_well, bmc_30_plate_well], [0, 1], color='lightgreen')
-        legend_entries = ['Raw Measurements', 'Curve Fit', bmc_30_plate_text]
+        if not math.isnan(bmc_30_plate_concentration):
+            plt.plot([bmc_30_plate_well, bmc_30_plate_well], [0, 1], color='lightgreen')
+            legend_entries.append(bmc_30_plate_text)
 
         if not math.isnan(bmc_30_compound_concentration):
             bmc_30_compound_well = self.interpolate_concentration_to_well(bmc_30_compound_concentration)
@@ -122,12 +124,14 @@ class PlateMetadata:
         plt.tight_layout()
         plt.autoscale()
         plt.xticks(well_ticks, well_indices, rotation=45)
+        plt.ylim([0.0, 1.05])
+        plt.xlim([float(self.well_control) - 0.15, float(self.well_max_compound_concentration) + 0.15])
         plt.tight_layout()
 
         plt.savefig(out_name + '.png', dpi=dpi)
         plt.savefig(out_name + '.svg', dpi=dpi, transparent=True)
         plt.savefig(out_name + '.pdf', dpi=dpi)
-        log.write('Saved baked plate bmc evaluations here: ' + out_name + '.png')
+        log.write('Saved baked plate bmc evaluations here: ' + out_name + '.png', print_to_console=verbose)
 
     def get_concentration_at(self, well_index: int) -> float:
         # check for control case
@@ -181,8 +185,11 @@ class PlateMetadata:
             if current_concentration <= concentration <= next_concentration:
                 closest_well = i
 
-                concentration_step = next_concentration - current_concentration
-                step_progress = lerp(concentration_step, 0, current_concentration - concentration)
+                # concentration_step = next_concentration - current_concentration
+                # step_progress = lerp(concentration_step, 0, current_concentration - concentration)
+                # step_progress = lerp(concentration_step, 0, (concentration - current_concentration) / (
+                #             next_concentration - current_concentration))
+                step_progress = (concentration - current_concentration) / (next_concentration - current_concentration)
 
                 lerped_well = lerp(closest_well + 1, closest_well, step_progress)
                 concentration_remainder = current_concentration / next_concentration

@@ -35,9 +35,9 @@ debug_prediction_dirs_unix = [
 ]
 
 default_sigmoid_validation_dirs_unix = [
-    '/mil/oligo-diff/training_data/curated_linux/ELS517',
+    '/mil/oligo-diff/training_data/curated_linux/EFB18',
     '/mil/oligo-diff/training_data/curated_linux/ELS681'
-    # '/mil/oligo-diff/training_data/curated_linux/ELS682'
+    '/mil/oligo-diff/training_data/curated_linux/ESM36'
 ]
 
 default_sigmoid_validation_dirs_win = [
