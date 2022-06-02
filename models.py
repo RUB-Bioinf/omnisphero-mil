@@ -425,7 +425,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                     'train_entropy_attention_label0', 'val_entropy_attention_label0', 'train_otsu_threshold_label0',
                     'val_otsu_threshold_label0', 'train_entropy_attention_label1', 'val_entropy_attention_label1',
                     'train_otsu_threshold_label1', 'val_otsu_threshold_label1', 'val_mean_sigmoid_scores',
-                    'train_dice_score', 'val_dice_score']
+                    'train_dice_score', 'val_dice_score', 'duration', 'timestamp']
     history_keys.sort()
 
     sigmoid_evaluation_enabled: bool = sigmoid_evaluation_enabled and X_metadata_sigmoid is not None
@@ -870,6 +870,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         duration = (datetime.now() - start_time_epoch).total_seconds()
         epoch_durations.append(duration)
         result['duration'] = duration
+        result['timestamp'] = str(utils.gct())
 
         remaining_time_eta = timedelta(seconds=np.mean(epoch_durations) * epochs_remaining)
         eta_timestamp = datetime.now() + remaining_time_eta

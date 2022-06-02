@@ -36,7 +36,7 @@ debug_prediction_dirs_unix = [
 
 default_sigmoid_validation_dirs_unix = [
     '/mil/oligo-diff/training_data/curated_linux/EFB18',
-    '/mil/oligo-diff/training_data/curated_linux/ELS681'
+    '/mil/oligo-diff/training_data/curated_linux/ELS681',
     '/mil/oligo-diff/training_data/curated_linux/ESM36'
 ]
 
@@ -73,7 +73,7 @@ curated_overlapping_source_dirs_unix = [
     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS95_GW0742',
     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS77_GW39',
 
-    # Overlapping Experiments from the original dataset
+    # Overlapping Experiments from the original EFSA dataset
     '/mil/oligo-diff/training_data/curated_linux_overlap/EFB18',
     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS517',
     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS637',

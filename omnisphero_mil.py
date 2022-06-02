@@ -40,78 +40,78 @@ from torch.optim import Optimizer
 default_source_dir_win = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_win'
 default_out_dir_win_base = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\win'
 
-default_source_dirs_unix = [
-    # New CNN
-    '/mil/oligo-diff/training_data/curated_linux/EFB18',
-    '/mil/oligo-diff/training_data/curated_linux/ESM36',
-    '/mil/oligo-diff/training_data/curated_linux/ELS411',
-    '/mil/oligo-diff/training_data/curated_linux/ELS517',
-    '/mil/oligo-diff/training_data/curated_linux/ELS637',
-    '/mil/oligo-diff/training_data/curated_linux/ELS681',
-    '/mil/oligo-diff/training_data/curated_linux/ELS682',
-    '/mil/oligo-diff/training_data/curated_linux/ELS719',
-    '/mil/oligo-diff/training_data/curated_linux/ELS744'
-]
-
-all_source_dirs_win = [
-    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\EFB18',
-    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ESM36',
-    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS411',
-    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS517',
-    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS637',
-    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS681',
-    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS682',
-    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS719',
-    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS744'
-]
-
-ideal_source_dirs_unix = [
-    # New CNN
-    '/mil/oligo-diff/training_data/curated_linux/ESM36',
-    '/mil/oligo-diff/training_data/curated_linux/ELS517',
-    '/mil/oligo-diff/training_data/curated_linux/ELS637',
-    '/mil/oligo-diff/training_data/curated_linux/ELS681',
-    '/mil/oligo-diff/training_data/curated_linux/ELS682'
-]
-
-curated_overlapping_source_dirs_unix = [
-    # Overlapping Experiments from the ENDpoiNTs dataset #1
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK129_PG',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK153_Calcitriol',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK176_MP',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK177_SR92',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS64_GW39',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS66_SR92',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS127_GW4671',
-
-    # Overlapping Experiments from the ENDpoiNTs dataset #2
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH56_GW6471',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH55_GW7647',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH44_GW7647',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH26_FU',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS94_PGE2',
-
-    # Potentially difficult plates.
-    # The oligo channel is quite overexposed in those.
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK165_PGE2',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS102_SR92',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS104_Calcitriol',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS137_NH-3',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH41_Fu',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS96_GW0742',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS95_GW0742',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS77_GW39',
-
-    # Overlapping Experiments from the original dataset
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EFB18',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS517',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS637',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS719',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS744',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/ESM36',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS681',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS682'
-]
+# default_source_dirs_unix = [
+#     # New CNN
+#     '/mil/oligo-diff/training_data/curated_linux/EFB18',
+#     '/mil/oligo-diff/training_data/curated_linux/ESM36',
+#     '/mil/oligo-diff/training_data/curated_linux/ELS411',
+#     '/mil/oligo-diff/training_data/curated_linux/ELS517',
+#     '/mil/oligo-diff/training_data/curated_linux/ELS637',
+#     '/mil/oligo-diff/training_data/curated_linux/ELS681',
+#     '/mil/oligo-diff/training_data/curated_linux/ELS682',
+#     '/mil/oligo-diff/training_data/curated_linux/ELS719',
+#     '/mil/oligo-diff/training_data/curated_linux/ELS744'
+# ]
+#
+# all_source_dirs_win = [
+#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\EFB18',
+#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ESM36',
+#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS411',
+#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS517',
+#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS637',
+#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS681',
+#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS682',
+#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS719',
+#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS744'
+# ]
+#
+# ideal_source_dirs_unix = [
+#     # New CNN
+#     '/mil/oligo-diff/training_data/curated_linux/ESM36',
+#     '/mil/oligo-diff/training_data/curated_linux/ELS517',
+#     '/mil/oligo-diff/training_data/curated_linux/ELS637',
+#     '/mil/oligo-diff/training_data/curated_linux/ELS681',
+#     '/mil/oligo-diff/training_data/curated_linux/ELS682'
+# ]
+#
+# curated_overlapping_source_dirs_unix = [
+#     # Overlapping Experiments from the ENDpoiNTs dataset #1
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK129_PG',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK153_Calcitriol',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK176_MP',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK177_SR92',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS64_GW39',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS66_SR92',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS127_GW4671',
+#
+#     # Overlapping Experiments from the ENDpoiNTs dataset #2
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH56_GW6471',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH55_GW7647',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH44_GW7647',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH26_FU',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS94_PGE2',
+#
+#     # Potentially difficult plates.
+#     # The oligo channel is quite overexposed in those.
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK165_PGE2',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS102_SR92',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS104_Calcitriol',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS137_NH-3',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH41_Fu',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS96_GW0742',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS95_GW0742',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS77_GW39',
+#
+#     # Overlapping Experiments from the original dataset
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/EFB18',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS517',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS637',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS719',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS744',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/ESM36',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS681',
+#     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS682'
+# ]
 
 # normalize_enum is an enum to determine normalisation as follows:
 # 0 = no normalisation
@@ -139,6 +139,7 @@ def train_model(
         # Clamp Loss function
         clamp_min: float = None, clamp_max: float = None,
         # Tile shuffling
+        loading_preview_rate: float = 0.5,
         repack_percentage: float = 0.0,
         positive_bag_min_samples: int = None,
         # Tile Constraints (How many Nuclei / Oligos / Neurons must be at least in a sample?)
@@ -224,6 +225,7 @@ def train_model(
     protocol_f.write('\nNormalization Strategy: ' + loader.normalize_enum_descriptions[normalize_enum])
     protocol_f.write('\nInvert Bag Labels: <deprecated>')
     protocol_f.write('\nRepack: Percentage: ' + str(repack_percentage))
+    protocol_f.write('\nLoading Preview Rate: ' + str(loading_preview_rate))
     protocol_f.write('\nRepack: Minimum Positive Samples: ' + str(positive_bag_min_samples))
 
     protocol_f.write('\n\nWell indices label 0: ' + str(label_0_well_indices))
@@ -287,20 +289,32 @@ def train_model(
         f.write('\n')
     f.close()
 
-    # Saving one random image from every bag to the disk
+    # Saving one random image from random bags to the disk
     log.write('Writing loading preview samples to: ' + loading_preview_dir)
+    preview_indices_0 = np.where(np.asarray(y) == 0)[0]
+    np.random.shuffle(preview_indices_0)
+    preview_indices_0 = preview_indices_0[:-max(math.floor(len(preview_indices_0) * (loading_preview_rate * 0.55)), 1)]
+    preview_indices_1 = np.where(np.asarray(y) == 1)[0]
+    np.random.shuffle(preview_indices_1)
+    preview_indices_1 = preview_indices_1[:-max(math.floor(len(preview_indices_1) * (loading_preview_rate * 0.55)), 1)]
+
+    preview_indices = np.append(preview_indices_0, preview_indices_1)
+    preview_indices = list(preview_indices)
+    preview_indices.sort()
+
     print('\n')
-    for i in range(len(X)):
+    for i in range(len(preview_indices)):
         # Not doing that on windows devices
         if os.name == 'nt':
             continue
 
-        line_print('Writing loading preview: ' + str(i + 1) + '/' + str(len(X)), include_in_log=False)
-        current_x: np.ndarray = X[i]
+        line_print('Writing loading preview: ' + str(i + 1) + '/' + str(len(preview_indices)), include_in_log=False)
+        current_x: np.ndarray = X[preview_indices[i]]
         j = random.randint(0, current_x.shape[0] - 1)
-        current_bag_name = bag_names[i]
-        preview_image_file_base = loading_preview_dir + 'preview_' + str(i) + '-' + current_bag_name + '-' + str(
-            j) + '_' + str(y[i])
+        current_bag_name = bag_names[preview_indices[i]]
+        preview_image_file_base = loading_preview_dir + 'preview_' + str(
+            preview_indices[i]) + '-' + current_bag_name + '-' + str(
+            j) + '_' + str(y[preview_indices[i]])
 
         current_x = current_x[j]
         current_x: np.ndarray = np.einsum('abc->cba', current_x)
@@ -315,19 +329,15 @@ def train_model(
                                                vmin=-3.0, vmax=3.0, normalize_enum=normalize_enum)
 
         del current_x
+    del preview_indices, preview_indices_0, preview_indices_1
     print('\n')
 
     # Calculating Bag Size and possibly inverting labels
-    log.write('Finished loading data. Number of bags: ' + str(len(X)) + '. Number of labels: ' + str(len(y)))
-    X_size = 0
-    X_size_raw = 0
-    for i in range(len(X)):
-        X_size = X_size + X[i].nbytes
-        X_size_raw = X_size_raw + X_raw[i].nbytes
+    X_s = str(utils.byteSizeString(utils.listToBytes(X)))
+    X_s_raw = str(utils.byteSizeString(utils.listToBytes(X_raw)))
+    y_s = str(utils.byteSizeString(getsizeof(y)))
 
-    X_s = utils.convert_size(X_size)
-    X_s_raw = utils.convert_size(X_size_raw)
-    y_s = utils.convert_size(getsizeof(y))
+    log.write('Finished loading data. Number of bags: ' + str(len(X)) + '. Number of labels: ' + str(len(y)))
     log.write("X-size in memory (after loading all data): " + str(X_s))
     log.write("y-size in memory (after loading all data): " + str(y_s))
     log.write("X-size (raw) in memory (after loading all data): " + str(X_s_raw))
@@ -347,7 +357,7 @@ def train_model(
     f.write('\n\ny-size in memory: ' + str(y_s))
     f.write('\n\nLoading time: ' + str(loading_time))
     f.close()
-    del X_s, y_s, X_size, f
+    del X_s, y_s, X_s_raw, f
 
     if len(X) == 0:
         log.write('WARNING: NO DATA LOADED')
@@ -379,8 +389,8 @@ def train_model(
     preview_indexes.extend(preview_indexes_positive)
     preview_indexes.sort()
     log.write('Number of whole preview bags to save: ' + str(len(preview_indexes)) + '. -> ' + str(preview_indexes))
-    del preview_indexes_positive, preview_indexes_negative
     print('\n')
+
     for i in range(len(X)):
         preview_image_filename = loading_preview_dir_whole_bag + 'preview_' + str(i) + '-' + bag_names[i] + '_' + str(
             y[i]) + '_bag.png'
@@ -393,6 +403,9 @@ def train_model(
         image_height = None
         if i in preview_indexes:
             for rgb in X_raw[i]:
+                # Creating a deep copy so it's not overwritten
+                rgb = np.copy(rgb)
+
                 image_width, image_height = rgb[0].shape
                 rgb = np.einsum('abc->bca', rgb)
                 rgb = mil_metrics.outline_rgb_array(rgb, None, None, outline=2, override_colormap=[255, 255, 255])
@@ -407,7 +420,7 @@ def train_model(
     # Setting up datasets
     dataset, input_dim = loader.convert_bag_to_batch(bags=X, labels=y, y_tiles=y_tiles)
     log.write('Detected input dim: ' + str(input_dim))
-    del X, y
+    del X, y, preview_indexes, preview_indexes_positive, preview_indexes_negative
 
     # Train-Test Split
     log.write('Shuffling and splitting data into train and val set')
@@ -843,7 +856,7 @@ def print_bag_metadata(X, y, y_tiles, bag_names, file_name: str):
     for i in range(len(X)):
         current_X = X[i]
         x_size = x_size + current_X.nbytes
-        x_size_converted = utils.convert_size(current_X.nbytes)
+        x_size_converted = utils.byteSizeString(current_X.nbytes)
         bag_name = bag_names[i]
 
         shapes = ';'.join([str(s) for s in current_X.shape])
@@ -853,7 +866,7 @@ def print_bag_metadata(X, y, y_tiles, bag_names, file_name: str):
         f.write('\n;' + str(i) + ';' + str(y[i]) + ';' + str(sum(y_tiles[i])) + ';' + bag_name + ';' + str(
             current_X.nbytes) + ';' + x_size_converted + ';' + shapes)
 
-    f.write('\n' + 'Sum;' + str(len(X)) + ';0: ' + str(y0) + ';' + str(x_size) + ';' + utils.convert_size(
+    f.write('\n' + 'Sum;' + str(len(X)) + ';0: ' + str(y0) + ';' + str(x_size) + ';' + utils.byteSizeString(
         x_size) + ';' + str(bag_count))
     f.write('\n;;1: ' + str(y1))
     f.close()
@@ -863,9 +876,9 @@ def main(debug: bool = False):
     if sys.platform == 'win32':
         debug = True
     print('Debug mode: ' + str(debug))
-    log.write('Python: '+str(sys.version_info))
+    log.write('Python: ' + str(sys.version_info))
 
-    current_epochs = 700
+    current_epochs = 650
     current_max_workers = 35
     default_out_dir_base = default_out_dir_unix_base
     current_sources_dir = paths.curated_overlapping_source_dirs_unix
@@ -899,13 +912,19 @@ def main(debug: bool = False):
     current_out_dir = default_out_dir_base + os.sep
     os.makedirs(current_out_dir, exist_ok=True)
 
+    # Checking if all specified paths actually exist
+    assert os.path.exists(image_folder)
+    assert np.all([os.path.exists(x) for x in sigmoid_input_dirs])
+    assert np.all([os.path.exists(x) for x in current_sources_dir])
+
     log.write('Starting Training...')
     if debug and sys.platform == 'win32':
+        training_label = 'debug-sigmoid'
         train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                     max_workers=current_max_workers, gpu_enabled=current_gpu_enabled, image_folder=image_folder,
                     device_ordinals=current_device_ordinals,
                     normalize_enum=7,
-                    training_label='debug-sigmoid',
+                    training_label=training_label,
                     global_log_dir=current_global_log_dir,
                     save_sigmoid_plot_interval=1,
                     repack_percentage=0.1,
@@ -916,8 +935,8 @@ def main(debug: bool = False):
                     augment_train=False,
                     tile_constraints_0=loader.default_tile_constraints_nuclei,
                     tile_constraints_1=loader.default_tile_constraints_oligos,
-                    label_1_well_indices=loader.default_well_bmc_threshold_effect,
-                    label_0_well_indices=loader.default_well_bmc_threshold_control,
+                    label_1_well_indices=loader.default_well_indices_late,
+                    label_0_well_indices=loader.default_well_indices_early,
                     loss_function='mean_square_error',
                     testing_model_enabled=True,
                     writing_metrics_enabled=True,
@@ -961,31 +980,44 @@ def main(debug: bool = False):
                         tile_constraints_0=loader.default_tile_constraints_nuclei,
                         tile_constraints_1=loader.default_tile_constraints_nuclei,
                         repack_percentage=0,
-                        label_1_well_indices=loader.default_well_bmc_threshold_effect,
-                        label_0_well_indices=loader.default_well_bmc_threshold_control,
+                        label_1_well_indices=loader.default_well_bmc_threshold_control,
+                        label_0_well_indices=loader.default_well_bmc_threshold_effect,
                         sigmoid_validation_dirs=paths.default_sigmoid_validation_dirs_win,
                         gpu_enabled=True,
                         epochs=5
                         )
     else:
         # '/mil/oligo-diff/models/linux/hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
-        for l in ['mean_square_error']:
+        c = 0
+        for l in ['mean_square_error', 'binary_cross_entropy']:
             # best: binary_cross_entropy
             for o in ['adadelta', 'adam']:  # ['adam', 'adadelta']:
                 # best: adadelta
                 for p in [0.30]:
                     # best: 0.65 or 0.3
-                    for i in [6,7]:  # [4, 6, 7, 8]:
+                    for i in [4, 6, 7]:  # [4, 6, 7, 8]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
                             augment_train = aug[1]
+                            training_label = 'ep-aug-overlap-' + o + '-n-' + str(i) + '-rp-' + str(
+                                p) + '-l-' + l + '-BMC'
 
+                            log.write('Training label: ' + training_label)
+                            if os.path.exists(current_out_dir + os.sep + training_label):
+                                log.write('MODEL PATH ALREADY EXISTS!')
+                                time.sleep(1)
+                                print('\n')
+                                log.write('SKIPPING!')
+                                print('\n')
+                                time.sleep(3)
+                                continue
+
+                            print('\n\n############################################################\n\n')
                             train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                                         image_folder=image_folder,
                                         normalize_enum=i,
-                                        training_label='ep-aug-overlap-' + o + '-wells-normalize-' + str(
-                                            i) + 'repack-' + str(p) + '-compoundBMC',
+                                        training_label=training_label,
                                         global_log_dir=current_global_log_dir,
                                         data_split_percentage_validation=0.25,
                                         data_split_percentage_test=0.15,
@@ -1003,8 +1035,8 @@ def main(debug: bool = False):
                                         positive_bag_min_samples=4,
                                         tile_constraints_0=loader.default_tile_constraints_nuclei,
                                         tile_constraints_1=loader.default_tile_constraints_oligos,
-                                        label_1_well_indices=loader.default_well_bmc_threshold_effect,
-                                        label_0_well_indices=loader.default_well_bmc_threshold_control,
+                                        label_1_well_indices=loader.default_well_bmc_threshold_control,
+                                        label_0_well_indices=loader.default_well_bmc_threshold_effect,
                                         device_ordinals=current_device_ordinals,
                                         sigmoid_validation_dirs=sigmoid_input_dirs
                                         )

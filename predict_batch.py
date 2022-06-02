@@ -120,19 +120,13 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
     X = [np.einsum('bhwc->bchw', bag) for bag in X]
 
     # Printing the size in memory
-    X_size = 0
-    X_size_raw = 0
-    for i in range(len(X)):
-        X_size = X_size + X[i].nbytes
-        X_size_raw = X_size_raw + X_raw[i].nbytes
-
-    X_s = utils.convert_size(X_size)
-    X_s_raw = utils.convert_size(X_size_raw)
-    y_s = utils.convert_size(sys.getsizeof(y))
+    X_s = str(utils.byteSizeString(utils.listToBytes(X)))
+    X_s_raw = str(utils.byteSizeString(utils.listToBytes(X_raw)))
+    y_s = str(utils.byteSizeString(sys.getsizeof(y)))
     log.write("X-size in memory (after loading all data): " + str(X_s))
     log.write("y-size in memory (after loading all data): " + str(y_s))
     log.write("X-size (raw) in memory (after loading all data): " + str(X_s_raw))
-    del X_s, y_s, X_s_raw, X_size, X_size_raw
+    del X_s, y_s, X_s_raw
 
     dataset, input_dim = loader.convert_bag_to_batch(bags=X, labels=None, y_tiles=None)
     data_loader = DataLoader(dataset, batch_size=1, shuffle=False,

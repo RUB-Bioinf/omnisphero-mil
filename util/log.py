@@ -32,7 +32,19 @@ def set_file(filename: str):
     add_file(filename=filename)
 
 
-def write(output, print_to_console: bool = True, include_timestamp: bool = True, include_in_files: bool = True):
+def write(output: str, print_to_console: bool = True, include_timestamp: bool = True, include_in_files: bool = True):
+    try:
+        output = str(output)
+        _write(output=output, print_to_console=print_to_console, include_timestamp=include_timestamp,
+               include_in_files=include_in_files)
+    except Exception as e:
+        print('Failed to log: "' + str(output).strip() + '"!')
+        print(str(e))
+        pass
+        # TODO: Better log error
+
+
+def _write(output, print_to_console: bool = True, include_timestamp: bool = True, include_in_files: bool = True):
     global _log_files
     output = str(output)
 
@@ -45,19 +57,24 @@ def write(output, print_to_console: bool = True, include_timestamp: bool = True,
 
     if include_in_files:
         for current_out_file in _log_files:
-            if os.path.exists(current_out_file):
-                f = open(current_out_file, 'a')
-                f.write('\n')
-            else:
-                # Creating the parent path
-                parent_path = Path(current_out_file)
-                parent_path = parent_path.parent.absolute()
-                os.makedirs(parent_path, exist_ok=True)
+            try:
+                if os.path.exists(current_out_file):
+                    f = open(current_out_file, 'a')
+                    f.write('\n')
+                else:
+                    # Creating the parent path
+                    parent_path = Path(current_out_file)
+                    parent_path = parent_path.parent.absolute()
+                    os.makedirs(parent_path, exist_ok=True)
+                    f = open(current_out_file, 'w')
 
-                f = open(current_out_file, 'w')
-
-            f.write(output)
-            f.close()
+                f.write(output)
+                f.close()
+            except Exception as e:
+                print('Failed to log to: ' + str(current_out_file))
+                print(str(e))
+                pass
+                # TODO: Better log error
 
 
 def diagnose():

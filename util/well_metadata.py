@@ -94,19 +94,20 @@ class PlateMetadata:
         plt.plot(doses, responses, linestyle='-', marker='o', color='blue')
         plt.plot(fitted_plot[0], fitted_plot[1], color='lightblue')
         legend_entries = ['Raw Measurements', 'Curve Fit']
+        y_axis_max = float(max(1.0, max(fitted_plot[1])))
 
         bmc_30_plate_concentration = self.interpolate_well_index_to_concentration(bmc_30_plate_well)
         self.plate_bmc30 = bmc_30_plate_concentration
         bmc_30_plate_text = 'BMC30 (Plate): ' + str(round(bmc_30_plate_concentration, 3)) + ' ' + utils.mu + 'M'
         if not math.isnan(bmc_30_plate_concentration):
-            plt.plot([bmc_30_plate_well, bmc_30_plate_well], [0, 1], color='lightgreen')
+            plt.plot([bmc_30_plate_well, bmc_30_plate_well], [0, y_axis_max], color='lightgreen')
             legend_entries.append(bmc_30_plate_text)
 
         if not math.isnan(bmc_30_compound_concentration):
             bmc_30_compound_well = self.interpolate_concentration_to_well(bmc_30_compound_concentration)
             bmc_30_compound_text = 'BMC30 (Compound): ' + str(
                 round(bmc_30_compound_concentration, 3)) + ' ' + utils.mu + 'M'
-            plt.plot([bmc_30_compound_well, bmc_30_compound_well], [0, 1], color='darkgreen')
+            plt.plot([bmc_30_compound_well, bmc_30_compound_well], [0, y_axis_max], color='darkgreen')
             legend_entries.append(bmc_30_compound_text)
 
         plt.title(
@@ -124,7 +125,7 @@ class PlateMetadata:
         plt.tight_layout()
         plt.autoscale()
         plt.xticks(well_ticks, well_indices, rotation=45)
-        plt.ylim([0.0, 1.05])
+        plt.ylim([0.0, y_axis_max + 0.05])
         plt.xlim([float(self.well_control) - 0.15, float(self.well_max_compound_concentration) + 0.15])
         plt.tight_layout()
 

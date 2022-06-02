@@ -235,7 +235,19 @@ def get_plt_as_tex(data_list_y: [[float]], plot_colors: [str], title: str, label
     return out_text
 
 
-def convert_size(size_bytes):
+def listToBytes(n: [np.ndarray]) -> int:
+    size = 0
+    for i in range(len(n)):
+        size = size + n[i].nbytes
+
+    return size
+
+
+def byteSizeString(size_bytes: int) -> str:
+    if size_bytes is None:
+        return '?'
+
+    size_bytes = int(size_bytes)
     if size_bytes == 0:
         return "0B"
     size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")

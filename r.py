@@ -4,14 +4,14 @@ import os
 import numpy as np
 
 from util import log
-# local r test file inside this project
-from util.well_metadata import TileMetadata
 
+# local r test file inside this project
 r_test_file = 'imports' + os.sep + 'r' + os.sep + 'sigmoid_evaluation.R'
 assert os.path.exists(r_test_file)
 
 # r test file on the prodi drive, available to unix devices
 prodi_r_test_file = '/mil/sigmoid_evaluation.R'
+prodi_r_test_file = r_test_file
 if not os.name == 'nt':
     assert os.path.exists(prodi_r_test_file)
 
@@ -170,7 +170,7 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
     return final_score, score_data, estimate_plot, fitted_plot, instructions, bmc_30
 
 
-def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarray], out_dir: str,
+def prediction_sigmoid_evaluation(X_metadata, y_pred: [np.ndarray], out_dir: str,
                                   save_sigmoid_plot: bool = False, file_name_suffix: str = None, verbose: bool = False):
     if verbose:
         log.write('Running sigmoid prediction on predictions')
@@ -181,7 +181,7 @@ def prediction_sigmoid_evaluation(X_metadata: [TileMetadata], y_pred: [np.ndarra
     experiment_prediction_map = {}
     for (X_metadata_current, y_pred_current) in zip(X_metadata, y_pred):
         y_pred_current: float = float(y_pred_current)
-        metadata: TileMetadata = X_metadata_current[0]
+        metadata = X_metadata_current[0]
 
         experiment_name = metadata.experiment_name
         well_letter = metadata.well_letter

@@ -12,16 +12,17 @@ import os
 from typing import Dict
 from typing import List
 
-import models
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
-from models import BaselineMIL
 from sklearn.metrics import auc
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import precision_recall_curve
 from sklearn.metrics import roc_curve
 from torch.utils.data import DataLoader
+
+import models
+from models import BaselineMIL
 from util import dose_response
 from util import log
 from util import utils
@@ -423,7 +424,7 @@ def write_history(history: List[Dict[str, float]], history_keys: [str], metrics_
 
     out_text = 'Epoch'
     for key in keys:
-        out_text = out_text + ';' + key
+        out_text = out_text + ';' + str(key)
 
     for i in range(len(history)):
         out_text = out_text + '\n' + str(i + 1)
@@ -740,6 +741,9 @@ def outline_rgb_array(image: [np.ndarray], true_value: float, prediction: float,
             int(float(bright_mode) * 255)]
     else:
         colormap = override_colormap
+
+    # Creating a deep copy so it's not overwritten
+    image = np.copy(image)
 
     image[0:outline, :] = colormap
     image[width - outline:width, :] = colormap

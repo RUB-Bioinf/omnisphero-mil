@@ -14,12 +14,12 @@ from typing import Union
 from zipfile import ZipFile
 
 import matplotlib.pyplot as plt
-import numpy as np
-
 import mil_metrics
+import numpy as np
 import r
 from util import log
 from util import paths
+from util import utils
 from util.sample_preview import z_score_to_rgb
 from util.utils import gct
 from util.utils import get_time_diff
@@ -155,6 +155,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
                 gp_max=len(batch_dirs),
                 include_raw=include_raw)
 
+            # Adding results to the respective lists
             loaded_files_list_full.extend(loaded_files_list)
             bag_names_full.extend(bag_names)
             error_list.extend(errors)
@@ -162,6 +163,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
             experiment_names_full.extend(experiment_names)
             X_metadata_full.extend(X_metadata)
 
+            # Deleting these results to save on RAM
             if X_full is None:
                 X_full = X
             else:
@@ -183,16 +185,28 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
                 else:
                     y_tiles_full = np.concatenate((y_tiles_full, y_tiles), axis=0)
 
+            # Deleting references to save on RAM
+            del X, y, y_tiles, X_raw, X_metadata, bag_names, experiment_names, well_names, errors, loaded_files_list
+
+            # Printing current loaded overview
+            X_s_full = str(utils.byteSizeString(utils.listToBytes(X_full)))
+            X_s_raw_full = str(utils.byteSizeString(utils.listToBytes(X_raw_full)))
+            y_s_full = str(utils.byteSizeString(sys.getsizeof(y_full)))
+            log.write("X-size in memory (after "+str(i+1)+" batches): " + str(X_s_full))
+            log.write("y-size in memory (after "+str(i+1)+" batches): " + str(y_s_full))
+            log.write("X-size (raw) in memory (after "+str(i+1)+" batches): " + str(X_s_raw_full))
+            del X_s_full, y_s_full, X_s_raw_full
+
     if X_full is None:
         log.write('No files were loaded!')
         assert False
 
-    log.write('Debug list size "X_full": ' + str(len(X_full)))
-    log.write('Debug list size "y_full": ' + str(len(y_full)))
-    log.write('Debug list size "y_tiles_full": ' + str(len(y_tiles_full)))
-    log.write('Debug list size "X_raw_full": ' + str(len(X_raw_full)))
-    log.write('Debug list size "bag_names": ' + str(len(bag_names_full)))
-    log.write('Debug list size "X_metadata_full": ' + str(len(X_metadata_full)))
+    log.write('Debug list size "X_full": ' + str(len(X_full)), print_to_console=False)
+    log.write('Debug list size "y_full": ' + str(len(y_full)), print_to_console=False)
+    log.write('Debug list size "y_tiles_full": ' + str(len(y_tiles_full)), print_to_console=False)
+    log.write('Debug list size "X_raw_full": ' + str(len(X_raw_full)), print_to_console=False)
+    log.write('Debug list size "bag_names": ' + str(len(bag_names_full)), print_to_console=False)
+    log.write('Debug list size "X_metadata_full": ' + str(len(X_metadata_full)), print_to_console=False)
 
     assert len(X_full) == len(y_full)
     assert len(X_full) == len(y_tiles_full)
@@ -285,6 +299,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
         all_finished = finished_count == len(future_list)
         time.sleep(1)
 
+    experiment_name = '<unknown experiment>'
     X = []
     y = []
     X_raw = []
@@ -326,6 +341,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
     log.write('\nFully Finished Loading Path. Files: ' + str(loaded_files_list))
 
     # Deleting the futures and the future list to immediately releasing the memory.
+    future_count = len(future_list)
     del future_list[:]
     del future_list
 
@@ -335,6 +351,17 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
     log.write('Debug list size "X_raw": ' + str(len(X_raw)))
     log.write('Debug list size "bag_names": ' + str(len(bag_names)))
     log.write('Debug list size "bag_names": ' + str(len(X_metadata)))
+
+    X_s = str(utils.byteSizeString(utils.listToBytes(X)))
+    X_s_raw = str(utils.byteSizeString(utils.listToBytes(X_raw)))
+    y_s = str(utils.byteSizeString(sys.getsizeof(y)))
+    log.write("X-size in memory of " + experiment_name + " alone): " + str(X_s))
+    log.write("y-size in memory of " + experiment_name + " alone): " + str(y_s))
+    log.write("X-size (raw) in memory of " + experiment_name + " alone): " + str(X_s_raw))
+
+    log.write('Wells with label 0 from '+experiment_name+': ' + str(len(np.where(np.asarray(y) == 0)[0]))+' / '+str(future_count))
+    log.write('Wells with label 1 from '+experiment_name+': ' + str(len(np.where(np.asarray(y) == 1)[0]))+' / '+str(future_count))
+    del X_s, X_s_raw, y_s
 
     assert len(X) == len(y)
     assert len(X) == len(y_tiles)
@@ -486,9 +513,9 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
             if worker_verbose:
                 log.write('\n\n' + zipped_data_name + ' read BMC: ' + str(oligo_diff) + '. Compare to: <=' + str(
                     label_1_well_indices) + ' | >=' + str(label_0_well_indices) + '\n\n')
-            if oligo_diff <= label_1_well_indices:
+            if oligo_diff >= label_1_well_indices:
                 label = 1
-            elif oligo_diff >= label_0_well_indices:
+            elif oligo_diff <= label_0_well_indices:
                 label = 0
 
     if label == -1:
@@ -797,10 +824,14 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
 
         # Saving preview (if it exists)
         if used_constraints is not None:
-            save_save_bag_preview(X=X, out_dir_base=filepath, experiment_name=experiment_name, well=well,
-                                  normalize_enum=normalize_enum, preview_constraints=used_constraints,
-                                  channel_inclusions=channel_inclusions,
-                                  bit_depth=bit_depth, X_raw=X_raw, verbose=worker_verbose)
+            try:
+                save_save_bag_preview(X=X, out_dir_base=filepath, experiment_name=experiment_name, well=well,
+                                      normalize_enum=normalize_enum, preview_constraints=used_constraints,
+                                      channel_inclusions=channel_inclusions,
+                                      bit_depth=bit_depth, X_raw=X_raw, verbose=worker_verbose)
+            except Exception as e:
+                # TODO handle this better
+                pass
 
         # Checking the 'tegredy of the bag and its samples
         assert len(X) == len(X_raw)

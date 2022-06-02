@@ -63,11 +63,41 @@ Once not needed anymore, you can exit ``R`` like so:
 $q()
 ````
 
+# Docker
+You can download an already set up version of the Python and R environments via DockerHub from our [Docker Hub page](https://hub.docker.com/u/bioinfbo):
+
+[![Docker Build](https://img.shields.io/docker/automated/bioinfbo/py38gpu-r?style=flat)](https://hub.docker.com/r/bioinfbo/py38gpu-r)
+[![Docker Image Size](https://img.shields.io/docker/image-size/bioinfbo/py38gpu-r?style=flat)](https://hub.docker.com/r/bioinfbo/py38gpu-r)
+[![Docker Downloads](https://img.shields.io/docker/pulls/bioinfbo/py38gpu-r?style=flat)](https://hub.docker.com/r/bioinfbo/py38gpu-r)
+[![Docker Stars](https://img.shields.io/docker/stars/bioinfbo/py38gpu-r?style=flat)](https://hub.docker.com/r/bioinfbo/py38gpu-r)
+[![Docker Version](https://img.shields.io/docker/v/bioinfbo/py38gpu-r?style=flat)](https://hub.docker.com/r/bioinfbo/py38gpu-r)
+
+After setting up the Docker you need to manually enter the docker and activate `R` to enable `dmc` support.
+To do this, run these steps:
+
+```
+0) # Run the docker, if not already running
+1) $ docker ps
+2) # find the docker ID (e.g. we use 'sleepy_albattani' as an example here)
+3) $ docker exec -it -u root sleepy_albattani bash
+```
+
+You are now in the same docker container, but from within another Terminal.
+Now you can run `R` (as described above) and run python code from another Terminal within the same same container.
+Leave the terminal you ran `R` from open in the background.
+
+Sometimes the wrong CUDA Toolkit might be installed and PyTorch might be not available.
+Follow the steps above to move into the docker and run this code to re-install PyTorch:
+
+```
+4) $ source activate py38 # Maybe not nesssesary
+5) $ conda remove pytorch
+6.a) $ conda install pytorch torchvision torchaudio cudatoolkit=10.2 -c pytorch
+6.b) $ conda install pytorch cudatoolkit=10.2 -c pytorch
+```
 
 # Usage
 Make sure to tweak I/O paths in all files listed below before use.
-
-### Validation
 
 
 ### Training
