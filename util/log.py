@@ -4,7 +4,7 @@ from pathlib import Path
 from util.utils import gct
 
 global _log_files
-_log_files: [str] = []
+_log_files = []
 
 
 def add_file(filename: str):
