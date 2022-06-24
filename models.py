@@ -13,6 +13,7 @@ import loader
 import mil_metrics
 import r
 import torch_callbacks
+import video_render_ffmpeg
 from util import data_renderer
 from util import log
 from util import utils
@@ -415,7 +416,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         checkpoint_interval: int = 1, clamp_min: float = None, clamp_max: float = None,
         save_sigmoid_plot_interval: int = 5, data_loader_sigmoid: OmniSpheroDataLoader = None,
         X_metadata_sigmoid: [np.ndarray] = None, augment_training_data: bool = False, hist_bins_override=None,
-        sigmoid_video_render_enabled: bool = True, render_fps: int = 2,  # video_render.default_fps,
+        sigmoid_video_render_enabled: bool = True, render_fps: int = video_render_ffmpeg.default_fps,
         sigmoid_evaluation_enabled: bool = False, augment_validation_data: bool = False):
     """ Trains a model on the previously preprocessed train and val sets.
     Also calls evaluate in the validation phase of each epoch.
@@ -1010,6 +1011,8 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     log.write('End of list.')
 
     if sigmoid_video_render_enabled and len(sigmoid_render_out_dirs) > 0:
+        video_render_ffmpeg.render_image_dir_to_video_multiple(image_paths=sigmoid_render_out_dirs, fps=render_fps,
+                                                               verbose=True)
         # video_render.render_images_to_video_multiple(image_paths=sigmoid_render_out_dirs, fps=render_fps, verbose=True)
         pass
     else:

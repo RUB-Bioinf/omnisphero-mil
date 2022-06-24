@@ -17,6 +17,7 @@ import models
 import omnisphero_mining
 import r
 import torch_callbacks
+import video_render_ffmpeg
 from util import log
 from util import paths
 from util import sample_preview
@@ -155,7 +156,7 @@ def train_model(
         # Sigmoid Evaluation parameters
         save_sigmoid_plot_interval: int = 5,
         # Render sigmoid output as a video file after training?
-        sigmoid_video_render_enabled: bool = True, render_fps: int = 5,  # video_render.default_fps,
+        sigmoid_video_render_enabled: bool = True, render_fps: int = video_render_ffmpeg.default_fps,
         # What channels are enabled during loading?
         channel_inclusions: [bool] = loader.default_channel_inclusions_all,
         # Training / Validation Split percentages

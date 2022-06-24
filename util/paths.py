@@ -120,6 +120,11 @@ curated_overlapping_debug_dirs_unix = [
     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS719'
 ]
 
+# ffmpeg paths:
+ffmpeg_win = 'Z:\\nilfoe\\Python\\omnisphero-mil\\ffmpeg\\win\\ffmpeg.exe'
+ffmpeg_unix = '/bph/home/nilfoe/Python/omnisphero-mil/ffmpeg/unix/ffmpeg-5.0.1-amd64-static/ffmpeg'
+
+
 nucleus_predictions_image_folder_win = 'U:\\bioinfdata\\work\\OmniSphero\\Bilderordner\\'
 nucleus_predictions_image_folder_unix = '/bilderordner'
 

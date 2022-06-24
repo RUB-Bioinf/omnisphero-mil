@@ -1,11 +1,13 @@
 import os
 import cv2
 import numpy as np
+import video_render_ffmpeg
+from functools import cmp_to_key
 from PIL import Image
 
 from util import log
 
-default_fps: int = 3
+default_fps: int = video_render_ffmpeg.default_fps
 
 
 def img_path_to_array(image_path: str, file_formats: [str] = ['.png', '.jpg', '.jpeg']) -> np.ndarray:
@@ -45,6 +47,7 @@ def img_path_to_array(image_path: str, file_formats: [str] = ['.png', '.jpg', '.
             y = max(y, read_y)
             z = max(z, read_z)
             read_images.append(current_image)
+    read_images = sorted(read_images, key=cmp_to_key(_compare_sigmoid_frame_file_name))
 
     assert len(read_images) > 0
     arr = np.ones((len(read_images), x, y, z), dtype=np.uint8) * 255
@@ -133,6 +136,10 @@ def render_images_to_video(image_path: str, out_path: str = None, override_out_n
 
     arr_images = img_path_to_array(image_path=image_path)
     array_to_video(frames=arr_images, out_path=out_path, fps=fps, verbose=verbose)
+
+
+def _compare_sigmoid_frame_file_name(file_name1: str, file_name2: str):
+    return video_render_ffmpeg.compare_sigmoid_frame_file_name(file_name1=file_name1, file_name2=file_name2)
 
 
 if __name__ == "__main__":
