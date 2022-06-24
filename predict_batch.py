@@ -546,7 +546,7 @@ def main():
         image_folder = paths.nucleus_predictions_image_folder_win
         current_global_log_dir = 'U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\'
         log.add_file('U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\all_logs.txt')
-        model_path = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\ep-aug-overlap-adadelta-endpoints-wells-normalize-6repack-0.3-round1\\'
+        model_path = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\ep-aug-overlap-adadelta-n-6-rp-0.3-l-mean_square_error-BMC\\'
     else:
         # good one:
         model_path = '/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-endpoints-wells-normalize-6no-repack-round1/'
@@ -556,12 +556,15 @@ def main():
         model_path = '/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-endpoints-wells-normalize-6repack-0.3-round1/'
 
         # mse
-        model_path = '/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-wells-normalize-6repack-0.3-mse1/'
+        model_path = '/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-n-6-rp-0.3-l-mean_square_error-BMC/'
 
-        current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log/linux/'
+        current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log3/linux-pred/'
         image_folder = paths.nucleus_predictions_image_folder_unix
 
+    print('Log location: '+current_global_log_dir)
+    print('Model path: '+model_path)
     assert os.path.exists(model_path)
+    # assert os.path.exists(current_global_log_dir)
 
     checkpoint_file = model_path + os.sep + 'hnm' + os.sep + 'model_best.h5'
     if not os.path.exists(checkpoint_file):
@@ -583,17 +586,18 @@ def main():
             render_dose_response_curves_enabled=True,
             hist_bins_override=50,
             sigmoid_verbose=True,
-            out_dir='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\debug_predictions-win\\',
+            out_dir='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\debug_predictions-win\\bmc\\',
             gpu_enabled=False, normalize_enum=normalize_enum, max_workers=4)
     elif sys.platform == 'win32':
+        checkpoint_file = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\ep-aug-overlap-adadelta-n-6-rp-0.3-l-mean_square_error-BMC\\model_best.h5'
         for prediction_dir in paths.all_prediction_dirs_win:
             predict_path(model_save_path=model_path,
                          global_log_dir=current_global_log_dir,
                          render_attention_spheres_enabled=render_attention_spheres_enabled,
                          render_attention_histogram_enabled=False,
                          render_merged_predicted_tiles_activation_overlays=False,
-                         checkpoint_file='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65\\hnm\\model_best.h5',
-                         out_dir=model_path + 'predictions-sigmoid\\',
+                         checkpoint_file=checkpoint_file,
+                         out_dir=checkpoint_file + 'predictions-bmc\\',
                          bag_paths=[prediction_dir],
                          channel_inclusions=loader.default_channel_inclusions_no_neurites,
                          image_folder=image_folder,
@@ -616,7 +620,7 @@ def main():
             log.write(str(i) + '/' + str(len(prediction_dirs_used)) + ' - Predicting: ' + str(prediction_dir))
             try:
                 predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path, bag_paths=prediction_dir,
-                             out_dir='/mil/oligo-diff/debug_predictions/endpoint-sigmoid-linux-norm6-mse-bmc/',
+                             out_dir='/mil/oligo-diff/debug_predictions/endpoint-sigmoid-linux-norm6-mse-bmc2/',
                              global_log_dir=current_global_log_dir,
                              render_attention_spheres_enabled=render_attention_spheres_enabled,
                              render_merged_predicted_tiles_activation_overlays=False,

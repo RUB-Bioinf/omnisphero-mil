@@ -154,6 +154,8 @@ def train_model(
         hist_bins_override: int = None,
         # Sigmoid Evaluation parameters
         save_sigmoid_plot_interval: int = 5,
+        # Render sigmoid output as a video file after training?
+        sigmoid_video_render_enabled: bool = True, render_fps: int = 5,  # video_render.default_fps,
         # What channels are enabled during loading?
         channel_inclusions: [bool] = loader.default_channel_inclusions_all,
         # Training / Validation Split percentages
@@ -597,6 +599,8 @@ def train_model(
                                                              out_dir_base=out_dir,
                                                              bag_names=bag_names,
                                                              checkpoint_interval=None,
+                                                             sigmoid_video_render_enabled=sigmoid_video_render_enabled,
+                                                             render_fps=render_fps,
                                                              hist_bins_override=hist_bins_override,
                                                              sigmoid_evaluation_enabled=sigmoid_evaluation_enabled,
                                                              save_sigmoid_plot_interval=save_sigmoid_plot_interval,
@@ -712,6 +716,8 @@ def train_model(
                                                                  sigmoid_evaluation_enabled=sigmoid_evaluation_enabled,
                                                                  save_sigmoid_plot_interval=save_sigmoid_plot_interval,
                                                                  checkpoint_interval=None,
+                                                                 sigmoid_video_render_enabled=sigmoid_video_render_enabled,
+                                                                 render_fps=render_fps,
                                                                  clamp_min=clamp_min, clamp_max=clamp_max,
                                                                  bag_names=None,
                                                                  # TODO add bag names
@@ -907,7 +913,7 @@ def main(debug: bool = False):
     else:
         sigmoid_input_dirs = paths.default_sigmoid_validation_dirs_unix
         image_folder = paths.nucleus_predictions_image_folder_unix
-        current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log/linux/'
+        current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log4/linux/'
 
     current_out_dir = default_out_dir_base + os.sep
     os.makedirs(current_out_dir, exist_ok=True)
@@ -941,23 +947,24 @@ def main(debug: bool = False):
                     testing_model_enabled=True,
                     writing_metrics_enabled=True,
                     use_hard_negative_mining=False,
-                    sigmoid_validation_dirs=None
+                    # sigmoid_validation_dirs=None
+                    sigmoid_validation_dirs=paths.default_sigmoid_validation_dirs_win
                     )
     elif debug:
         log.write("Testing all source dirs, if they are trainable!")
         time.sleep(2)
 
-        for i in range(len(curated_overlapping_source_dirs_unix)):
-            source_dir = curated_overlapping_source_dirs_unix[i]
+        for i in range(len(paths.curated_overlapping_source_dirs_unix)):
+            source_dir = paths.curated_overlapping_source_dirs_unix[i]
             log.write('Source ' + str(i) + ': ' + str(source_dir) + '. Exists: ' + str(os.path.exists(source_dir)))
             time.sleep(0.1)
             del i
         time.sleep(1)
 
-        for c in range(len(curated_overlapping_source_dirs_unix)):
-            source_dir = curated_overlapping_source_dirs_unix[c]
+        for c in range(len(paths.curated_overlapping_source_dirs_unix)):
+            source_dir = paths.curated_overlapping_source_dirs_unix[c]
 
-            copy_dirs = curated_overlapping_source_dirs_unix.copy()
+            copy_dirs = paths.curated_overlapping_source_dirs_unix.copy()
             random.shuffle(copy_dirs)
             # source_dirs = [source_dir, copy_dirs[0], copy_dirs[1]]
             source_dirs = [source_dir]
@@ -991,11 +998,11 @@ def main(debug: bool = False):
         c = 0
         for l in ['mean_square_error', 'binary_cross_entropy']:
             # best: binary_cross_entropy
-            for o in ['adadelta', 'adam']:  # ['adam', 'adadelta']:
+            for o in ['adadelta']:  # ['adam', 'adadelta']:
                 # best: adadelta
-                for p in [0.30]:
+                for p in [0.10, 0.20, 0.3, 0.05]:
                     # best: 0.65 or 0.3
-                    for i in [4, 6, 7]:  # [4, 6, 7, 8]:
+                    for i in [6]:  # [4, 6, 7, 8]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
                             augment_train = aug[1]

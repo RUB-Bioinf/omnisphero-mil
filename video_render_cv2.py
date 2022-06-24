@@ -1,17 +1,11 @@
 import os
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
-
 from PIL import Image
 
 from util import log
 
-test_data_path = '/bph/puredata4/bioinfdata/work/OmniSphero/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-n-4-rp-0.3-l-mean_square_error-BMC/metrics_live/sigmoid_live/naive/EFB18/'
-test_out_name = '/bph/puredata4/bioinfdata/work/OmniSphero/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-n-4-rp-0.3-l-mean_square_error-BMC/metrics_live/sigmoid_live/naive/EFB18/render.png'
-test_out_name = '/bph/puredata4/bioinfdata/work/OmniSphero/mil/oligo-diff/models/render.avi'
-
-_default_fps: int = 3
+default_fps: int = 3
 
 
 def img_path_to_array(image_path: str, file_formats: [str] = ['.png', '.jpg', '.jpeg']) -> np.ndarray:
@@ -53,7 +47,7 @@ def img_path_to_array(image_path: str, file_formats: [str] = ['.png', '.jpg', '.
             read_images.append(current_image)
 
     assert len(read_images) > 0
-    arr = np.ones((len(read_images), x, y, z), dtype=np.uint8) * 150
+    arr = np.ones((len(read_images), x, y, z), dtype=np.uint8) * 255
     for i in range(len(read_images)):
         current_image = read_images[i]
         current_x, current_y, current_z = current_image.shape
@@ -66,7 +60,7 @@ def img_path_to_array(image_path: str, file_formats: [str] = ['.png', '.jpg', '.
     return arr
 
 
-def array_to_video_save(frames: np.ndarray, out_name: str, fps: int = _default_fps, verbose: bool = True) -> Exception:
+def array_to_video_save(frames: np.ndarray, out_name: str, fps: int = default_fps, verbose: bool = True) -> Exception:
     err = None
     try:
         array_to_video_save(frames=frames, out_name=out_name, fps=fps, verbose=verbose)
@@ -77,7 +71,7 @@ def array_to_video_save(frames: np.ndarray, out_name: str, fps: int = _default_f
     return err
 
 
-def array_to_video(frames: np.ndarray, out_path: str, fps: int = _default_fps, verbose: bool = True) -> None:
+def array_to_video(frames: np.ndarray, out_path: str, fps: int = default_fps, verbose: bool = True) -> None:
     """ Function to convert image-array to a video """
     l, x, y, z = frames.shape
     frame_size = (y, x)
@@ -100,7 +94,7 @@ def array_to_video(frames: np.ndarray, out_path: str, fps: int = _default_fps, v
 
 
 def render_images_to_video_multiple(image_paths: [str], out_paths: [str] = None, override_out_name: str = None,
-                                    fps: int = _default_fps, verbose: bool = True) -> [Exception]:
+                                    fps: int = default_fps, verbose: bool = True) -> [Exception]:
     if not type(image_paths) == list:
         image_paths = [image_paths]
     if out_paths is None:
@@ -119,7 +113,7 @@ def render_images_to_video_multiple(image_paths: [str], out_paths: [str] = None,
 
         try:
             render_images_to_video(image_path=image_path, out_path=out_path, override_out_name=override_out_name,
-                                   fps=fps, verbose=False)
+                                   fps=fps, verbose=verbose)
         except Exception as e:
             log.write('Error in render #' + str(i) + ': ' + str(e))
             error_list.append(e)
@@ -129,7 +123,7 @@ def render_images_to_video_multiple(image_paths: [str], out_paths: [str] = None,
 
 
 def render_images_to_video(image_path: str, out_path: str = None, override_out_name: str = None,
-                           fps: int = _default_fps, verbose: bool = True):
+                           fps: int = default_fps, verbose: bool = True):
     assert os.path.exists(image_path)
     if out_path is None:
         if override_out_name is None:
@@ -145,4 +139,6 @@ if __name__ == "__main__":
     log.write('This function saves PNG/JPG images in a directory to .avi video.')
     log.write('Use "render_images_to_video" to access functionality.')
 
-    render_images_to_video_multiple(image_paths=test_data_path)
+    render_images_to_video(
+        'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\ep-aug-overlap-adadelta-n-6-rp-0.3-l-mean_square_error-BMC\\metrics_live\\sigmoid_live\\naive\\ELS681\\',
+        verbose=True)

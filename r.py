@@ -128,13 +128,13 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
             dose_curve = fitted_plot[1]
 
             if global_bmc_30:
-                # When trying to find BMC30 at a 'global' scale, aka at 50% inhibitation
-                mid_point = 0.3
+                # When trying to find BMC30 at a 'global' scale, aka at 30% inhibitation
+                bmc_point = 0.7
             else:
                 # When trying to find BMC30 at a 'local' scale, based on normalized curve points
-                mid_point = (dose_curve.min() + dose_curve.max()) / 2
+                bmc_point = (dose_curve.min() + dose_curve.max()) / 2
 
-            mid_point_value = min(dose_curve, key=lambda x: abs(x - mid_point))
+            mid_point_value = min(dose_curve, key=lambda x: abs(x - bmc_point))
             mid_point_index = np.where(dose_curve == mid_point_value)[0]
             bmc_30 = float(well_curve[mid_point_index])
 

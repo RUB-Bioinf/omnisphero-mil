@@ -214,8 +214,8 @@ def renderAttentionSpheres(X_raw: [np.ndarray], X_metadata: [TileMetadata], y_pr
 def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sigmoid_score_map: {str} = None,
                            file_name_suffix: str = None, title_suffix: str = None, out_dir: str = None,
                            sigmoid_plot_fit_map: {np.ndarray} = None, sigmoid_plot_estimation_map=None,
-                           sigmoid_bmc30_map: {float} = None,
-                           sigmoid_score_detail_map: {} = None, dpi: int = 650):
+                           sigmoid_bmc30_map: {float} = None, sigmoid_score_detail_map: {} = None,
+                           hide_na_metrics: bool = True, dpi: int = 650) -> [str]:
     # Remapping predictions so they can be evaluated
     experiment_prediction_map_pooled = {}
     experiment_prediction_map = {}
@@ -268,10 +268,13 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
         well_index_map[well_number].append(y_pred_current)
         experiment_well_tick_index_map[well_number].append(well)
         del X_metadata_current, y_pred_current, experiment_name, well_letter, well_number, well
+
     all_well_names.sort()
     all_experiment_names.sort()
     all_well_letters.sort()
     all_well_indices.sort()
+
+    all_render_out_dirs = []
 
     # Iterating over the experiment metadata so we can run the sigmoid evaluations
     for experiment_name in all_experiment_names:
@@ -420,7 +423,7 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
             plt.plot(estimations_x, estimations_y, color='lightblue')
             legend_entries.append('Sigmoid Curve Fit (Estimated)')
 
-        # Plotting the IC 50
+        # Plotting the BMC30
         plt.plot([bmc30_prediction, bmc30_prediction], [0, 1], color='lightgreen')
         legend_entries.append('BMC30 (pred.): ' + bmc30_prediction_text)
         if not math.isnan(bmc30_plate):
@@ -445,7 +448,15 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
 
             del sigmoid_score_detail
         else:
-            title = title + '\nSigmoid Score: ' + sigmoid_score
+            if hide_na_metrics:
+                title = title + '\nSigmoid Score: ' + sigmoid_score
+            else:
+                title = title + '\n\nAsymptote-Score: N/A'
+                title = title + '\nEffect-Score: N/A'
+                title = title + '\nGradient-Score: N/A'
+                title = title + '\nResidual-Score: N/A'
+                title = title + '\nRaw Score: N/A'
+                title = title + '\n\nFinal Sigmoid Score: ' + sigmoid_score
 
         # Setting the legend (should be done first)
         # if plate_metadata is not None and plate_metadata.has_valid_bmcs():
@@ -471,12 +482,19 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
         ax = plt.gca()
         ax.set_ylim([0.0, 1.05])
 
+        # making note of this out dir
+        if experiment_dir not in all_render_out_dirs:
+            all_render_out_dirs.append(experiment_dir)
+
         out_plot_name_base = experiment_dir + os.sep + experiment_name + '-predictions_concentration_response' + file_name_suffix
         plt.savefig(out_plot_name_base + '.png', dpi=dpi)
         plt.savefig(out_plot_name_base + '.svg', dpi=dpi, transparent=True)
         plt.savefig(out_plot_name_base + '.pdf', dpi=dpi)
 
         # TODO save as .tex!!
+
+    # Rending done. Returning the newly created directories
+    return all_render_out_dirs
 
 
 def render_attention_histograms(out_dir: str, n_list: [np.ndarray], bins_list: [np.ndarray],

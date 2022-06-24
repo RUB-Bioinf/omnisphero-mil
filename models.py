@@ -415,6 +415,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         checkpoint_interval: int = 1, clamp_min: float = None, clamp_max: float = None,
         save_sigmoid_plot_interval: int = 5, data_loader_sigmoid: OmniSpheroDataLoader = None,
         X_metadata_sigmoid: [np.ndarray] = None, augment_training_data: bool = False, hist_bins_override=None,
+        sigmoid_video_render_enabled: bool = True, render_fps: int = 2,  # video_render.default_fps,
         sigmoid_evaluation_enabled: bool = False, augment_validation_data: bool = False):
     """ Trains a model on the previously preprocessed train and val sets.
     Also calls evaluate in the validation phase of each epoch.
@@ -499,6 +500,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     os.makedirs(checkpoint_out_dir, exist_ok=True)
     model_save_path_best = out_dir_base + 'model_best.h5'
     epoch_durations = []
+    sigmoid_render_out_dirs = []
 
     if model.is_cpu():
         log.write('Training on CPU.')
@@ -772,15 +774,24 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                 f.close()
 
                 if save_sigmoid_plot:
-                    data_renderer.render_response_curves(X_metadata=X_metadata_sigmoid, y_pred=y_hats_sigmoid,
-                                                         sigmoid_score_map=sigmoid_score_map, dpi=350,
-                                                         sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
-                                                         sigmoid_plot_fit_map=sigmoid_plot_data_map,
-                                                         sigmoid_score_detail_map=sigmoid_score_detail_map,
-                                                         sigmoid_bmc30_map=sigmoid_bmc30_map,
-                                                         file_name_suffix='-epoch' + str(epoch),
-                                                         title_suffix='\nTraining Epoch ' + str(epoch),
-                                                         out_dir=sigmoid_data_dir_naive_live)
+                    all_render_out_dirs = data_renderer.render_response_curves(X_metadata=X_metadata_sigmoid,
+                                                                               y_pred=y_hats_sigmoid,
+                                                                               sigmoid_score_map=sigmoid_score_map,
+                                                                               dpi=350,
+                                                                               sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
+                                                                               sigmoid_plot_fit_map=sigmoid_plot_data_map,
+                                                                               sigmoid_score_detail_map=sigmoid_score_detail_map,
+                                                                               sigmoid_bmc30_map=sigmoid_bmc30_map,
+                                                                               file_name_suffix='-epoch' + str(epoch),
+                                                                               title_suffix='\nTraining Epoch ' + str(
+                                                                                   epoch),
+                                                                               out_dir=sigmoid_data_dir_naive_live)
+
+                    # The maybe newly created dirs are added to the list of known sigmoid render dirs
+                    for all_render_out_dir in all_render_out_dirs:
+                        if all_render_out_dir not in sigmoid_render_out_dirs:
+                            sigmoid_render_out_dirs.append(all_render_out_dir)
+                    del all_render_out_dirs
 
                 try:
                     sigmoid_scores_raw = list(sigmoid_score_map.values())
@@ -965,21 +976,44 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
                 f.close()
 
                 # Rendering the data
-                data_renderer.render_response_curves(X_metadata=X_metadata_sigmoid, y_pred=y_hats_sigmoid,
-                                                     sigmoid_score_map=sigmoid_score_map, dpi=350,
-                                                     sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
-                                                     sigmoid_plot_fit_map=sigmoid_plot_data_map,
-                                                     sigmoid_score_detail_map=sigmoid_score_detail_map,
-                                                     sigmoid_bmc30_map=sigmoid_bmc30_map,
-                                                     file_name_suffix='-best-epoch' + str(epoch),
-                                                     title_suffix='\nTraining Epoch ' + str(
-                                                         epoch) + ' (New Best)',
-                                                     out_dir=sigmoid_data_dir_naive_live_best)
+                all_render_out_dirs = data_renderer.render_response_curves(X_metadata=X_metadata_sigmoid,
+                                                                           y_pred=y_hats_sigmoid,
+                                                                           sigmoid_score_map=sigmoid_score_map, dpi=350,
+                                                                           sigmoid_plot_estimation_map=sigmoid_plot_estimation_map,
+                                                                           sigmoid_plot_fit_map=sigmoid_plot_data_map,
+                                                                           sigmoid_score_detail_map=sigmoid_score_detail_map,
+                                                                           sigmoid_bmc30_map=sigmoid_bmc30_map,
+                                                                           file_name_suffix='-best-epoch' + str(epoch),
+                                                                           title_suffix='\nTraining Epoch ' + str(
+                                                                               epoch) + ' (New Best)',
+                                                                           out_dir=sigmoid_data_dir_naive_live_best)
+
                 del sigmoid_score_map, sigmoid_plot_estimation_map, sigmoid_plot_data_map, sigmoid_score_detail_map
+                # The maybe newly created dirs are added to the list of known sigmoid render dirs
+                for all_render_out_dir in all_render_out_dirs:
+                    if all_render_out_dir not in sigmoid_render_out_dirs:
+                        sigmoid_render_out_dirs.append(all_render_out_dir)
+                del all_render_out_dirs
         del y_hats_sigmoid
 
         if cancel_requested:
             log.write('Model was canceled before reaching all epochs.')
+
+    ###################
+    # TRAINING FINISHED
+    ###################
+
+    # Rendering video files
+    log.write('Newly created sigmoid dirs:')
+    for sigmoid_render_out_dir in sigmoid_render_out_dirs:
+        log.write('  # ' + str(sigmoid_render_out_dir))
+    log.write('End of list.')
+
+    if sigmoid_video_render_enabled and len(sigmoid_render_out_dirs) > 0:
+        # video_render.render_images_to_video_multiple(image_paths=sigmoid_render_out_dirs, fps=render_fps, verbose=True)
+        pass
+    else:
+        log.write('Video render not done. Enabled: ' + str(sigmoid_video_render_enabled) + '.')
 
     # Notifying callbacks
     for i in range(len(callbacks)):
