@@ -1001,7 +1001,7 @@ def main(debug: bool = False):
             # best: binary_cross_entropy
             for o in ['adadelta']:  # ['adam', 'adadelta']:
                 # best: adadelta
-                for p in [0.10, 0.20, 0.3, 0.05]:
+                for p in [0.10, 0.20, 0.3, 0.05, 0.15, 0.25, 0.3, 0.35]:
                     # best: 0.65 or 0.3
                     for i in [6]:  # [4, 6, 7, 8]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
