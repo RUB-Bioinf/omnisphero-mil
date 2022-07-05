@@ -111,6 +111,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
         batch_dirs=bag_paths,
         max_workers=max_workers,
         include_raw=True,
+        force_balanced_batch=False,
         channel_inclusions=channel_inclusions,
         constraints_0=tile_constraints,
         constraints_1=tile_constraints,

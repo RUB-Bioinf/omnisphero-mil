@@ -10,6 +10,13 @@ debug_prediction_dirs_win = [
     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\test_data\\debug_win\\'
 ]
 
+debug_training_dirs_win = [
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_win',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_win\\prediction-debug2\\',
+]
+
+default_out_dir_win_base = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\win'
+
 all_prediction_dirs_win = [
     # New CNN
     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux_overlap\\EFB18',
@@ -80,8 +87,15 @@ curated_overlapping_source_dirs_unix = [
     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS719',
     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS744',
     '/mil/oligo-diff/training_data/curated_linux_overlap/ESM36',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS681'
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS681',
     # '/mil/oligo-diff/training_data/curated_linux_overlap/ELS682'
+
+    # Overlapping Experiments from EFSA, Jun22
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EJK228',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS510',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EMP124',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EMP146',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ESM26'
 ]
 
 curated_overlapping_source_dirs_ep_unix = [

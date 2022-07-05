@@ -89,8 +89,8 @@ plate_metadata_cache = {}
 
 
 def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: int, include_raw: bool = True,
-                         channel_inclusions=None, constraints_0=None, constraints_1=None, label_0_well_indices=None,
-                         label_1_well_indices=None):
+                         channel_inclusions=None, constraints_0=None, constraints_1=None,
+                         force_balanced_batch: bool = True, label_0_well_indices=None, label_1_well_indices=None):
     if label_1_well_indices is None:
         label_1_well_indices = default_well_indices_none
     if label_0_well_indices is None:
@@ -146,6 +146,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
                 source_dir=current_dir,
                 max_workers=max_workers,
                 normalize_enum=normalize_enum,
+                force_balanced_batch=force_balanced_batch,
                 gp_current=i + 1,
                 channel_inclusions=channel_inclusions,
                 label_0_well_indices=label_0_well_indices,
@@ -167,23 +168,27 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
             if X_full is None:
                 X_full = X
             else:
-                X_full = np.concatenate((X_full, X), axis=0)
+                # X_full = np.concatenate((X_full, X), axis=0)
+                X_full.extend(X)
 
             if X_raw_full is None:
                 X_raw_full = X_raw
             else:
-                X_raw_full = np.concatenate((X_raw_full, X_raw), axis=0)
+                # X_raw_full = np.concatenate((X_raw_full, X_raw), axis=0)
+                X_raw_full.extend(X_raw)
 
             if y is not None:
                 if y_full is None:
                     y_full = y
                 else:
-                    y_full = np.concatenate((y_full, y), axis=0)
+                    # y_full = np.concatenate((y_full, y), axis=0)
+                    y_full.extend(y)
 
                 if y_tiles_full is None:
                     y_tiles_full = y_tiles
                 else:
-                    y_tiles_full = np.concatenate((y_tiles_full, y_tiles), axis=0)
+                    # y_tiles_full = np.concatenate((y_tiles_full, y_tiles), axis=0)
+                    y_tiles_full.extend(y_tiles)
 
             # Deleting references to save on RAM
             del X, y, y_tiles, X_raw, X_metadata, bag_names, experiment_names, well_names, errors, loaded_files_list
@@ -192,9 +197,9 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
             X_s_full = str(utils.byteSizeString(utils.listToBytes(X_full)))
             X_s_raw_full = str(utils.byteSizeString(utils.listToBytes(X_raw_full)))
             y_s_full = str(utils.byteSizeString(sys.getsizeof(y_full)))
-            log.write("X-size in memory (after "+str(i+1)+" batches): " + str(X_s_full))
-            log.write("y-size in memory (after "+str(i+1)+" batches): " + str(y_s_full))
-            log.write("X-size (raw) in memory (after "+str(i+1)+" batches): " + str(X_s_raw_full))
+            log.write("X-size in memory (after " + str(i + 1) + " batches): " + str(X_s_full))
+            log.write("y-size in memory (after " + str(i + 1) + " batches): " + str(y_s_full))
+            log.write("X-size (raw) in memory (after " + str(i + 1) + " batches): " + str(X_s_raw_full))
             del X_s_full, y_s_full, X_s_raw_full
 
     if X_full is None:
@@ -220,6 +225,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
 # Main Loading function
 def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label_0_well_indices: [int],
                    channel_inclusions: [bool], label_1_well_indices: [int], constraints_1: [int], constraints_0: [int],
+                   force_balanced_batch: bool = True,
                    gp_current: int = 1, gp_max: int = 1, include_raw: bool = True):
     files = os.listdir(source_dir)
     log.write('[' + str(gp_current) + '/' + str(gp_max) + '] Loading from source: ' + source_dir)
@@ -339,6 +345,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
 
     print('\n')
     log.write('\nFully Finished Loading Path. Files: ' + str(loaded_files_list))
+    # TODO assert all the same experiment name!
 
     # Deleting the futures and the future list to immediately releasing the memory.
     future_count = len(future_list)
@@ -352,6 +359,72 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
     log.write('Debug list size "bag_names": ' + str(len(bag_names)))
     log.write('Debug list size "bag_names": ' + str(len(X_metadata)))
 
+    bag_count_negative = len(np.where(np.asarray(y) == 0)[0])
+    bag_count_positive = len(np.where(np.asarray(y) == 1)[0])
+    log.write('Wells with label 0 from ' + experiment_name + ': ' + str(bag_count_negative) + ' / ' + str(future_count))
+    log.write('Wells with label 1 from ' + experiment_name + ': ' + str(bag_count_positive) + ' / ' + str(future_count))
+
+    if force_balanced_batch:
+        balance_difference = bag_count_positive - bag_count_negative
+        log.write('Forcing balance...')
+
+        if bag_count_negative == 0:
+            # If there are no negative bags in this batch....
+            # there would be no data loaded! This cannot be! So one well is selected at random.
+            log.write('... by keeping a single positive well. There were no negatives in this batch.')
+
+            # TODO choose, but not random
+            positive_indices = np.where(np.asarray(y) == 1)[0]
+            positive_indices = positive_indices.tolist()
+            random.shuffle(positive_indices)
+            keep_index = positive_indices[0]
+
+            # Removing all elements, except the one with the 'keep_index'
+            X = [X[keep_index]]
+            y = [y[keep_index]]
+            y_tiles = [y_tiles[keep_index]]
+            X_raw = [X_raw[keep_index]]
+            bag_names = [bag_names[keep_index]]
+            experiment_names = [experiment_names[keep_index]]
+            well_names = [well_names[keep_index]]
+            X_metadata = [X_metadata[keep_index]]
+        elif bag_count_positive > bag_count_negative:
+            log.write('... by removing ' + str(balance_difference) + ' positive wells.')
+            for i in range(balance_difference):
+                positive_indices = np.where(np.asarray(y) == 1)[0]
+                positive_indices = positive_indices.tolist()
+                random.shuffle(positive_indices)
+                delete_index = positive_indices[0]
+                # TODO select index by criterium, not randomly
+
+                metadata = X_metadata[delete_index][0]
+                current_experiment_name = metadata.experiment_name
+                current_well = metadata.get_formatted_well()
+                log.write('Deleting superfluous bag: ' + str(i + 1) + '/' + str(
+                    balance_difference) + ' - ' + current_experiment_name + ' ' + current_well)
+
+                # Deleting from the loaded lists at the randomly selected index
+                del X[delete_index]
+                del y[delete_index]
+                del y_tiles[delete_index]
+                del X_raw[delete_index]
+                del bag_names[delete_index]
+                del experiment_names[delete_index]
+                del well_names[delete_index]
+                del X_metadata[delete_index]
+
+            bag_count_negative = len(np.where(np.asarray(y) == 0)[0])
+            bag_count_positive = len(np.where(np.asarray(y) == 1)[0])
+            assert bag_count_negative == bag_count_positive
+        else:
+            log.write('No need. Batch is already perfectly balanced. As all things should be.')
+
+        # Setting the variables again
+        bag_count_negative = len(np.where(np.asarray(y) == 0)[0])
+        bag_count_positive = len(np.where(np.asarray(y) == 1)[0])
+        log.write('After forcing balance: label 0 from ' + experiment_name + ': ' + str(bag_count_negative))
+        log.write('After forcing balance: label 1 from ' + experiment_name + ': ' + str(bag_count_positive))
+
     X_s = str(utils.byteSizeString(utils.listToBytes(X)))
     X_s_raw = str(utils.byteSizeString(utils.listToBytes(X_raw)))
     y_s = str(utils.byteSizeString(sys.getsizeof(y)))
@@ -359,8 +432,6 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
     log.write("y-size in memory of " + experiment_name + " alone): " + str(y_s))
     log.write("X-size (raw) in memory of " + experiment_name + " alone): " + str(X_s_raw))
 
-    log.write('Wells with label 0 from '+experiment_name+': ' + str(len(np.where(np.asarray(y) == 0)[0]))+' / '+str(future_count))
-    log.write('Wells with label 1 from '+experiment_name+': ' + str(len(np.where(np.asarray(y) == 1)[0]))+' / '+str(future_count))
     del X_s, X_s_raw, y_s
 
     assert len(X) == len(y)
@@ -1361,17 +1432,21 @@ def get_experiment_metadata(metadata_path: str, experiment_name: str, out_dir: s
 
     plate_metadata = None
     found_experiment = False
-    for l in lines:
-        l = l.strip()
-        l = l.split(';')
+    for line in lines:
+        line = line.strip()
+        l = line.split(';')
+
+        if len(l) == 1:
+            # looks like ';' was not the deliminator. Trying ','.
+            l = line.split(',')
+        # checking if the metadata is in the right format
+        assert len(l) == 18
 
         line_experiment = l[1].lower()
         if line_experiment.startswith(experiment_name.lower()):
             assert not found_experiment
             found_experiment = True
 
-            # checking if the metadata is in the right format
-            assert len(l) == 18
             experiment_id = l[1]
 
             global plate_metadata_cache

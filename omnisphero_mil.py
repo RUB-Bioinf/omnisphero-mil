@@ -37,10 +37,6 @@ from torch.optim import Optimizer
 # On windows, if there's not enough RAM:
 # https://github.com/Spandan-Madan/Pytorch_fine_tuning_Tutorial/issues/10
 
-
-default_source_dir_win = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_win'
-default_out_dir_win_base = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\win'
-
 # default_source_dirs_unix = [
 #     # New CNN
 #     '/mil/oligo-diff/training_data/curated_linux/EFB18',
@@ -149,6 +145,7 @@ def train_model(
         # Well indices for labels. When a bag is loaded from a specific well index, the corresponding label is applied
         label_0_well_indices=loader.default_well_indices_none,
         label_1_well_indices=loader.default_well_indices_none,
+        force_balanced_batch: bool = True,
         # Enable data augmentation?
         augment_train: bool = False, augment_validation: bool = False,
         # Training histogram bins override (if None, every histogram uses dynamic bin sizes)
@@ -233,6 +230,7 @@ def train_model(
 
     protocol_f.write('\n\nWell indices label 0: ' + str(label_0_well_indices))
     protocol_f.write('\nWell indices label 1: ' + str(label_1_well_indices))
+    protocol_f.write('\nForce Balanced Batch: ' + str(force_balanced_batch))
     protocol_f.write('\nTile constraints explained: Minimum number of x [Nuclei, Oligos, Neurons]')
     protocol_f.write('\nTile Constraints label 0: ' + str(tile_constraints_0))
     protocol_f.write('\nTile Constraints label 1: ' + str(tile_constraints_1))
@@ -273,6 +271,7 @@ def train_model(
         batch_dirs=source_dirs,
         max_workers=max_workers,
         include_raw=True,
+        force_balanced_batch=force_balanced_batch,
         channel_inclusions=channel_inclusions,
         constraints_0=tile_constraints_0,
         constraints_1=tile_constraints_1,
@@ -479,6 +478,7 @@ def train_model(
             batch_dirs=sigmoid_validation_dirs,
             max_workers=max_workers,
             include_raw=True,
+            force_balanced_batch=False,
             channel_inclusions=channel_inclusions,
             constraints_0=tile_constraints_0,
             constraints_1=tile_constraints_1,
@@ -907,14 +907,14 @@ def main(debug: bool = False):
         log.add_file('U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\all_logs.txt')
 
         current_max_workers = 6
-        current_sources_dir = [default_source_dir_win]
-        default_out_dir_base = default_out_dir_win_base
+        current_sources_dir = paths.debug_training_dirs_win
+        default_out_dir_base = paths.default_out_dir_win_base
         current_gpu_enabled = False
         current_device_ordinals = models.device_ordinals_local
     else:
         sigmoid_input_dirs = paths.default_sigmoid_validation_dirs_unix
         image_folder = paths.nucleus_predictions_image_folder_unix
-        current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log4/linux/'
+        current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log/linux/'
 
     current_out_dir = default_out_dir_base + os.sep
     os.makedirs(current_out_dir, exist_ok=True)
@@ -930,7 +930,7 @@ def main(debug: bool = False):
         train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                     max_workers=current_max_workers, gpu_enabled=current_gpu_enabled, image_folder=image_folder,
                     device_ordinals=current_device_ordinals,
-                    normalize_enum=7,
+                    normalize_enum=6,
                     training_label=training_label,
                     global_log_dir=current_global_log_dir,
                     save_sigmoid_plot_interval=1,
@@ -942,8 +942,8 @@ def main(debug: bool = False):
                     augment_train=False,
                     tile_constraints_0=loader.default_tile_constraints_nuclei,
                     tile_constraints_1=loader.default_tile_constraints_oligos,
-                    label_1_well_indices=loader.default_well_indices_late,
-                    label_0_well_indices=loader.default_well_indices_early,
+                    label_0_well_indices=loader.default_well_indices_late,
+                    label_1_well_indices=loader.default_well_indices_early,
                     loss_function='mean_square_error',
                     testing_model_enabled=True,
                     writing_metrics_enabled=True,
@@ -1001,14 +1001,14 @@ def main(debug: bool = False):
             # best: binary_cross_entropy
             for o in ['adadelta']:  # ['adam', 'adadelta']:
                 # best: adadelta
-                for p in [0.10, 0.20, 0.3, 0.05, 0.15, 0.25, 0.3, 0.35]:
+                for p in [0.0]:  # [0.3, 0.35, 0.6]:  # [0.10, 0.20, 0.3, 0.05, 0.15, 0.25, 0.3, 0.35]:
                     # best: 0.65 or 0.3
-                    for i in [6]:  # [4, 6, 7, 8]:
+                    for i in [6, 7, 8, 4]:
                         for aug in [[True, True]]:  # , [True, False], [False, True]]:
                             augment_validation = aug[0]
                             augment_train = aug[1]
-                            training_label = 'ep-aug-overlap-' + o + '-n-' + str(i) + '-rp-' + str(
-                                p) + '-l-' + l + '-BMC'
+                            training_label = 'ep-overlap-' + o + '-n-' + str(i) + '-rp-' + str(
+                                p) + '-l-' + l + '-BMC-wholeSphere-forced'
 
                             log.write('Training label: ' + training_label)
                             if os.path.exists(current_out_dir + os.sep + training_label):
@@ -1024,6 +1024,7 @@ def main(debug: bool = False):
                             train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                                         max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
                                         image_folder=image_folder,
+                                        force_balanced_batch=True,
                                         normalize_enum=i,
                                         training_label=training_label,
                                         global_log_dir=current_global_log_dir,
