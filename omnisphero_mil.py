@@ -907,7 +907,7 @@ def main(debug: bool = False):
         log.add_file('U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\all_logs.txt')
 
         current_max_workers = 6
-        current_sources_dir = paths.debug_training_dirs_win
+        current_sources_dir = paths.curated_overlapping_source_dirs_win
         default_out_dir_base = paths.default_out_dir_win_base
         current_gpu_enabled = False
         current_device_ordinals = models.device_ordinals_local
@@ -948,8 +948,8 @@ def main(debug: bool = False):
                     testing_model_enabled=True,
                     writing_metrics_enabled=True,
                     use_hard_negative_mining=False,
-                    # sigmoid_validation_dirs=None
-                    sigmoid_validation_dirs=paths.default_sigmoid_validation_dirs_win
+                    sigmoid_validation_dirs=None
+                    # sigmoid_validation_dirs=paths.default_sigmoid_validation_dirs_win
                     )
     elif debug:
         log.write("Testing all source dirs, if they are trainable!")

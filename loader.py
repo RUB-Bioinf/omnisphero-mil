@@ -1,5 +1,5 @@
 # IMPORTS
-
+import copy
 import json
 import math
 import os
@@ -9,13 +9,15 @@ import threading
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
+from functools import cmp_to_key
 from sys import platform
 from typing import Union
 from zipfile import ZipFile
 
 import matplotlib.pyplot as plt
-import mil_metrics
 import numpy as np
+
+import mil_metrics
 import r
 from util import log
 from util import paths
@@ -26,10 +28,10 @@ from util.utils import get_time_diff
 from util.utils import line_print
 from util.well_metadata import PlateMetadata
 from util.well_metadata import TileMetadata
-####
-# Constants
 from util.well_metadata import extract_well_info
 
+####
+# Constants
 # normalize_enum is an enum to determine normalisation as follows:
 #  0 = no normalisation
 #  1 = normalize every cell between 0 and 255 (8 bit)
@@ -77,6 +79,10 @@ default_well_bmc_threshold_effect = 0.3
 
 default_channel_inclusions_all = [True, True, True]
 default_channel_inclusions_no_neurites = [True, True, False]
+
+# Comparison parameters
+compare_bag_value_weight_oligo = 0.0
+compare_bag_value_weight_tile_count = 1.0
 
 ####
 
@@ -364,11 +370,14 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
     log.write('Wells with label 0 from ' + experiment_name + ': ' + str(bag_count_negative) + ' / ' + str(future_count))
     log.write('Wells with label 1 from ' + experiment_name + ': ' + str(bag_count_positive) + ' / ' + str(future_count))
 
+    max_tile_count = float(max([len(x) for x in X_metadata]))
+    max_oligo_count = float(max([x.count_oligos for xs in X_metadata for x in xs]))
+
     if force_balanced_batch:
         balance_difference = bag_count_positive - bag_count_negative
         log.write('Forcing balance...')
 
-        if bag_count_negative == 0:
+        if bag_count_negative == 0 and bag_count_positive > 0:
             # If there are no negative bags in this batch....
             # there would be no data loaded! This cannot be! So one well is selected at random.
             log.write('... by keeping a single positive well. There were no negatives in this batch.')
@@ -378,6 +387,8 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
             positive_indices = positive_indices.tolist()
             random.shuffle(positive_indices)
             keep_index = positive_indices[0]
+            keep_index = get_most_valuable_bag_index(X_metadata=X_metadata, max_tile_count=max_tile_count,
+                                                     max_oligo_count=max_oligo_count, inverted=False)
 
             # Removing all elements, except the one with the 'keep_index'
             X = [X[keep_index]]
@@ -395,6 +406,8 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
                 positive_indices = positive_indices.tolist()
                 random.shuffle(positive_indices)
                 delete_index = positive_indices[0]
+                delete_index = get_most_valuable_bag_index(X_metadata=X_metadata, max_tile_count=max_tile_count,
+                                                           max_oligo_count=max_oligo_count, inverted=True)
                 # TODO select index by criterium, not randomly
 
                 metadata = X_metadata[delete_index][0]
@@ -415,7 +428,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
 
             bag_count_negative = len(np.where(np.asarray(y) == 0)[0])
             bag_count_positive = len(np.where(np.asarray(y) == 1)[0])
-            assert bag_count_negative == bag_count_positive
+            # assert bag_count_negative == bag_count_positive
         else:
             log.write('No need. Batch is already perfectly balanced. As all things should be.')
 
@@ -433,7 +446,6 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
     log.write("X-size (raw) in memory of " + experiment_name + " alone): " + str(X_s_raw))
 
     del X_s, X_s_raw, y_s
-
     assert len(X) == len(y)
     assert len(X) == len(y_tiles)
     assert len(X) == len(X_raw)
@@ -1442,8 +1454,8 @@ def get_experiment_metadata(metadata_path: str, experiment_name: str, out_dir: s
         # checking if the metadata is in the right format
         assert len(l) == 18
 
-        line_experiment = l[1].lower()
-        if line_experiment.startswith(experiment_name.lower()):
+        line_experiment = l[1].lower().strip()
+        if line_experiment.startswith(experiment_name.lower().strip()):
             assert not found_experiment
             found_experiment = True
 
@@ -1508,6 +1520,65 @@ def get_experiment_metadata(metadata_path: str, experiment_name: str, out_dir: s
 
 
 ####
+
+
+def get_most_valuable_bag_index(X_metadata: [[TileMetadata]], max_tile_count: int, max_oligo_count: int,
+                                inverted: bool = False) -> int:
+    X_metadata = copy.deepcopy(X_metadata)
+    if len(X_metadata) == 0:
+        return -1
+
+    sort_data = [(X_metadata[i], i, max_tile_count, max_oligo_count) for i in range(len(X_metadata))]
+    sort_data = sorted(sort_data, key=cmp_to_key(compare_most_valuable_bag))
+    if inverted:
+        sort_data.reverse()
+
+    selected: int = sort_data[0][1]
+    return selected
+
+
+def compare_most_valuable_bag(component1: ([TileMetadata], int, int, int),
+                              component2: ([TileMetadata], int, int)) -> float:
+    metadata1, index1, max_tile_count1, max_oligo_count1 = component1
+    metadata2, index2, max_tile_count2, max_oligo_count2 = component2
+
+    max_tile_count1 = math.floor(float(max_tile_count1))
+    max_oligo_count1 = math.floor(float(max_oligo_count1))
+    max_tile_count2 = math.floor(float(max_tile_count2))
+    max_oligo_count2 = math.floor(float(max_oligo_count2))
+    assert max_tile_count1 == max_tile_count2
+    assert max_oligo_count1 == max_oligo_count2
+
+    tile_count_max = float(max_tile_count1)
+    oligo_count_max = float(max_oligo_count1)
+
+    tile_count1 = len(metadata1)
+    tile_count2 = len(metadata2)
+    oligo_count1 = sum([x.count_oligos for x in metadata1])
+    oligo_count2 = sum([x.count_oligos for x in metadata2])
+
+    oligo_count_ratio1 = 0.0
+    oligo_count_ratio2 = 0.0
+    tile_count_ratio1 = 0.0
+    tile_count_ratio2 = 0.0
+
+    if tile_count_max > 0:
+        tile_count_ratio1 = float(tile_count1) / float(tile_count_max)
+        tile_count_ratio2 = float(tile_count2) / float(tile_count_max)
+    if oligo_count_max > 0:
+        oligo_count_ratio1 = float(oligo_count1) / float(oligo_count_max)
+        oligo_count_ratio2 = float(oligo_count2) / float(oligo_count_max)
+
+    metadata_ratio1 = math.ceil((
+            tile_count_ratio1 * 100 * compare_bag_value_weight_tile_count + oligo_count_ratio1 * 100 * compare_bag_value_weight_oligo))
+    metadata_ratio2 = math.ceil((
+            tile_count_ratio2 * 100 * compare_bag_value_weight_tile_count + oligo_count_ratio2 * 100 * compare_bag_value_weight_oligo))
+
+    return metadata_ratio1 - metadata_ratio2
+
+
+###
+
 
 if __name__ == '__main__':
     print("This is a loader helper function that has no original main.")

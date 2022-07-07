@@ -48,8 +48,12 @@ default_sigmoid_validation_dirs_unix = [
 ]
 
 default_sigmoid_validation_dirs_win = [
-    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS517',
-    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS411'
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\EFB18',
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS681'
+]
+
+curated_overlapping_source_dirs_win = [
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_win'
 ]
 
 curated_overlapping_source_dirs_unix = [
@@ -137,7 +141,6 @@ curated_overlapping_debug_dirs_unix = [
 # ffmpeg paths:
 ffmpeg_win = 'Z:\\nilfoe\\Python\\omnisphero-mil\\ffmpeg\\win\\ffmpeg.exe'
 ffmpeg_unix = '/bph/home/nilfoe/Python/omnisphero-mil/ffmpeg/unix/ffmpeg-5.0.1-amd64-static/ffmpeg'
-
 
 nucleus_predictions_image_folder_win = 'U:\\bioinfdata\\work\\OmniSphero\\Bilderordner\\'
 nucleus_predictions_image_folder_unix = '/bilderordner'

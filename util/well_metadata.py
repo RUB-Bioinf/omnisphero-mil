@@ -129,6 +129,7 @@ class PlateMetadata:
         plt.xlim([float(self.well_control) - 0.15, float(self.well_max_compound_concentration) + 0.15])
         plt.tight_layout()
 
+        # TODO save as .csv
         plt.savefig(out_name + '.png', dpi=dpi)
         plt.savefig(out_name + '.svg', dpi=dpi, transparent=True)
         plt.savefig(out_name + '.pdf', dpi=dpi)
