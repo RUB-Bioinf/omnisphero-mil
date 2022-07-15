@@ -535,8 +535,8 @@ def main():
     debug = False
     data_saver = True
     render_attention_spheres_enabled = False
-    model_path = None
-    image_folder = None
+
+    unix_out_dir = '/mil/oligo-diff/debug_predictions/endpoint-sigmoid-linux-norm6-mse-bmc2/'
 
     if sys.platform == 'win32':
         debug = True
@@ -562,8 +562,8 @@ def main():
         current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log3/linux-pred/'
         image_folder = paths.nucleus_predictions_image_folder_unix
 
-    print('Log location: '+current_global_log_dir)
-    print('Model path: '+model_path)
+    print('Log location: ' + current_global_log_dir)
+    print('Model path: ' + model_path)
     assert os.path.exists(model_path)
     # assert os.path.exists(current_global_log_dir)
 
@@ -609,7 +609,7 @@ def main():
     else:
         print('Predicting linux batches')
 
-        prediction_dirs_used = [curated_overlapping_source_dirs_unix]
+        prediction_dirs_used = [paths.all_prediction_dirs_unix]
         if debug:
             prediction_dirs_used = [prediction_dirs_used[0][0:3]]
         if data_saver:
@@ -621,7 +621,7 @@ def main():
             log.write(str(i) + '/' + str(len(prediction_dirs_used)) + ' - Predicting: ' + str(prediction_dir))
             try:
                 predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path, bag_paths=prediction_dir,
-                             out_dir='/mil/oligo-diff/debug_predictions/endpoint-sigmoid-linux-norm6-mse-bmc2/',
+                             out_dir=unix_out_dir,
                              global_log_dir=current_global_log_dir,
                              render_attention_spheres_enabled=render_attention_spheres_enabled,
                              render_merged_predicted_tiles_activation_overlays=False,
@@ -631,7 +631,8 @@ def main():
                              hist_bins_override=50,
                              sigmoid_verbose=False,
                              image_folder=image_folder,
-                             # tile_constraints=loader.default_tile_constraints_nuclei,
+                             # tile_constraints=loader.default_tile_constraints_none,
+                             tile_constraints=loader.default_tile_constraints_nuclei,
                              channel_inclusions=loader.default_channel_inclusions_no_neurites,
                              gpu_enabled=False, normalize_enum=normalize_enum, max_workers=20)
             except Exception as e:

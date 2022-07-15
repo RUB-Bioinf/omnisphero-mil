@@ -29,8 +29,27 @@ all_prediction_dirs_win = [
     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux_overlap\\ELS682'
 ]
 
-debug_prediction_dirs_unix = [
-    # New CNN
+all_prediction_dirs_unix = [
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK129_PG',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK153_Calcitriol',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK176_MP',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK177_SR92',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS64_GW39',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS66_SR92',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS127_GW4671',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH56_GW6471',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH55_GW7647',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH44_GW7647',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH26_FU',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS94_PGE2',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK165_PGE2',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS102_SR92',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS104_Calcitriol',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS137_NH-3',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH41_Fu',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS96_GW0742',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS95_GW0742',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS77_GW39',
     '/mil/oligo-diff/training_data/curated_linux_overlap/EFB18',
     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS517',
     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS637',
@@ -38,7 +57,30 @@ debug_prediction_dirs_unix = [
     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS744',
     '/mil/oligo-diff/training_data/curated_linux_overlap/ESM36',
     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS681',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS682'
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS682',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EJK228',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS510',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EMP124',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EMP146',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ESM26'
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK159_BaP',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK180_PG',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK184_NH3',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK198_UA',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK199_UA',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK201_AL08',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK206_UA',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK207_AL08',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS63_GW39',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS78_GW39',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS109_GW0742',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH45_GW7647',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH66_GW7647',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH74_AL08',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH75_AL08',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH76_UA',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH77_UA',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH93_AL08'
 ]
 
 default_sigmoid_validation_dirs_unix = [
@@ -99,7 +141,27 @@ curated_overlapping_source_dirs_unix = [
     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS510',
     '/mil/oligo-diff/training_data/curated_linux_overlap/EMP124',
     '/mil/oligo-diff/training_data/curated_linux_overlap/EMP146',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/ESM26'
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ESM26',
+
+    # Overlapping Experiments from ENDPoiNTs, Jun22
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK159_BaP',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK180_PG',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK184_NH3',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK198_UA',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK199_UA',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK201_AL08',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK206_UA',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK207_AL08',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS63_GW39',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS78_GW39',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS109_GW0742',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH45_GW7647',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH66_GW7647',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH74_AL08',
+    # '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH75_AL08',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH76_UA',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH77_UA',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH93_AL08'
 ]
 
 curated_overlapping_source_dirs_ep_unix = [
@@ -150,7 +212,7 @@ mil_metadata_file_linux = nucleus_predictions_image_folder_unix + os.sep + 'mil_
 
 all_prediction_dirs_win.sort()
 curated_overlapping_source_dirs_unix.sort()
-debug_prediction_dirs_unix.sort()
+all_prediction_dirs_unix.sort()
 debug_prediction_dirs_win.sort()
 default_sigmoid_validation_dirs_unix.sort()
 default_sigmoid_validation_dirs_win.sort()

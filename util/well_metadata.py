@@ -94,7 +94,7 @@ class PlateMetadata:
         plt.plot(doses, responses, linestyle='-', marker='o', color='blue')
         plt.plot(fitted_plot[0], fitted_plot[1], color='lightblue')
         legend_entries = ['Raw Measurements', 'Curve Fit']
-        y_axis_max = float(max(1.0, max(fitted_plot[1])))
+        y_axis_max = float(max(1.0, max(fitted_plot[1]), max(responses)))
 
         bmc_30_plate_concentration = self.interpolate_well_index_to_concentration(bmc_30_plate_well)
         self.plate_bmc30 = bmc_30_plate_concentration

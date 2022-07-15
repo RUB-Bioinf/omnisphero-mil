@@ -920,9 +920,12 @@ def main(debug: bool = False):
     os.makedirs(current_out_dir, exist_ok=True)
 
     # Checking if all specified paths actually exist
-    assert os.path.exists(image_folder)
-    assert np.all([os.path.exists(x) for x in sigmoid_input_dirs])
-    assert np.all([os.path.exists(x) for x in current_sources_dir])
+    # assert os.path.exists(image_folder)
+    # assert np.all([os.path.exists(x) for x in sigmoid_input_dirs])
+    # assert np.all([os.path.exists(x) for x in current_sources_dir])
+    assert check_exists([image_folder])
+    assert check_exists(sigmoid_input_dirs)
+    assert check_exists(current_sources_dir)
 
     log.write('Starting Training...')
     if debug and sys.platform == 'win32':
@@ -1008,7 +1011,7 @@ def main(debug: bool = False):
                             augment_validation = aug[0]
                             augment_train = aug[1]
                             training_label = 'ep-overlap-' + o + '-n-' + str(i) + '-rp-' + str(
-                                p) + '-l-' + l + '-BMC-wholeSphere-forced'
+                                p) + '-l-' + l + '-BMC-wholeSphere-forced-EP'
 
                             log.write('Training label: ' + training_label)
                             if os.path.exists(current_out_dir + os.sep + training_label):
@@ -1050,6 +1053,15 @@ def main(debug: bool = False):
                                         sigmoid_validation_dirs=sigmoid_input_dirs
                                         )
     log.write('Finished every training!')
+
+
+def check_exists(paths: []):
+    ret = True
+    for path in paths:
+        if not os.path.exists(path):
+            log.write('PATH DOES NOT EXIST: ' + path)
+            ret = False
+    return ret
 
 
 if __name__ == '__main__':

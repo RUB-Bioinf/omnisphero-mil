@@ -200,7 +200,7 @@ def prediction_sigmoid_evaluation(X_metadata, y_pred: [np.ndarray], out_dir: str
         del X_metadata_current, y_pred_current
     del X_metadata, y_pred
 
-    # Iterating over the experiment metadata so we can run the sigmoid evaluations
+    # Iterating over the experiment metadata, so we can run the sigmoid evaluations
     sigmoid_score_map = {}
     sigmoid_plot_estimation_map = {}
     sigmoid_instructions_map = {}
@@ -230,7 +230,7 @@ def prediction_sigmoid_evaluation(X_metadata, y_pred: [np.ndarray], out_dir: str
             doses=doses,
             responses=responses,
             verbose=verbose,
-            save_sigmoid_plot=save_sigmoid_plot,
+            save_sigmoid_plot=False,
             out_image_filename=out_image_filename)
 
         sigmoid_score_map[experiment_name] = sigmoid_score

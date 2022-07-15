@@ -314,6 +314,14 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
                 sigmoid_score = str(round(sigmoid_score_map[experiment_name], 4))
                 sigmoid_plot_estimations = sigmoid_plot_estimation_map[experiment_name]
                 sigmoid_plot_fit = sigmoid_plot_fit_map[experiment_name]
+
+                # Saving fit TO CSV
+                sigmoid_out_csv = experiment_dir + os.sep + experiment_name + '-sigmoid_fit' + file_name_suffix + '.csv'
+                f = open(sigmoid_out_csv, 'w')
+                f.write('i;x;y\n')
+                [f.write(str(i) + ';' + str(sigmoid_plot_fit[0][i]) + ';' + str(sigmoid_plot_fit[1][i]) + '\n') for i in
+                 range(len(sigmoid_plot_fit[0]))]
+                f.close()
             else:
                 sigmoid_score = 'Not available.'
 
@@ -358,7 +366,7 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
                     f.write(str(r))
             del w, i, current_well
         f.close()
-        del f, out_csv
+        del f
 
         ##########################################
 
@@ -391,9 +399,18 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
             # Storing the ticks for later
             prediction_ticks.append(ticks)
 
-            # Error Bar
-            error = np.std(predictions, ddof=1) / np.sqrt(np.size(predictions))
-            y_error.append(error)
+            # Error Bar using 'Standard error of the mean'
+            # https://en.wikipedia.org/wiki/Standard_error
+            sdm_error = np.std(predictions, ddof=1) / np.sqrt(np.size(predictions))
+            y_error.append(sdm_error)
+            del sdm_error
+
+        # Writing the errors to CSV
+        f = open(out_csv, 'a')
+        f.write('\nSDM Error;')
+        [f.write(str(i) + ';') for i in y_error]
+        f.close()
+        del f, out_csv
 
         assert len(prediction_entries) == len(well_index_map.keys())
         assert len(y_error) == len(well_index_map.keys())
