@@ -506,25 +506,6 @@ def train_model(
         log.write('Sigmoid validating: Disabled.')
     f.close()
 
-    # Setting up Model
-    log.write('Setting up model.')
-    accuracy_function = 'binary'
-    model = models.BaselineMIL(input_dim=input_dim, device=device,
-                               use_max=model_use_max,
-                               enable_attention=model_enable_attention,
-                               device_ordinals=device_ordinals,
-                               loss_function=loss_function,
-                               accuracy_function=accuracy_function)
-
-    # Saving the raw version of this model
-    torch.save(model.state_dict(), out_dir + 'model.pt')
-    torch.save(model, out_dir + 'model.h5')
-    log.write('Saving trained model to: ' + out_dir + 'model.h5')
-
-    model_optimizer = models.choose_optimizer(model, selection=optimizer)
-    log.write('Finished loading data and model')
-    log.write('Optimizer: ' + str(model_optimizer))
-
     # Data Augmentation
     f = open(out_dir + 'data_augmentation.txt', 'w')
     f.write('## Augmentation Train:\n' + str(augment_train) + '\n\n')
@@ -556,6 +537,28 @@ def train_model(
     del validation_data, test_data
     # test_dl = DataLoader(test_data, batch_size=1, shuffle=True, **loader_kwargs)
 
+    ################
+    # MODEL START
+    ################
+    # Setting up Model
+    log.write('Setting up model.')
+    accuracy_function = 'binary'
+    model = models.BaselineMIL(input_dim=input_dim, device=device,
+                               use_max=model_use_max,
+                               enable_attention=model_enable_attention,
+                               device_ordinals=device_ordinals,
+                               loss_function=loss_function,
+                               accuracy_function=accuracy_function)
+
+    # Saving the raw version of this model
+    torch.save(model.state_dict(), out_dir + 'model.pt')
+    torch.save(model, out_dir + 'model.h5')
+    log.write('Saving trained model to: ' + out_dir + 'model.h5')
+
+    model_optimizer = models.choose_optimizer(model, selection=optimizer)
+    log.write('Finished loading data and model')
+    log.write('Optimizer: ' + str(model_optimizer))
+
     # Callbacks
     callbacks = []
     hnm_callbacks = []
@@ -566,8 +569,6 @@ def train_model(
 
     protocol_f.write('\n\n == Model Information==')
     protocol_f.write('\nDevice Ordinals: ' + str(device_ordinals))
-    protocol_f.write('\nClassification: Use Max: ' + str(model_use_max))
-    protocol_f.write('\nClassification: Use Attention: ' + str(model_enable_attention))
     protocol_f.write('\nInput dim: ' + str(input_dim))
     protocol_f.write('\ntorch Device: ' + str(device))
     protocol_f.write('\nLoss Function: ' + str(loss_function))
@@ -885,7 +886,7 @@ def main(debug: bool = False):
     print('Debug mode: ' + str(debug))
     log.write('Python: ' + str(sys.version_info))
 
-    current_epochs = 650
+    current_epochs = 450
     current_max_workers = 35
     default_out_dir_base = default_out_dir_unix_base
     current_sources_dir = paths.curated_overlapping_source_dirs_unix

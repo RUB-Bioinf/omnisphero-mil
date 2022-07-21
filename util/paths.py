@@ -200,6 +200,10 @@ curated_overlapping_debug_dirs_unix = [
     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS719'
 ]
 
+big_data_praktikum_paths = [
+    '/mil/oligo-diff/training_data/big_data_praktikum/bags'
+]
+
 # ffmpeg paths:
 ffmpeg_win = 'Z:\\nilfoe\\Python\\omnisphero-mil\\ffmpeg\\win\\ffmpeg.exe'
 ffmpeg_unix = '/bph/home/nilfoe/Python/omnisphero-mil/ffmpeg/unix/ffmpeg-5.0.1-amd64-static/ffmpeg'

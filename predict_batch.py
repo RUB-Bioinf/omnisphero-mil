@@ -609,7 +609,13 @@ def main():
     else:
         print('Predicting linux batches')
 
+        out_dir_used = unix_out_dir
         prediction_dirs_used = [paths.all_prediction_dirs_unix]
+
+        # override for big data praktikum
+        prediction_dirs_used = [paths.big_data_praktikum_paths]
+        out_dir_used = '/mil/oligo-diff/training_data/big_data_praktikum/bags/out/'
+
         if debug:
             prediction_dirs_used = [prediction_dirs_used[0][0:3]]
         if data_saver:
@@ -621,7 +627,7 @@ def main():
             log.write(str(i) + '/' + str(len(prediction_dirs_used)) + ' - Predicting: ' + str(prediction_dir))
             try:
                 predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path, bag_paths=prediction_dir,
-                             out_dir=unix_out_dir,
+                             out_dir=out_dir_used,
                              global_log_dir=current_global_log_dir,
                              render_attention_spheres_enabled=render_attention_spheres_enabled,
                              render_merged_predicted_tiles_activation_overlays=False,

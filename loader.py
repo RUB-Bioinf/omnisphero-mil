@@ -342,6 +342,10 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
                 experiment_names.append(experiment_name)
                 well_names.append(well_name)
                 bag_names.append(bag_name)
+
+                log.write('Assumed experiment name (Future #' + str(
+                    i) + '):\n' + experiment_name + ' - ' + well_name + ' <- ' + source_dir,
+                          print_to_console=False, include_in_files=True)
         else:
             log.write('\n' + gct() + 'Error extracting future results: ' + str(e) + '\n')
             tb = traceback.TracebackException.from_exception(e)
@@ -370,8 +374,11 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
     log.write('Wells with label 0 from ' + experiment_name + ': ' + str(bag_count_negative) + ' / ' + str(future_count))
     log.write('Wells with label 1 from ' + experiment_name + ': ' + str(bag_count_positive) + ' / ' + str(future_count))
 
-    max_tile_count = float(max([len(x) for x in X_metadata]))
-    max_oligo_count = float(max([x.count_oligos for xs in X_metadata for x in xs]))
+    max_tile_count = 0
+    max_oligo_count = 0
+    if bag_count_negative + bag_count_positive > 0:
+        max_tile_count = float(max([len(x) for x in X_metadata]))
+        max_oligo_count = float(max([x.count_oligos for xs in X_metadata for x in xs]))
 
     if force_balanced_batch:
         balance_difference = bag_count_positive - bag_count_negative
@@ -544,7 +551,14 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     height = json_data['tileHeight']
     bit_depth = json_data['bit_depth']
     well = json_data['well']
-    experiment_name = zipped_data_name[:zipped_data_name.find('-')]
+
+    if 'experiment_name' in json_data.keys():
+        experiment_name = json_data['experiment_name']
+    else:
+        experiment_name = zipped_data_name[:zipped_data_name.find('-')]
+        log.write(
+            'Interpreting experiment name from file name: "' + zipped_data_name + '" -> "' + experiment_name + '"',
+            print_to_console=False, include_in_files=True)
     bag_name = experiment_name + '-' + well
 
     # Reading metadata for the well, if it exists
@@ -562,6 +576,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     if not os.path.exists(metadata_path):
         log.write('Failed to locate metadata file: ' + metadata_path)
         assert False
+    log.write('Metadata path (exists: True): ' + metadata_path)
 
     plate_metadata_out_path = os.path.dirname(filepath)
     if not sys.platform == 'win32':

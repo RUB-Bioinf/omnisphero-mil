@@ -319,8 +319,16 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
                 sigmoid_out_csv = experiment_dir + os.sep + experiment_name + '-sigmoid_fit' + file_name_suffix + '.csv'
                 f = open(sigmoid_out_csv, 'w')
                 f.write('i;x;y\n')
-                [f.write(str(i) + ';' + str(sigmoid_plot_fit[0][i]) + ';' + str(sigmoid_plot_fit[1][i]) + '\n') for i in
-                 range(len(sigmoid_plot_fit[0]))]
+                if sigmoid_plot_fit is None:
+                    f.write('No sigmoid fit.')
+                else:
+                    try:
+                        [f.write(str(i) + ';' + str(sigmoid_plot_fit[0][i]) + ';' + str(sigmoid_plot_fit[1][i]) + '\n')
+                         for i in range(len(sigmoid_plot_fit[0]))]
+                    except Exception as e:
+                        f.write('FATAL ERROR!\n')
+                        f.write(str(e)+'\n')
+                        f.write(str(e.__class__)+'\n')
                 f.close()
             else:
                 sigmoid_score = 'Not available.'
@@ -576,6 +584,7 @@ def render_attention_histogram(n: np.ndarray, bins: np.ndarray, otsu_index: int,
 
     plt.tight_layout()
     plt.autoscale()
+    os.makedirs(out_dir, exist_ok=True)
     out_file = out_dir + os.sep + filename
 
     for f_format in file_formats:
