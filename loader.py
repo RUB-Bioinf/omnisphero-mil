@@ -74,6 +74,9 @@ default_well_indices_late = [7, 8, 9]
 default_well_indices_very_early = [0, 1, 2, 3]
 default_well_indices_very_late = [8, 9]
 
+default_well_indices_debug_early = [0, 1, 2, 3, 4]
+default_well_indices_debug_late = [5, 6, 7, 8, 9]
+
 default_well_bmc_threshold_control = 0.7
 default_well_bmc_threshold_effect = 0.3
 
@@ -576,7 +579,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     if not os.path.exists(metadata_path):
         log.write('Failed to locate metadata file: ' + metadata_path)
         assert False
-    log.write('Metadata path (exists: True): ' + metadata_path)
+    log.write('Metadata path (exists: True): ' + metadata_path, print_to_console=False, include_in_files=True)
 
     plate_metadata_out_path = os.path.dirname(filepath)
     if not sys.platform == 'win32':
@@ -1262,7 +1265,7 @@ def np_std(n: np.ndarray, axis=None, mean: float = None) -> np.ndarray:
 ####
 
 
-# Takes the read data and labes and creates new bags, so that bags with label 1 contain PERCENTAGE% tiles with label
+# Takes the read data and labels and creates new bags, so that bags with label 1 contain PERCENTAGE% tiles with label
 # 1, while the rest is label 0. This is done by merging two adjacent input bags together.
 # Yes, this discards a lot of tiles
 def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], bag_names: [str],
@@ -1272,6 +1275,10 @@ def repack_bags_merge(X: [np.ndarray], X_raw: [np.ndarray], y: [int], bag_names:
     new_y = []
     new_y_tiles = []
     new_bag_names = []
+
+    assert len(X) == len(X_raw)
+    assert len(X) == len(y)
+    assert len(X) == len(bag_names)
 
     negative_indices = np.where(np.asarray(y) == 0)[0]
     positive_indices = np.where(np.asarray(y) == 1)[0]

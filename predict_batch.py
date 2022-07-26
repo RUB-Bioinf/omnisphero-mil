@@ -39,10 +39,12 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  render_attention_histogram_enabled: bool = False, data_loader_data_saver: bool = False):
     start_time = datetime.now()
     log_label = str(start_time.strftime("%d-%m-%Y-%H-%M-%S"))
+    print(out_dir)
 
     # Setting up log
     global_log_filename = None
     local_log_filename = out_dir + os.sep + 'log_predictions.txt'
+    print('Local Log file: '+str(local_log_filename))
     log.add_file(local_log_filename)
     if global_log_dir is not None:
         global_log_filename = global_log_dir + os.sep + 'log-predictions-' + log_label + '.txt'
@@ -534,7 +536,7 @@ def main():
     print('Platform:' + str(sys.platform))
     debug = False
     data_saver = True
-    render_attention_spheres_enabled = False
+    render_attention_spheres_enabled = True
 
     unix_out_dir = '/mil/oligo-diff/debug_predictions/endpoint-sigmoid-linux-norm6-mse-bmc2/'
 
@@ -614,7 +616,7 @@ def main():
 
         # override for big data praktikum
         prediction_dirs_used = [paths.big_data_praktikum_paths]
-        out_dir_used = '/mil/oligo-diff/training_data/big_data_praktikum/bags/out/'
+        out_dir_used = '/bph/puredata4/bioinfdata/work/OmniSphero/BigDataOligodendrocyteMILPreprocessing/CourseData/TestRun_150_offset_75/output/predictions'
 
         if debug:
             prediction_dirs_used = [prediction_dirs_used[0][0:3]]

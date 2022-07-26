@@ -84,14 +84,13 @@ all_prediction_dirs_unix = [
 ]
 
 default_sigmoid_validation_dirs_unix = [
-    '/mil/oligo-diff/training_data/curated_linux/EFB18',
-    '/mil/oligo-diff/training_data/curated_linux/ELS681',
-    '/mil/oligo-diff/training_data/curated_linux/ESM36'
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EJK228',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ELS681',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/ESM36'
 ]
 
 default_sigmoid_validation_dirs_win = [
-    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\EFB18',
-    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS681'
+    'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_win\\sigmoid'
 ]
 
 curated_overlapping_source_dirs_win = [
@@ -201,7 +200,8 @@ curated_overlapping_debug_dirs_unix = [
 ]
 
 big_data_praktikum_paths = [
-    '/mil/oligo-diff/training_data/big_data_praktikum/bags'
+    '/bph/puredata4/bioinfdata/work/OmniSphero/BigDataOligodendrocyteMILPreprocessing/CourseData/TestRun_150_offset_75/output/EJK228',
+    '/bph/puredata4/bioinfdata/work/OmniSphero/BigDataOligodendrocyteMILPreprocessing/CourseData/TestRun_150_offset_75/output/ELS510'
 ]
 
 # ffmpeg paths:

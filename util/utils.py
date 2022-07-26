@@ -304,10 +304,13 @@ def line_print(text: str, max_width: int = None, cutoff_too_large_text: bool = T
 ###########################
 
 # shuffle data and split into training and validation set
-def shuffle_and_split_data(dataset, split_percentage: float, _recursion_depth: int = 0):
+def shuffle_and_split_data(dataset, split_percentage: float, _recursion_depth: int = 0, additional_dataset: [] = None):
     '''
     Takes a dataset that was converted from bags to batches and shuffles and splits it into two splits (train/val)
     '''
+    if additional_dataset is None:
+        additional_dataset = []
+
     split_percentage_index = math.ceil(split_percentage * len(dataset))
     indices = np.arange(len(dataset))
     random.shuffle(indices)
@@ -339,8 +342,14 @@ def shuffle_and_split_data(dataset, split_percentage: float, _recursion_depth: i
                                                                                    'distribution. Trying again.')
 
             del training_ds, validation_ds
-            return shuffle_and_split_data(dataset, split_percentage, _recursion_depth + 1)
+            return shuffle_and_split_data(dataset=dataset, split_percentage=split_percentage,
+                                          _recursion_depth=_recursion_depth + 1, additional_dataset=additional_dataset)
 
+    # Adding the forced 'additional dataset' to the validation set
+    if len(additional_dataset) > 1 and validation_ds is not None:
+        validation_ds.extend(additional_dataset)
+
+    # clearing memory and returning results
     del dataset
     return training_ds, validation_ds
 
@@ -445,6 +454,60 @@ def otsu_8bit_image(gray):
             final_thresh = t
             final_value = value
     return final_thresh
+
+
+def extract_experiments_from_bags(X, X_metadata, X_raw, y, y_tiles, bag_names, experiment_names):
+    # TODO add parameter data class
+
+    assert len(X) == len(X_metadata)
+    assert len(X) == len(X_raw)
+    assert len(X) == len(y)
+    assert len(X) == len(y_tiles)
+    assert len(X) == len(bag_names)
+
+    X_extracted = []
+    X_metadata_extracted = []
+    X_raw_extracted = []
+    y_extracted = []
+    y_tiles_extracted = []
+    bag_names_extracted = []
+    log.write('Checking ' + str(len(X)) + ' bags if they contain sigmoid experiments: ' + str(experiment_names))
+
+    if len(experiment_names) == 0:
+        log.write('No need. No sigmoid experiments loaded.')
+        return X, X_metadata, X_extracted, X_metadata_extracted
+
+    print('')
+    sigmoid_overlap_indices = []
+    for i in range(len(X)):
+        line_print('Checking bag: ' + str(i + 1) + '/' + str(len(X)), include_in_log=False)
+
+        current_experiment = X_metadata[i][0].experiment_name
+        log.write(current_experiment)
+        if current_experiment in experiment_names:
+            sigmoid_overlap_indices.append(i)
+
+            X_extracted.append(X[i])
+            X_metadata_extracted.append(X_metadata[i])
+            X_raw_extracted.append(X_raw[i])
+            y_extracted.append(y[i])
+            y_tiles_extracted.append(y_tiles[i])
+            bag_names_extracted.append(bag_names[i])
+    print('')
+    del i
+    assert len(sigmoid_overlap_indices) == len(X_extracted)
+
+    log.write('Finished overlap detection. Number of bags to be extracted: ' + str(len(sigmoid_overlap_indices)))
+    X = [j for i, j in enumerate(X) if i not in sigmoid_overlap_indices]
+    X_metadata = [j for i, j in enumerate(X_metadata) if i not in sigmoid_overlap_indices]
+    X_raw = [j for i, j in enumerate(X_raw) if i not in sigmoid_overlap_indices]
+    y = [j for i, j in enumerate(y) if i not in sigmoid_overlap_indices]
+    y_tiles = [j for i, j in enumerate(y_tiles) if i not in sigmoid_overlap_indices]
+    bag_names = [j for i, j in enumerate(bag_names) if i not in sigmoid_overlap_indices]
+    log.write('Finished extraction.')
+    assert len(X) == len(X_metadata)
+
+    return X, X_metadata, X_raw, y, y_tiles, bag_names, X_extracted, X_metadata_extracted, X_raw_extracted, y_extracted, y_tiles_extracted, bag_names_extracted
 
 
 if __name__ == "__main__":

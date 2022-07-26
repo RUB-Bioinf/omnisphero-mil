@@ -37,79 +37,6 @@ from torch.optim import Optimizer
 # On windows, if there's not enough RAM:
 # https://github.com/Spandan-Madan/Pytorch_fine_tuning_Tutorial/issues/10
 
-# default_source_dirs_unix = [
-#     # New CNN
-#     '/mil/oligo-diff/training_data/curated_linux/EFB18',
-#     '/mil/oligo-diff/training_data/curated_linux/ESM36',
-#     '/mil/oligo-diff/training_data/curated_linux/ELS411',
-#     '/mil/oligo-diff/training_data/curated_linux/ELS517',
-#     '/mil/oligo-diff/training_data/curated_linux/ELS637',
-#     '/mil/oligo-diff/training_data/curated_linux/ELS681',
-#     '/mil/oligo-diff/training_data/curated_linux/ELS682',
-#     '/mil/oligo-diff/training_data/curated_linux/ELS719',
-#     '/mil/oligo-diff/training_data/curated_linux/ELS744'
-# ]
-#
-# all_source_dirs_win = [
-#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\EFB18',
-#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ESM36',
-#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS411',
-#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS517',
-#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS637',
-#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS681',
-#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS682',
-#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS719',
-#     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_linux\\ELS744'
-# ]
-#
-# ideal_source_dirs_unix = [
-#     # New CNN
-#     '/mil/oligo-diff/training_data/curated_linux/ESM36',
-#     '/mil/oligo-diff/training_data/curated_linux/ELS517',
-#     '/mil/oligo-diff/training_data/curated_linux/ELS637',
-#     '/mil/oligo-diff/training_data/curated_linux/ELS681',
-#     '/mil/oligo-diff/training_data/curated_linux/ELS682'
-# ]
-#
-# curated_overlapping_source_dirs_unix = [
-#     # Overlapping Experiments from the ENDpoiNTs dataset #1
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK129_PG',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK153_Calcitriol',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK176_MP',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK177_SR92',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS64_GW39',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS66_SR92',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS127_GW4671',
-#
-#     # Overlapping Experiments from the ENDpoiNTs dataset #2
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH56_GW6471',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH55_GW7647',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH44_GW7647',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH26_FU',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS94_PGE2',
-#
-#     # Potentially difficult plates.
-#     # The oligo channel is quite overexposed in those.
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK165_PGE2',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS102_SR92',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS104_Calcitriol',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS137_NH-3',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH41_Fu',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS96_GW0742',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS95_GW0742',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS77_GW39',
-#
-#     # Overlapping Experiments from the original dataset
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/EFB18',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS517',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS637',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS719',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS744',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/ESM36',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS681',
-#     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS682'
-# ]
-
 # normalize_enum is an enum to determine normalisation as follows:
 # 0 = no normalisation
 # 1 = normalize every cell between 0 and 255 (8 bit)
@@ -145,7 +72,7 @@ def train_model(
         # Well indices for labels. When a bag is loaded from a specific well index, the corresponding label is applied
         label_0_well_indices=loader.default_well_indices_none,
         label_1_well_indices=loader.default_well_indices_none,
-        force_balanced_batch: bool = True,
+        force_balanced_batch: bool = False,
         # Enable data augmentation?
         augment_train: bool = False, augment_validation: bool = False,
         # Training histogram bins override (if None, every histogram uses dynamic bin sizes)
@@ -164,7 +91,7 @@ def train_model(
         # Test the model on the test data, after training?
         testing_model_enabled: bool = True,
         # Sigmoid validation dirs
-        sigmoid_validation_dirs: [str] = None
+        sigmoid_validation_dirs: [str] = None, reserve_sigmoid_experiments_as_test_data: bool = True
 ):
     if out_dir is None:
         out_dir = source_dirs[0] + os.sep + 'training_results'
@@ -172,6 +99,9 @@ def train_model(
         data_split_percentage_test = 0
     if sigmoid_validation_dirs is None:
         sigmoid_validation_dirs = []
+        reserve_sigmoid_experiments_as_test_data = False
+    sigmoid_evaluation_enabled = len(sigmoid_validation_dirs) > 0
+    repack_percentage = float(repack_percentage)
 
     # This param is unused and should not be "True"!
     if type(label_0_well_indices) == list and type(label_1_well_indices) == list:
@@ -236,6 +166,14 @@ def train_model(
     protocol_f.write('\nTile Constraints label 1: ' + str(tile_constraints_1))
     protocol_f.write('\nChannel_inclusions: ' + str(channel_inclusions))
 
+    protocol_f.write('\n\n == Data splitting Params: ==')
+    protocol_f.write('\nData Split percentage: Validation: ' + str(data_split_percentage_validation))
+    protocol_f.write('\nData Split percentage: Test: ' + str(data_split_percentage_test))
+    protocol_f.write('\nNumber of Sigmoid Validation Dirs: ' + str(len(sigmoid_validation_dirs)))
+    protocol_f.write('\nSigmoid validation enabled: ' + str(sigmoid_evaluation_enabled))
+    protocol_f.write(
+        '\nSigmoid validation experiments reserved for test data: ' + str(reserve_sigmoid_experiments_as_test_data))
+
     global_log_filename = None
     local_log_filename = out_dir + os.sep + 'log.txt'
     log.add_file(local_log_filename)
@@ -245,7 +183,7 @@ def train_model(
         log.add_file(global_log_filename)
     log.diagnose()
 
-    # PREPARING DATA
+    # PREPARING DATA AND DIRECTORIES
     protocol_f.write('\n\n == Directories ==')
     protocol_f.write('\nGlobal Log dir: ' + str(global_log_dir))
     protocol_f.write('\nLocal Log dir: ' + str(local_log_filename))
@@ -285,7 +223,7 @@ def train_model(
     log.write('Loading finished in: ' + str(loading_time))
 
     # Finished loading. Printing errors and data
-    f = open(out_dir + 'loading_errors.txt', 'w')
+    f = open(out_dir + 'loading-errors.txt', 'w')
     for e in errors:
         f.write(str(e))
         f.write('\n')
@@ -352,7 +290,7 @@ def train_model(
     protocol_f.write("\ny-size in memory: " + str(y_s))
 
     # Printing more data
-    f = open(out_dir + 'loading_data_statistics.csv', 'w')
+    f = open(out_dir + 'loading-data-statistics.csv', 'w')
     for i in range(len(loaded_files_list)):
         f.write(str(i) + ';' + loaded_files_list[i] + '\n')
     f.write('\n\nX-size in memory: ' + str(X_s))
@@ -366,19 +304,125 @@ def train_model(
         protocol_f.write('\n\nWARNING: NO DATA LOADED')
         return
 
+    #######################
+    # Loading sigmoid data
+    #######################
+    f = open(out_dir + 'sigmoid-validation.txt', 'w')
+    data_loader_sigmoid: DataLoader = None
+    X_metadata_sigmoid: [np.ndarray] = None
+    sigmoid_experiment_names = []
+    X_sigmoid = []
+    if sigmoid_evaluation_enabled:
+        f.write('Sigmoid validation dirs:' + str(sigmoid_validation_dirs))
+
+        X_sigmoid, _, _, _, X_metadata_sigmoid, _, sigmoid_experiment_names, _, errors_sigmoid, loaded_files_list_sigmoid = loader.load_bags_json_batch(
+            batch_dirs=sigmoid_validation_dirs,
+            max_workers=max_workers,
+            include_raw=True,
+            force_balanced_batch=False,
+            channel_inclusions=channel_inclusions,
+            constraints_0=loader.default_tile_constraints_nuclei,
+            constraints_1=loader.default_tile_constraints_nuclei,
+            label_0_well_indices=loader.default_well_indices_all,
+            label_1_well_indices=loader.default_well_indices_all,
+            normalize_enum=normalize_enum)
+        X_sigmoid = [np.einsum('bhwc->bchw', bag) for bag in X_sigmoid]
+
+        sigmoid_temp_entry = None
+        f.write('\n\nList of loaded sigmoid files:')
+        for sigmoid_temp_entry in loaded_files_list_sigmoid:
+            f.write('\n' + str(sigmoid_temp_entry))
+            # log.write('Loaded sigmoid file: ' + str(sigmoid_temp_entry))
+        f.write('\n\nList of sigmoid loading errors:')
+        for sigmoid_temp_entry in errors_sigmoid:
+            f.write('\n' + str(sigmoid_temp_entry))
+            log.write('Loading error: ' + str(sigmoid_temp_entry))
+
+        if not reserve_sigmoid_experiments_as_test_data:
+            sigmoid_experiment_names = []
+
+        del errors_sigmoid, loaded_files_list_sigmoid, sigmoid_temp_entry
+    else:
+        reserve_sigmoid_experiments_as_test_data = False
+        sigmoid_experiment_names = []
+        f.write('Not sigmoid validating.')
+        log.write('Sigmoid validating: Disabled.')
+    f.close()
+
+    # Data Augmentation
+    # TODO move this somewhere else?
+    f = open(out_dir + 'data-augmentation.txt', 'w')
+    f.write('## Augmentation Train:\n' + str(augment_train) + '\n\n')
+    f.write('## Augmentation Validation:\n' + str(augment_validation) + '\n\n')
+    f.close()
+
+    #######################
+    # SETTING UP DATASETS
+    #######################
+    X_sigmoid_overlap = None
+    y_sigmoid_overlap = None
+    y_tiles_sigmoid_overlap = None
+    bag_names_sigmoid_overlap = None
+    X_raw_sigmoid_overlap = None
+
+    f = open(out_dir + 'reserve_sigmoid_as_test_data.txt', 'w')
+    f.write('## Param sigmoid_evaluation_enabled: ' + str(sigmoid_evaluation_enabled) + '\n')
+    f.write(
+        '## Param reserve_sigmoid_experiments_as_test_data: ' + str(reserve_sigmoid_experiments_as_test_data) + '\n')
+    f.write('## Param testing_model_enabled: ' + str(testing_model_enabled) + '\n\n')
+    if sigmoid_evaluation_enabled and reserve_sigmoid_experiments_as_test_data and testing_model_enabled:
+        f.write('Number of bags loaded: ' + str(len(X)) + '\n')
+        f.write('Names of sigmoid experiments loaded: ' + str(sigmoid_experiment_names) + 'n')
+        f.write('Number of sigmoid experiments loaded: ' + str(len(sigmoid_experiment_names)) + 'n')
+
+        X, X_metadata, X_raw, y, y_tiles, bag_names, X_sigmoid_overlap, X_metadata_sigmoid_overlap, X_raw_sigmoid_overlap, y_sigmoid_overlap, y_tiles_sigmoid_overlap, bag_names_sigmoid_overlap = utils.extract_experiments_from_bags(
+            X=X, X_raw=X_raw, y=y, y_tiles=y_tiles, bag_names=bag_names, X_metadata=X_metadata,
+            experiment_names=sigmoid_experiment_names)
+
+        f.write('\n\n### AFTER SIGMOID REMOVAL ###\n\n')
+        f.write('Bags (without sigmoid experiments): ' + str(len(X)) + '\n')
+        f.write('Bags (only sigmoid experiments): ' + str(len(X_sigmoid_overlap)) + '\n')
+
+    else:
+        f.write('Not running.\n')
+    f.close()
+
     # Printing Bag Shapes
     # Setting up bags for MIL
     if repack_percentage > 0:
         log.write('Repack percent: ' + str(
             repack_percentage) +
                   '.That means, to build a positive bag, x% of positive samples will be added to a negative bag.')
-        print_bag_metadata(X, y, y_tiles, bag_names, file_name=out_dir + 'bags_pre-packed.csv')
+        print_bag_metadata(X, y, y_tiles, bag_names, file_name=out_dir + 'bags-pre-packed.csv')
         X, X_raw, y, y_tiles, bag_names = loader.repack_bags_merge(X=X, X_raw=X_raw, y=y, bag_names=bag_names,
                                                                    repack_percentage=repack_percentage,
                                                                    positive_bag_min_samples=positive_bag_min_samples)
-        print_bag_metadata(X, y, y_tiles, bag_names, file_name=out_dir + 'bags_repacked.csv')
+        print_bag_metadata(X, y, y_tiles, bag_names, file_name=out_dir + 'bags-repacked.csv')
+
+        if sigmoid_evaluation_enabled and reserve_sigmoid_experiments_as_test_data:
+            print_bag_metadata(X_sigmoid_overlap, y_sigmoid_overlap, y_tiles_sigmoid_overlap, bag_names_sigmoid_overlap,
+                               file_name=out_dir + 'bags-pre-packed_sigmoid_overlap.csv')
+            X_sigmoid_overlap, X_raw_sigmoid_overlap, y_sigmoid_overlap, y_tiles_sigmoid_overlap, bag_names_sigmoid_overlap = loader.repack_bags_merge(
+                X=X_sigmoid_overlap, X_raw=X_raw_sigmoid_overlap, y=y_sigmoid_overlap,
+                bag_names=bag_names_sigmoid_overlap,
+                repack_percentage=repack_percentage,
+                positive_bag_min_samples=positive_bag_min_samples)
+            print_bag_metadata(X_sigmoid_overlap, y_sigmoid_overlap, y_tiles_sigmoid_overlap, bag_names_sigmoid_overlap,
+                               file_name=out_dir + 'bags-repacked_sigmoid_overlap.csv')
     else:
         print_bag_metadata(X, y, y_tiles, bag_names, file_name=out_dir + 'bags.csv')
+        if sigmoid_evaluation_enabled and reserve_sigmoid_experiments_as_test_data and testing_model_enabled:
+            print_bag_metadata(X_sigmoid_overlap, y_sigmoid_overlap, y_tiles_sigmoid_overlap, bag_names_sigmoid_overlap,
+                               file_name=out_dir + 'bags.csv_sigmoid_overlap')
+
+    # After repacking, X_metadata is invalidated! Must be deleted now.
+    del X_metadata
+    # Removing unnecessary sigmoid overlap data
+    del bag_names_sigmoid_overlap, X_raw_sigmoid_overlap
+
+    #########################
+    # WRITING BAG PREVIEWS
+    #########################
 
     # Writing whole bags to the disc
     preview_indexes_positive = list(np.where(np.asarray(y) == 1)[0])
@@ -419,18 +463,27 @@ def train_model(
             plt.imsave(preview_image_filename, out_image)
             line_print('Saved: ' + preview_image_filename)
 
-    # Setting up datasets
     dataset, input_dim = loader.convert_bag_to_batch(bags=X, labels=y, y_tiles=y_tiles)
+    dataset_sigmoid_overlap = None
     log.write('Detected input dim: ' + str(input_dim))
-    del X, y, preview_indexes, preview_indexes_positive, preview_indexes_negative
+    if sigmoid_evaluation_enabled and reserve_sigmoid_experiments_as_test_data and testing_model_enabled:
+        dataset_sigmoid_overlap, _ = loader.convert_bag_to_batch(bags=X_sigmoid_overlap, labels=y_sigmoid_overlap,
+                                                                 y_tiles=y_tiles_sigmoid_overlap)
 
-    # Train-Test Split
+    del X, y, preview_indexes, preview_indexes_positive, preview_indexes_negative
+    del X_sigmoid_overlap, y_sigmoid_overlap, y_tiles_sigmoid_overlap
+
+    ##########################
+    # RANDOM TRAIN TEST SPLIT
+    ##########################
     log.write('Shuffling and splitting data into train and val set')
     test_data = []
     training_data, validation_data = shuffle_and_split_data(dataset,
+                                                            additional_dataset=None,
                                                             split_percentage=data_split_percentage_validation)
     if data_split_percentage_test is not None and data_split_percentage_test > 0:
         training_data, test_data = shuffle_and_split_data(dataset=training_data,
+                                                          additional_dataset=dataset_sigmoid_overlap,
                                                           split_percentage=data_split_percentage_test)
     del dataset
 
@@ -464,57 +517,9 @@ def train_model(
         # model.cuda()
         loader_kwargs = {'num_workers': data_loader_cores, 'pin_memory': data_loader_pin_memory}
 
-    #######################
-    # Loading sigmoid data
-    #######################
-    f = open(out_dir + 'sigmoid_validation.txt', 'w')
-    data_loader_sigmoid: DataLoader = None
-    X_metadata_sigmoid: [np.ndarray] = None
-    sigmoid_evaluation_enabled = len(sigmoid_validation_dirs) > 0
-    if sigmoid_evaluation_enabled:
-        f.write('Sigmoid validation dirs:' + str(sigmoid_validation_dirs))
-
-        X_sigmoid, _, _, _, X_metadata_sigmoid, _, _, _, errors_sigmoid, loaded_files_list_sigmoid = loader.load_bags_json_batch(
-            batch_dirs=sigmoid_validation_dirs,
-            max_workers=max_workers,
-            include_raw=True,
-            force_balanced_batch=False,
-            channel_inclusions=channel_inclusions,
-            constraints_0=tile_constraints_0,
-            constraints_1=tile_constraints_1,
-            label_0_well_indices=loader.default_well_indices_all,
-            label_1_well_indices=loader.default_well_indices_all,
-            normalize_enum=normalize_enum)
-        X_sigmoid = [np.einsum('bhwc->bchw', bag) for bag in X_sigmoid]
-
-        sigmoid_temp_entry = None
-        f.write('\n\nList of loaded sigmoid files:')
-        for sigmoid_temp_entry in loaded_files_list_sigmoid:
-            f.write('\n' + str(sigmoid_temp_entry))
-            # log.write('Loaded sigmoid file: ' + str(sigmoid_temp_entry))
-        f.write('\n\nList of sigmoid loading errors:')
-        for sigmoid_temp_entry in errors_sigmoid:
-            f.write('\n' + str(sigmoid_temp_entry))
-            log.write('Loading error: ' + str(sigmoid_temp_entry))
-
-        dataset_sigmoid, _ = loader.convert_bag_to_batch(bags=X_sigmoid, labels=None, y_tiles=None)
-        data_loader_sigmoid = DataLoader(dataset_sigmoid, batch_size=1, shuffle=False, **loader_kwargs)
-
-        del X_sigmoid, errors_sigmoid, loaded_files_list_sigmoid, dataset_sigmoid, sigmoid_temp_entry
-    else:
-        f.write('Not sigmoid validating.')
-        log.write('Sigmoid validating: Disabled.')
-    f.close()
-
-    # Data Augmentation
-    f = open(out_dir + 'data_augmentation.txt', 'w')
-    f.write('## Augmentation Train:\n' + str(augment_train) + '\n\n')
-    f.write('## Augmentation Validation:\n' + str(augment_validation) + '\n\n')
-    f.close()
-
-    ################
-    # DATA START
-    ################
+    #############################
+    # SETTING UP DATA LOADERS
+    #############################
     # Data Generators
     test_dl = None
     if augment_train:
@@ -535,7 +540,11 @@ def train_model(
     if data_split_percentage_test is not None:
         test_dl = DataLoader(test_data, batch_size=1, shuffle=shuffle_data_loaders, **loader_kwargs)
     del validation_data, test_data
-    # test_dl = DataLoader(test_data, batch_size=1, shuffle=True, **loader_kwargs)
+
+    if sigmoid_evaluation_enabled:
+        dataset_sigmoid, _ = loader.convert_bag_to_batch(bags=X_sigmoid, labels=None, y_tiles=None)
+        data_loader_sigmoid = DataLoader(dataset_sigmoid, batch_size=1, shuffle=False, **loader_kwargs)
+        del dataset_sigmoid, X_sigmoid
 
     ################
     # MODEL START
@@ -938,7 +947,7 @@ def main(debug: bool = False):
                     training_label=training_label,
                     global_log_dir=current_global_log_dir,
                     save_sigmoid_plot_interval=1,
-                    repack_percentage=0.1,
+                    repack_percentage=0.0,
                     model_use_max=False,
                     model_enable_attention=True,
                     positive_bag_min_samples=0,
@@ -946,14 +955,14 @@ def main(debug: bool = False):
                     augment_train=False,
                     tile_constraints_0=loader.default_tile_constraints_nuclei,
                     tile_constraints_1=loader.default_tile_constraints_oligos,
-                    label_0_well_indices=loader.default_well_indices_late,
-                    label_1_well_indices=loader.default_well_indices_early,
+                    label_1_well_indices=loader.default_well_indices_debug_early,
+                    label_0_well_indices=loader.default_well_indices_debug_late,
                     loss_function='mean_square_error',
                     testing_model_enabled=True,
                     writing_metrics_enabled=True,
                     use_hard_negative_mining=False,
-                    sigmoid_validation_dirs=None
-                    # sigmoid_validation_dirs=paths.default_sigmoid_validation_dirs_win
+                    # sigmoid_validation_dirs=None
+                    sigmoid_validation_dirs=paths.default_sigmoid_validation_dirs_win
                     )
     elif debug:
         log.write("Testing all source dirs, if they are trainable!")
@@ -1012,7 +1021,7 @@ def main(debug: bool = False):
                             augment_validation = aug[0]
                             augment_train = aug[1]
                             training_label = 'ep-overlap-' + o + '-n-' + str(i) + '-rp-' + str(
-                                p) + '-l-' + l + '-BMC-wholeSphere-forced-EP'
+                                p) + '-l-' + l + '-BMC-wholeSphere-reserved'
 
                             log.write('Training label: ' + training_label)
                             if os.path.exists(current_out_dir + os.sep + training_label):
@@ -1046,6 +1055,7 @@ def main(debug: bool = False):
                                         model_use_max=False,
                                         model_enable_attention=True,
                                         positive_bag_min_samples=4,
+                                        reserve_sigmoid_experiments_as_test_data=True,
                                         tile_constraints_0=loader.default_tile_constraints_nuclei,
                                         tile_constraints_1=loader.default_tile_constraints_oligos,
                                         label_1_well_indices=loader.default_well_bmc_threshold_control,
