@@ -194,14 +194,63 @@ def train_model(
     print('==== List of Source Dirs: =====')
     [print(str(p)) for p in source_dirs]
 
-    protocol_f.write('\n\n == GPU Status ==')
+    protocol_f.write('\n\n == GPU Status ==\n')
     for line in hardware.print_gpu_status(silent=True):
         protocol_f.write(line)
         log.write(line)
 
-    ################
-    # LOADING START
-    ################
+    ########################
+    # LOADING SIGMOID DATA
+    ########################
+    f = open(out_dir + 'sigmoid-validation.txt', 'w')
+    data_loader_sigmoid: DataLoader = None
+    X_metadata_sigmoid: [np.ndarray] = None
+    sigmoid_experiment_names = []
+    X_sigmoid = []
+    if sigmoid_evaluation_enabled:
+        f.write('Sigmoid validation dirs:' + str(sigmoid_validation_dirs))
+
+        X_sigmoid, _, _, _, X_metadata_sigmoid, _, sigmoid_experiment_names, _, errors_sigmoid, loaded_files_list_sigmoid = loader.load_bags_json_batch(
+            batch_dirs=sigmoid_validation_dirs,
+            max_workers=max_workers,
+            include_raw=True,
+            force_balanced_batch=False,
+            channel_inclusions=channel_inclusions,
+            constraints_0=loader.default_tile_constraints_nuclei,
+            constraints_1=loader.default_tile_constraints_nuclei,
+            label_0_well_indices=loader.default_well_indices_all,
+            label_1_well_indices=loader.default_well_indices_all,
+            normalize_enum=normalize_enum)
+        X_sigmoid = [np.einsum('bhwc->bchw', bag) for bag in X_sigmoid]
+
+        sigmoid_temp_entry = None
+        f.write('\n\nList of loaded sigmoid files:')
+        for sigmoid_temp_entry in loaded_files_list_sigmoid:
+            f.write('\n' + str(sigmoid_temp_entry))
+            # log.write('Loaded sigmoid file: ' + str(sigmoid_temp_entry))
+        f.write('\n\nList of sigmoid loading errors:')
+        for sigmoid_temp_entry in errors_sigmoid:
+            f.write('\n' + str(sigmoid_temp_entry))
+            log.write('Loading error: ' + str(sigmoid_temp_entry))
+
+        if not reserve_sigmoid_experiments_as_test_data:
+            sigmoid_experiment_names = []
+
+        del errors_sigmoid, loaded_files_list_sigmoid, sigmoid_temp_entry
+    else:
+        reserve_sigmoid_experiments_as_test_data = False
+        sigmoid_experiment_names = []
+        f.write('Not sigmoid validating.')
+        log.write('Sigmoid validating: Disabled.')
+    f.close()
+
+    ##############################
+    # LOADING TRAINING DATA START
+    ##############################
+    unrestricted_experiments_override = None
+    if sigmoid_evaluation_enabled and reserve_sigmoid_experiments_as_test_data and testing_model_enabled:
+        unrestricted_experiments_override = sigmoid_experiment_names
+
     # TODO Write well / label mapping to protocol file!
     loading_start_time = datetime.now()
     # X_full, y_full, y_tiles_full, X_raw_full, X_metadata, bag_names_full, experiment_names_full, well_names_full, error_list, loaded_files_list_full
@@ -215,6 +264,7 @@ def train_model(
         constraints_1=tile_constraints_1,
         label_0_well_indices=label_0_well_indices,
         label_1_well_indices=label_1_well_indices,
+        unrestricted_experiments_override=unrestricted_experiments_override,
         normalize_enum=normalize_enum)
     X = [np.einsum('bhwc->bchw', bag) for bag in X]
     X_raw = [np.einsum('bhwc->bchw', bag) for bag in X_raw]
@@ -269,7 +319,7 @@ def train_model(
                                                vmin=-3.0, vmax=3.0, normalize_enum=normalize_enum)
 
         del current_x
-    del preview_indices, preview_indices_0, preview_indices_1
+    del preview_indices, preview_indices_0, preview_indices_1, unrestricted_experiments_override
     print('\n')
 
     # Calculating Bag Size and possibly inverting labels
@@ -304,51 +354,6 @@ def train_model(
         protocol_f.write('\n\nWARNING: NO DATA LOADED')
         return
 
-    #######################
-    # Loading sigmoid data
-    #######################
-    f = open(out_dir + 'sigmoid-validation.txt', 'w')
-    data_loader_sigmoid: DataLoader = None
-    X_metadata_sigmoid: [np.ndarray] = None
-    sigmoid_experiment_names = []
-    X_sigmoid = []
-    if sigmoid_evaluation_enabled:
-        f.write('Sigmoid validation dirs:' + str(sigmoid_validation_dirs))
-
-        X_sigmoid, _, _, _, X_metadata_sigmoid, _, sigmoid_experiment_names, _, errors_sigmoid, loaded_files_list_sigmoid = loader.load_bags_json_batch(
-            batch_dirs=sigmoid_validation_dirs,
-            max_workers=max_workers,
-            include_raw=True,
-            force_balanced_batch=False,
-            channel_inclusions=channel_inclusions,
-            constraints_0=loader.default_tile_constraints_nuclei,
-            constraints_1=loader.default_tile_constraints_nuclei,
-            label_0_well_indices=loader.default_well_indices_all,
-            label_1_well_indices=loader.default_well_indices_all,
-            normalize_enum=normalize_enum)
-        X_sigmoid = [np.einsum('bhwc->bchw', bag) for bag in X_sigmoid]
-
-        sigmoid_temp_entry = None
-        f.write('\n\nList of loaded sigmoid files:')
-        for sigmoid_temp_entry in loaded_files_list_sigmoid:
-            f.write('\n' + str(sigmoid_temp_entry))
-            # log.write('Loaded sigmoid file: ' + str(sigmoid_temp_entry))
-        f.write('\n\nList of sigmoid loading errors:')
-        for sigmoid_temp_entry in errors_sigmoid:
-            f.write('\n' + str(sigmoid_temp_entry))
-            log.write('Loading error: ' + str(sigmoid_temp_entry))
-
-        if not reserve_sigmoid_experiments_as_test_data:
-            sigmoid_experiment_names = []
-
-        del errors_sigmoid, loaded_files_list_sigmoid, sigmoid_temp_entry
-    else:
-        reserve_sigmoid_experiments_as_test_data = False
-        sigmoid_experiment_names = []
-        f.write('Not sigmoid validating.')
-        log.write('Sigmoid validating: Disabled.')
-    f.close()
-
     # Data Augmentation
     # TODO move this somewhere else?
     f = open(out_dir + 'data-augmentation.txt', 'w')
@@ -365,15 +370,15 @@ def train_model(
     bag_names_sigmoid_overlap = None
     X_raw_sigmoid_overlap = None
 
-    f = open(out_dir + 'reserve_sigmoid_as_test_data.txt', 'w')
+    f = open(out_dir + 'reserve-sigmoid-as-test-data.txt', 'w')
     f.write('## Param sigmoid_evaluation_enabled: ' + str(sigmoid_evaluation_enabled) + '\n')
     f.write(
         '## Param reserve_sigmoid_experiments_as_test_data: ' + str(reserve_sigmoid_experiments_as_test_data) + '\n')
     f.write('## Param testing_model_enabled: ' + str(testing_model_enabled) + '\n\n')
     if sigmoid_evaluation_enabled and reserve_sigmoid_experiments_as_test_data and testing_model_enabled:
         f.write('Number of bags loaded: ' + str(len(X)) + '\n')
-        f.write('Names of sigmoid experiments loaded: ' + str(sigmoid_experiment_names) + 'n')
-        f.write('Number of sigmoid experiments loaded: ' + str(len(sigmoid_experiment_names)) + 'n')
+        f.write('Names of sigmoid experiments loaded: ' + str(sigmoid_experiment_names) + '\n')
+        f.write('Number of sigmoid experiments loaded: ' + str(len(sigmoid_experiment_names)) + '\n')
 
         X, X_metadata, X_raw, y, y_tiles, bag_names, X_sigmoid_overlap, X_metadata_sigmoid_overlap, X_raw_sigmoid_overlap, y_sigmoid_overlap, y_tiles_sigmoid_overlap, bag_names_sigmoid_overlap = utils.extract_experiments_from_bags(
             X=X, X_raw=X_raw, y=y, y_tiles=y_tiles, bag_names=bag_names, X_metadata=X_metadata,
@@ -382,7 +387,6 @@ def train_model(
         f.write('\n\n### AFTER SIGMOID REMOVAL ###\n\n')
         f.write('Bags (without sigmoid experiments): ' + str(len(X)) + '\n')
         f.write('Bags (only sigmoid experiments): ' + str(len(X_sigmoid_overlap)) + '\n')
-
     else:
         f.write('Not running.\n')
     f.close()
@@ -413,7 +417,7 @@ def train_model(
         print_bag_metadata(X, y, y_tiles, bag_names, file_name=out_dir + 'bags.csv')
         if sigmoid_evaluation_enabled and reserve_sigmoid_experiments_as_test_data and testing_model_enabled:
             print_bag_metadata(X_sigmoid_overlap, y_sigmoid_overlap, y_tiles_sigmoid_overlap, bag_names_sigmoid_overlap,
-                               file_name=out_dir + 'bags.csv_sigmoid_overlap')
+                               file_name=out_dir + 'bags-sigmoid-overlap-csv')
 
     # After repacking, X_metadata is invalidated! Must be deleted now.
     del X_metadata
@@ -656,6 +660,11 @@ def train_model(
             test_dir = out_dir + 'metrics' + os.sep + 'performance-test-data' + os.sep
             test_model(model, model_save_path_best, model_optimizer, data_loader=test_dl, out_dir=test_dir, X_raw=X_raw,
                        bag_names=bag_names, y_tiles=y_tiles)
+
+    ############################
+    # PREDICTING THE TEST DATA
+    ############################
+    # TODO implement
 
     ########################
     # HARD NEGATIVE MINING

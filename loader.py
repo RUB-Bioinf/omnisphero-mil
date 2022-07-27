@@ -99,6 +99,7 @@ plate_metadata_cache = {}
 
 def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: int, include_raw: bool = True,
                          channel_inclusions=None, constraints_0=None, constraints_1=None,
+                         unrestricted_experiments_override: [str] = None,
                          force_balanced_batch: bool = True, label_0_well_indices=None, label_1_well_indices=None):
     if label_1_well_indices is None:
         label_1_well_indices = default_well_indices_none
@@ -123,6 +124,11 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
     log.write('Tile Constraints label 1: ' + str(constraints_1))
     log.write('Channel Inclusions: ' + str(channel_inclusions))
 
+    if unrestricted_experiments_override is None:
+        unrestricted_experiments_override = []
+    else:
+        log.write('Unrestricted experiments override: ' + str(unrestricted_experiments_override))
+
     X_full = None
     X_raw_full = None
     y_full = None
@@ -135,7 +141,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
     well_names_full = []
 
     # Checking if all the paths exist
-    # we do this first, as to avoid unnessesary loading just to see that a path does not exist later on
+    # we do this first, as to avoid unnecessary loading just to see that a path does not exist later on
     all_paths_exist = True
     for i in range(len(batch_dirs)):
         current_dir = batch_dirs[i]
@@ -163,6 +169,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
                 constraints_0=constraints_0,
                 constraints_1=constraints_1,
                 gp_max=len(batch_dirs),
+                unrestricted_experiments_override=unrestricted_experiments_override,
                 include_raw=include_raw)
 
             # Adding results to the respective lists
@@ -228,17 +235,25 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
     assert len(X_full) == len(bag_names_full)
     assert len(X_full) == len(X_metadata_full)
 
-    return X_full, y_full, y_tiles_full, X_raw_full, X_metadata_full, bag_names_full, experiment_names_full, well_names_full, error_list, loaded_files_list_full
+    experiment_names_full_unique = []
+    for experiment_name in experiment_names_full:
+        if experiment_name not in experiment_names_full_unique:
+            experiment_names_full_unique.append(experiment_name)
+
+    return X_full, y_full, y_tiles_full, X_raw_full, X_metadata_full, bag_names_full, experiment_names_full_unique, well_names_full, error_list, loaded_files_list_full
 
 
 # Main Loading function
 def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label_0_well_indices: [int],
                    channel_inclusions: [bool], label_1_well_indices: [int], constraints_1: [int], constraints_0: [int],
-                   force_balanced_batch: bool = True,
+                   force_balanced_batch: bool = True, unrestricted_experiments_override: [str] = None,
                    gp_current: int = 1, gp_max: int = 1, include_raw: bool = True):
     files = os.listdir(source_dir)
     log.write('[' + str(gp_current) + '/' + str(gp_max) + '] Loading from source: ' + source_dir)
     loaded_files_list = []
+
+    if unrestricted_experiments_override is None:
+        unrestricted_experiments_override = []
 
     terminal_columns = None
     if platform == "linux" or platform == "linux2":
@@ -267,6 +282,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
                                      constraints_0,
                                      constraints_1,
                                      channel_inclusions,
+                                     unrestricted_experiments_override,
                                      include_raw
                                      )
             future_list.append(future)
@@ -286,6 +302,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
                                      constraints_0,
                                      constraints_1,
                                      channel_inclusions,
+                                     unrestricted_experiments_override,
                                      include_raw
                                      )
             future_list.append(future)
@@ -383,7 +400,14 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
         max_tile_count = float(max([len(x) for x in X_metadata]))
         max_oligo_count = float(max([x.count_oligos for xs in X_metadata for x in xs]))
 
-    if force_balanced_batch:
+    # Overriding forcing balance!
+    force_balanced_batch_overwritten = False
+    if force_balanced_batch and experiment_name in unrestricted_experiments_override:
+        log.write('Forcing balance...')
+        log.write('... OVERWRITTEN! This experiment will not force balance!')
+        force_balanced_batch_overwritten = True
+
+    if force_balanced_batch and not force_balanced_batch_overwritten:
         balance_difference = bag_count_positive - bag_count_negative
         log.write('Forcing balance...')
 
@@ -475,7 +499,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
 
 def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_indices: [int],
                         label_1_well_indices: [int], constraints_0: [int], constraints_1: [int],
-                        channel_inclusions: [bool], include_raw: bool = True):
+                        channel_inclusions: [bool], unrestricted_experiments_override: [str], include_raw: bool = True):
     if worker_verbose:
         log.write('Unzipping and reading json: ' + filepath)
     threading.current_thread().setName('Unzipping & Reading JSON: ' + filepath)
@@ -497,6 +521,7 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_i
                                                                                             channel_inclusions=channel_inclusions,
                                                                                             constraints_1=constraints_1,
                                                                                             constraints_0=constraints_0,
+                                                                                            unrestricted_experiments_override=unrestricted_experiments_override,
                                                                                             include_raw=include_raw)
 
     if worker_verbose:
@@ -511,7 +536,7 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_i
 
 def read_JSON_file(filepath: str, worker_verbose: bool, normalize_enum: int, label_0_well_indices: [int],
                    label_1_well_indices: [int], constraints_0: [int], constraints_1: [int],
-                   channel_inclusions: [bool], include_raw: bool = True):
+                   channel_inclusions: [bool], unrestricted_experiments_override: [str], include_raw: bool = True):
     if worker_verbose:
         log.write('Reading json: ' + filepath)
 
@@ -525,6 +550,7 @@ def read_JSON_file(filepath: str, worker_verbose: bool, normalize_enum: int, lab
                       normalize_enum=normalize_enum, label_0_well_indices=label_0_well_indices,
                       label_1_well_indices=label_1_well_indices, include_raw=include_raw,
                       channel_inclusions=channel_inclusions, json_data=data,
+                      unrestricted_experiments_override=unrestricted_experiments_override,
                       constraints_1=constraints_1, constraints_0=constraints_0)
 
 
@@ -533,6 +559,7 @@ def read_JSON_file(filepath: str, worker_verbose: bool, normalize_enum: int, lab
 
 def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: bool, normalize_enum: int,
                label_0_well_indices: [int], label_1_well_indices: [int], constraints_1: [int], constraints_0: [int],
+               unrestricted_experiments_override: [str],
                channel_inclusions: [bool], include_raw: bool = True) -> (np.ndarray, int, [int], np.ndarray, str):
     # Setting up arrays
     X = []
@@ -540,6 +567,13 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     X_metadata = []
     label = None
     y_tiles = None
+
+    # Somehow, if 'include_raw' is false, nothing will be loaded. Why?
+    # TODO FIXME
+    assert include_raw
+
+    if unrestricted_experiments_override is None:
+        unrestricted_experiments_override=[]
 
     # Renaming the thread, so profilers can keep up
     threading.current_thread().setName('Parsing JSON: ' + zipped_data_name)
@@ -563,6 +597,10 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
             'Interpreting experiment name from file name: "' + zipped_data_name + '" -> "' + experiment_name + '"',
             print_to_console=False, include_in_files=True)
     bag_name = experiment_name + '-' + well
+
+    if experiment_name in unrestricted_experiments_override:
+        log.write('Experiment name in unrestricted override. Removing restrictions.')
+        # TODO if there are constraints later, you can adjust those here in a future version.
 
     # Reading metadata for the well, if it exists
     well_image_width: int = 5520
@@ -935,7 +973,9 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
                 pass
 
         # Checking the 'tegredy of the bag and its samples
-        assert len(X) == len(X_raw)
+        if include_raw:
+            assert len(X) == len(X_raw)
+
         assert len(X) == len(y_tiles)
         assert (label == 0 or label == 1)
 

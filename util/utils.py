@@ -475,7 +475,7 @@ def extract_experiments_from_bags(X, X_metadata, X_raw, y, y_tiles, bag_names, e
 
     if len(experiment_names) == 0:
         log.write('No need. No sigmoid experiments loaded.')
-        return X, X_metadata, X_extracted, X_metadata_extracted
+        return X, X_metadata, X_raw, y, y_tiles, bag_names, X_extracted, X_metadata_extracted, X_raw_extracted, y_extracted, y_tiles_extracted, bag_names_extracted
 
     print('')
     sigmoid_overlap_indices = []
@@ -483,7 +483,7 @@ def extract_experiments_from_bags(X, X_metadata, X_raw, y, y_tiles, bag_names, e
         line_print('Checking bag: ' + str(i + 1) + '/' + str(len(X)), include_in_log=False)
 
         current_experiment = X_metadata[i][0].experiment_name
-        log.write(current_experiment)
+        # log.write(current_experiment)
         if current_experiment in experiment_names:
             sigmoid_overlap_indices.append(i)
 
