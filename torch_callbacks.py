@@ -88,7 +88,7 @@ class EarlyStopping(BaseTorchCallback):
         return 'Early Stopping. Metric: "' + self.metric + ". Threshold: " + str(self.epoch_threshold)
 
 
-class UnreasonableLossCallback(BaseTorchCallback):
+class SpikingLossCallback(BaseTorchCallback):
 
     def __init__(self, loss_max: float = 15.0, tolerance: int = 15):
         super().__init__()

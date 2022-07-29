@@ -235,12 +235,12 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
     assert len(X_full) == len(bag_names_full)
     assert len(X_full) == len(X_metadata_full)
 
-    experiment_names_full_unique = []
+    experiment_names_unique = []
     for experiment_name in experiment_names_full:
-        if experiment_name not in experiment_names_full_unique:
-            experiment_names_full_unique.append(experiment_name)
+        if experiment_name not in experiment_names_unique:
+            experiment_names_unique.append(experiment_name)
 
-    return X_full, y_full, y_tiles_full, X_raw_full, X_metadata_full, bag_names_full, experiment_names_full_unique, well_names_full, error_list, loaded_files_list_full
+    return X_full, y_full, y_tiles_full, X_raw_full, X_metadata_full, bag_names_full, experiment_names_full,experiment_names_unique, well_names_full, error_list, loaded_files_list_full
 
 
 # Main Loading function

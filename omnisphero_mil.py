@@ -15,6 +15,7 @@ import loader
 import mil_metrics
 import models
 import omnisphero_mining
+import predict_batch
 import r
 import torch_callbacks
 import video_render_ffmpeg
@@ -62,6 +63,9 @@ def train_model(
         global_log_dir: str = None, optimizer: str = 'adam',
         # Clamp Loss function
         clamp_min: float = None, clamp_max: float = None,
+        # Callback configurations
+        stop_when_spiking_loss: bool = True,
+        early_stopping_enabled: bool = True,
         # Tile shuffling
         loading_preview_rate: float = 0.5,
         repack_percentage: float = 0.0,
@@ -91,7 +95,10 @@ def train_model(
         # Test the model on the test data, after training?
         testing_model_enabled: bool = True,
         # Sigmoid validation dirs
-        sigmoid_validation_dirs: [str] = None, reserve_sigmoid_experiments_as_test_data: bool = True
+        sigmoid_validation_dirs: [str] = None, reserve_sigmoid_experiments_as_test_data: bool = True,
+        # After training, should the model be run on input experiments again?
+        predict_training_data_afterwards: bool = False,
+        predict_sigmoid_data_afterwards: bool = False
 ):
     if out_dir is None:
         out_dir = source_dirs[0] + os.sep + 'training_results'
@@ -190,6 +197,8 @@ def train_model(
     protocol_f.write('\nOut dir: ' + str(out_dir))
     protocol_f.write('\nMetrics dir: ' + str(metrics_dir))
     protocol_f.write('\nPreview tiles: ' + str(loading_preview_dir))
+    protocol_f.write('\nPredict training input data afterwards: ' + str(predict_training_data_afterwards))
+    protocol_f.write('\nPredict sigmoid input data afterwards: ' + str(predict_sigmoid_data_afterwards))
 
     print('==== List of Source Dirs: =====')
     [print(str(p)) for p in source_dirs]
@@ -210,7 +219,7 @@ def train_model(
     if sigmoid_evaluation_enabled:
         f.write('Sigmoid validation dirs:' + str(sigmoid_validation_dirs))
 
-        X_sigmoid, _, _, _, X_metadata_sigmoid, _, sigmoid_experiment_names, _, errors_sigmoid, loaded_files_list_sigmoid = loader.load_bags_json_batch(
+        X_sigmoid, _, _, _, X_metadata_sigmoid, _, _, sigmoid_experiment_names, _, errors_sigmoid, loaded_files_list_sigmoid = loader.load_bags_json_batch(
             batch_dirs=sigmoid_validation_dirs,
             max_workers=max_workers,
             include_raw=True,
@@ -253,8 +262,7 @@ def train_model(
 
     # TODO Write well / label mapping to protocol file!
     loading_start_time = datetime.now()
-    # X_full, y_full, y_tiles_full, X_raw_full, X_metadata, bag_names_full, experiment_names_full, well_names_full, error_list, loaded_files_list_full
-    X, y, y_tiles, X_raw, X_metadata, bag_names, _, _, errors, loaded_files_list = loader.load_bags_json_batch(
+    X, y, y_tiles, X_raw, X_metadata, bag_names, _, _, _, errors, loaded_files_list = loader.load_bags_json_batch(
         batch_dirs=source_dirs,
         max_workers=max_workers,
         include_raw=True,
@@ -564,9 +572,10 @@ def train_model(
                                accuracy_function=accuracy_function)
 
     # Saving the raw version of this model
+    untrained_model_path = out_dir + os.sep + 'model.h5'
     torch.save(model.state_dict(), out_dir + 'model.pt')
-    torch.save(model, out_dir + 'model.h5')
-    log.write('Saving trained model to: ' + out_dir + 'model.h5')
+    torch.save(model, untrained_model_path)
+    log.write('Saving trained model to: ' + untrained_model_path)
 
     model_optimizer = models.choose_optimizer(model, selection=optimizer)
     log.write('Finished loading data and model')
@@ -575,10 +584,12 @@ def train_model(
     # Callbacks
     callbacks = []
     hnm_callbacks = []
-    callbacks.append(torch_callbacks.EarlyStopping(epoch_threshold=int(epochs / 5 + 1)))
-    callbacks.append(torch_callbacks.UnreasonableLossCallback(loss_max=40.0))
-    hnm_callbacks.append(torch_callbacks.EarlyStopping(epoch_threshold=int(epochs / 5 + 1)))
-    hnm_callbacks.append(torch_callbacks.UnreasonableLossCallback(loss_max=40.0))
+    if stop_when_spiking_loss:
+        callbacks.append(torch_callbacks.SpikingLossCallback(loss_max=40.0))
+        hnm_callbacks.append(torch_callbacks.SpikingLossCallback(loss_max=40.0))
+    if early_stopping_enabled:
+        hnm_callbacks.append(torch_callbacks.EarlyStopping(epoch_threshold=int(epochs / 5 + 1)))
+        callbacks.append(torch_callbacks.EarlyStopping(epoch_threshold=int(epochs / 5 + 1)))
 
     protocol_f.write('\n\n == Model Information==')
     protocol_f.write('\nDevice Ordinals: ' + str(device_ordinals))
@@ -608,7 +619,9 @@ def train_model(
         'Start of training for ' + str(epochs) + ' epochs. Devices: ' + str(device_ordinals) + '. GPU enabled: ' + str(
             gpu_enabled))
     log.write('Training: "' + training_label + '"!')
-    history, history_keys, model_save_path_best = models.fit(model=model, optimizer=model_optimizer, epochs=epochs,
+    history, history_keys, model_save_path_best = models.fit(model=model,
+                                                             optimizer=model_optimizer,
+                                                             epochs=epochs,
                                                              training_data=train_dl,
                                                              validation_data=validation_dl,
                                                              out_dir_base=out_dir,
@@ -621,7 +634,8 @@ def train_model(
                                                              save_sigmoid_plot_interval=save_sigmoid_plot_interval,
                                                              data_loader_sigmoid=data_loader_sigmoid,
                                                              X_metadata_sigmoid=X_metadata_sigmoid,
-                                                             clamp_min=clamp_min, clamp_max=clamp_max,
+                                                             clamp_min=clamp_min,
+                                                             clamp_max=clamp_max,
                                                              callbacks=callbacks)
     log.write('Finished training!')
 
@@ -631,22 +645,32 @@ def train_model(
         training_data = None
         train_dl = None
 
+    # Checking how many epochs have actually passed. If more than 100, the fitted line will be printed!
+    epochs_passed = len(history)
+    include_line_fit = False
+    if epochs_passed > 100:
+        include_line_fit = True
+
     if writing_metrics_enabled:
         log.write('Plotting and saving loss and acc plots...')
         mil_metrics.write_history(history, history_keys, metrics_dir)
-        mil_metrics.plot_losses(history, metrics_dir, include_raw=True, include_tikz=True, clamp=2.0)
-        mil_metrics.plot_accuracy(history, metrics_dir, include_raw=True, include_tikz=True)
-        mil_metrics.plot_accuracy_tiles(history, metrics_dir, include_raw=True, include_tikz=True)
-        mil_metrics.plot_accuracies(history, metrics_dir, include_tikz=True)
-        mil_metrics.plot_dice_scores(history, metrics_dir, include_tikz=True)
-        mil_metrics.plot_sigmoid_scores(history, metrics_dir, include_tikz=True)
+        mil_metrics.plot_losses(history, metrics_dir, include_raw=True, include_tikz=True, clamp=2.0,
+                                include_line_fit=include_line_fit)
+        mil_metrics.plot_accuracy(history, metrics_dir, include_raw=True, include_tikz=True,
+                                  include_line_fit=include_line_fit)
+        mil_metrics.plot_accuracy_tiles(history, metrics_dir, include_raw=True, include_tikz=True,
+                                        include_line_fit=include_line_fit)
+        mil_metrics.plot_accuracies(history, metrics_dir, include_tikz=True, include_line_fit=include_line_fit)
+        mil_metrics.plot_dice_scores(history, metrics_dir, include_tikz=True, include_line_fit=include_line_fit)
+        mil_metrics.plot_sigmoid_scores(history, metrics_dir, include_tikz=True, include_line_fit=include_line_fit)
         mil_metrics.plot_binary_roc_curves(history, metrics_dir, include_tikz=True)
 
         if model.enable_attention:
-            mil_metrics.plot_attetion_otsu_threshold(history, metrics_dir, label=1, include_tikz=True)
+            mil_metrics.plot_attention_otsu_threshold(history, metrics_dir, label=1, include_tikz=True)
             mil_metrics.plot_attention_entropy(history, metrics_dir, label=1, include_tikz=True)
-            mil_metrics.plot_attetion_otsu_threshold(history, metrics_dir, label=0, include_tikz=True)
+            mil_metrics.plot_attention_otsu_threshold(history, metrics_dir, label=0, include_tikz=True)
             mil_metrics.plot_attention_entropy(history, metrics_dir, label=0, include_tikz=True)
+    del include_line_fit
 
     ##################
     # TESTING START
@@ -660,11 +684,6 @@ def train_model(
             test_dir = out_dir + 'metrics' + os.sep + 'performance-test-data' + os.sep
             test_model(model, model_save_path_best, model_optimizer, data_loader=test_dl, out_dir=test_dir, X_raw=X_raw,
                        bag_names=bag_names, y_tiles=y_tiles)
-
-    ############################
-    # PREDICTING THE TEST DATA
-    ############################
-    # TODO implement
 
     ########################
     # HARD NEGATIVE MINING
@@ -722,12 +741,15 @@ def train_model(
         f.write('\nTraining data training bag mult: ' + str(hnm_new_bag_percentage))
         f.write('\nTraining data new bag count: ' + str(n_clusters))
         f.close()
+        del f
 
         # Saving new bags to disk
         sample_preview.save_hnm_bags(mined_out_dir + 'bags' + os.sep, new_bags, new_bags_raw, new_bag_names)
 
         print('Fitting a new model using HNM bags!')
-        history, history_keys, model_save_path_best = models.fit(model=model, optimizer=model_optimizer, epochs=epochs,
+        history, history_keys, model_save_path_best = models.fit(model=model,
+                                                                 optimizer=model_optimizer,
+                                                                 epochs=epochs,
                                                                  training_data=train_dl,
                                                                  validation_data=validation_dl,
                                                                  out_dir_base=mined_out_dir,
@@ -738,7 +760,8 @@ def train_model(
                                                                  checkpoint_interval=None,
                                                                  sigmoid_video_render_enabled=sigmoid_video_render_enabled,
                                                                  render_fps=render_fps,
-                                                                 clamp_min=clamp_min, clamp_max=clamp_max,
+                                                                 clamp_min=clamp_min,
+                                                                 clamp_max=clamp_max,
                                                                  bag_names=None,
                                                                  # TODO add bag names
                                                                  callbacks=hnm_callbacks)
@@ -748,20 +771,29 @@ def train_model(
         metrics_dir = mined_out_dir + os.sep + 'metrics' + os.sep
         os.makedirs(metrics_dir, exist_ok=True)
 
+        epochs_passed = len(history)
+        include_line_fit = False
+        if epochs_passed > 100:
+            include_line_fit = True
+
         mil_metrics.write_history(history, history_keys, metrics_dir)
-        mil_metrics.plot_losses(history, metrics_dir, include_raw=True, include_tikz=True, clamp=2.0)
-        mil_metrics.plot_accuracy(history, metrics_dir, include_raw=True, include_tikz=True)
-        mil_metrics.plot_accuracy_tiles(history, metrics_dir, include_raw=True, include_tikz=True)
-        mil_metrics.plot_accuracies(history, metrics_dir, include_tikz=True)
-        mil_metrics.plot_dice_scores(history, metrics_dir, include_tikz=True)
-        mil_metrics.plot_sigmoid_scores(history, metrics_dir, include_tikz=True)
+        mil_metrics.plot_losses(history, metrics_dir, include_raw=True, include_tikz=True, clamp=2.0,
+                                include_line_fit=include_line_fit)
+        mil_metrics.plot_accuracy(history, metrics_dir, include_raw=True, include_tikz=True,
+                                  include_line_fit=include_line_fit)
+        mil_metrics.plot_accuracy_tiles(history, metrics_dir, include_raw=True, include_tikz=True,
+                                        include_line_fit=include_line_fit)
+        mil_metrics.plot_accuracies(history, metrics_dir, include_tikz=True, include_line_fit=include_line_fit)
+        mil_metrics.plot_dice_scores(history, metrics_dir, include_tikz=True, include_line_fit=include_line_fit)
+        mil_metrics.plot_sigmoid_scores(history, metrics_dir, include_tikz=True, include_line_fit=include_line_fit)
         mil_metrics.plot_binary_roc_curves(history, metrics_dir, include_tikz=True)
 
         if model.enable_attention:
-            mil_metrics.plot_attetion_otsu_threshold(history, metrics_dir, label=1, include_tikz=True)
+            mil_metrics.plot_attention_otsu_threshold(history, metrics_dir, label=1, include_tikz=True)
             mil_metrics.plot_attention_entropy(history, metrics_dir, label=1, include_tikz=True)
-            mil_metrics.plot_attetion_otsu_threshold(history, metrics_dir, label=0, include_tikz=True)
+            mil_metrics.plot_attention_otsu_threshold(history, metrics_dir, label=0, include_tikz=True)
             mil_metrics.plot_attention_entropy(history, metrics_dir, label=0, include_tikz=True)
+        del include_line_fit
 
         # Testing HNM models on test data
         log.write('Testing HNM best model on validation and test data to determine performance')
@@ -772,21 +804,74 @@ def train_model(
             test_dir = mined_out_dir + 'metrics' + os.sep + 'performance-test-data' + os.sep
             test_model(model, model_save_path_best, model_optimizer, data_loader=test_dl, out_dir=test_dir, X_raw=X_raw,
                        bag_names=bag_names, y_tiles=y_tiles)
-
-    del train_dl, training_data
+    # Finished HARD NEGATIVE MINING at this point
 
     ##################################
     # FINISHED TRAINING - Cleaning up
     ##################################
     log.write("Finished training and testing for this run. Job's done!")
+    del train_dl, training_data
     del validation_dl, test_dl, X_raw, y_tiles
 
+    ############################
+    # PREDICTING THE TEST DATA
+    ############################
+    prediction_paths: [[str]] = []
+    prediction_labels: [str] = []
+    if predict_training_data_afterwards:
+        prediction_paths.append(source_dirs)
+        prediction_labels.append('training_experiments')
+    if predict_sigmoid_data_afterwards and sigmoid_evaluation_enabled and len(sigmoid_validation_dirs) > 0:
+        prediction_paths.append(sigmoid_validation_dirs)
+        prediction_labels.append('training_experiments')
+
+    for (prediction_path, prediction_label) in zip(prediction_paths, prediction_labels):
+        log.write('\n\n==== PREDICTING DATA TO TEST THE NEW MODEL ====', include_timestamp=False)
+        log.write('\n ## ' + training_label + ' => ' + prediction_label + ' ##\n\n', include_timestamp=False)
+
+        prediction_out_path = out_dir + os.sep + 'post_predictions_' + prediction_label + os.sep
+        os.makedirs(prediction_out_path, exist_ok=True)
+
+        # Calculating every path one at a time to save on system resources
+        for path in prediction_path:
+            predict_batch.predict_path(
+                # (Re-) using the best model that was just calculated:
+                model_save_path=untrained_model_path,
+                checkpoint_file=model_save_path_best,
+                bag_paths=[path],
+                out_dir=prediction_out_path,
+                gpu_enabled=gpu_enabled,
+                channel_inclusions=channel_inclusions,
+
+                # (Re-) using the same normalization settings and other directories. Now used for predictions.
+                normalize_enum=normalize_enum,
+                max_workers=max_workers,
+                image_folder=image_folder,
+                global_log_dir=global_log_dir,
+
+                # Setting the tile constraints to the default prediction settings
+                tile_constraints=loader.default_tile_constraints_nuclei,
+
+                # deciding what to render:
+                render_merged_predicted_tiles_activation_overlays=False,
+                render_attention_histogram_enabled=True,
+                render_attention_cell_distributions=False,
+                render_dose_response_curves_enabled=True,
+
+                # misc settings
+                sigmoid_verbose=False,
+                clear_global_logs=False
+            )
+
+        del prediction_path, prediction_label
+
+    ##################################
+    # CLEAN UP EVERYTHING ELSE
+    ##################################
     log.remove_file(local_log_filename)
     if global_log_dir is not None:
         log.remove_file(global_log_filename)
     log.clear_files()
-    del f
-
     # Run finished
     # Noting more to do beyond this point
 
@@ -962,6 +1047,10 @@ def main(debug: bool = False):
                     positive_bag_min_samples=0,
                     augment_validation=False,
                     augment_train=False,
+                    predict_sigmoid_data_afterwards=True,
+                    predict_training_data_afterwards=False,
+                    stop_when_spiking_loss=False,
+                    early_stopping_enabled=False,
                     tile_constraints_0=loader.default_tile_constraints_nuclei,
                     tile_constraints_1=loader.default_tile_constraints_oligos,
                     label_1_well_indices=loader.default_well_indices_debug_early,
@@ -970,6 +1059,7 @@ def main(debug: bool = False):
                     testing_model_enabled=True,
                     writing_metrics_enabled=True,
                     use_hard_negative_mining=False,
+                    reserve_sigmoid_experiments_as_test_data=True,
                     # sigmoid_validation_dirs=None
                     sigmoid_validation_dirs=paths.default_sigmoid_validation_dirs_win
                     )
@@ -1003,6 +1093,8 @@ def main(debug: bool = False):
                         model_use_max=False,
                         augment_validation=False,
                         augment_train=False,
+                        predict_sigmoid_data_afterwards=True,
+                        predict_training_data_afterwards=False,
                         max_workers=27,
                         optimizer='adadelta',
                         loss_function='binary_cross_entropy',
@@ -1050,6 +1142,8 @@ def main(debug: bool = False):
                                         normalize_enum=i,
                                         training_label=training_label,
                                         global_log_dir=current_global_log_dir,
+                                        predict_sigmoid_data_afterwards=True,
+                                        predict_training_data_afterwards=False,
                                         data_split_percentage_validation=0.25,
                                         data_split_percentage_test=0.15,
                                         use_hard_negative_mining=False,

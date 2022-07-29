@@ -19,7 +19,6 @@ from util import log
 from util import paths
 from util import utils
 from util.omnisphero_data_loader import OmniSpheroDataLoader
-from util.paths import curated_overlapping_source_dirs_unix
 from util.paths import debug_prediction_dirs_win
 from util.paths import default_out_dir_unix_base
 from util.utils import line_print
@@ -36,7 +35,10 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  render_dose_response_curves_enabled: bool = True, hist_bins_override=None,
                  render_merged_predicted_tiles_activation_overlays: bool = False, gpu_enabled: bool = False,
                  render_attention_cell_distributions: bool = False,
-                 render_attention_histogram_enabled: bool = False, data_loader_data_saver: bool = False):
+                 render_attention_histogram_enabled: bool = False,
+                 data_loader_data_saver: bool = False,
+                 clear_global_logs: bool = True,
+                 ):
     start_time = datetime.now()
     log_label = str(start_time.strftime("%d-%m-%Y-%H-%M-%S"))
     print(out_dir)
@@ -44,7 +46,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
     # Setting up log
     global_log_filename = None
     local_log_filename = out_dir + os.sep + 'log_predictions.txt'
-    print('Local Log file: '+str(local_log_filename))
+    print('Local Log file: ' + str(local_log_filename))
     log.add_file(local_log_filename)
     if global_log_dir is not None:
         global_log_filename = global_log_dir + os.sep + 'log-predictions-' + log_label + '.txt'
@@ -108,8 +110,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
     model.device = device
 
     # Loading the data
-    # X_full, y_full, y_tiles_full, X_raw_full, X_metadata, bag_names_full, experiment_names_full, well_names_full, error_list, loaded_files_list_full
-    X, y, y_tiles, X_raw, X_metadata, bag_names, experiment_names, well_names, errors, loaded_files_list = loader.load_bags_json_batch(
+    X, y, y_tiles, X_raw, X_metadata, bag_names, experiment_names, _, well_names, errors, loaded_files_list = loader.load_bags_json_batch(
         batch_dirs=bag_paths,
         max_workers=max_workers,
         include_raw=True,
@@ -160,7 +161,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  render_attention_spheres_enabled=render_attention_spheres_enabled,
                  render_dose_response_curves_enabled=render_dose_response_curves_enabled,
                  render_attention_cell_distributions=render_attention_cell_distributions,
-                 well_names=well_names, out_dir=out_dir + 'predictions')
+                 well_names=well_names, out_dir=out_dir)
 
     del data_loader, X_raw, X_metadata
 
@@ -169,7 +170,9 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
     log.remove_file(local_log_filename)
     if global_log_dir is not None:
         log.remove_file(global_log_filename)
-    log.clear_files()
+
+    if clear_global_logs:
+        log.clear_files()
 
 
 def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X_raw: [np.ndarray],

@@ -47,76 +47,90 @@ def binary_accuracy(outputs, targets):
 
 # PLOTS
 
-def plot_accuracy(history, save_path: str, include_raw: bool = False, include_tikz: bool = False):
+def plot_accuracy(history, save_path: str, include_raw: bool = False, include_tikz: bool = False,
+                  include_line_fit: bool = False):
     ''' takes a history object and plots the accuracies
     '''
     if include_raw:
-        plot_metric(history, 'val_acc', save_path, include_tikz=include_tikz)
-        plot_metric(history, 'train_acc', save_path, include_tikz=include_tikz)
-    plot_metric(history, 'val_acc', save_path, 'train_acc', include_tikz=include_tikz)
+        plot_metric(history, 'val_acc', save_path, include_tikz=include_tikz, include_line_fit=False)
+        plot_metric(history, 'train_acc', save_path, include_tikz=include_tikz, include_line_fit=False)
+    plot_metric(history, 'val_acc', save_path, 'train_acc', include_tikz=include_tikz,
+                include_line_fit=include_line_fit)
 
 
-def plot_accuracy_tiles(history, save_path: str, include_raw: bool = False, include_tikz: bool = False):
+def plot_accuracy_tiles(history, save_path: str, include_raw: bool = False, include_tikz: bool = False,
+                        include_line_fit: bool = False):
     ''' takes a history object and plots the accuracies
     '''
     if include_raw:
-        plot_metric(history, 'val_acc_tiles', save_path, include_tikz=include_tikz)
-        plot_metric(history, 'train_acc_tiles', save_path, include_tikz=include_tikz)
-    plot_metric(history, 'val_acc_tiles', save_path, 'train_acc_tiles', include_tikz=include_tikz)
+        plot_metric(history, 'val_acc_tiles', save_path, include_tikz=include_tikz, include_line_fit=False)
+        plot_metric(history, 'train_acc_tiles', save_path, include_tikz=include_tikz, include_line_fit=False)
+    plot_metric(history, 'val_acc_tiles', save_path, 'train_acc_tiles', include_tikz=include_tikz,
+                include_line_fit=include_line_fit)
 
 
 def plot_binary_roc_curves(history, save_path: str, include_raw: bool = False, include_tikz: bool = False,
                            clamp: float = None):
     if include_raw:
-        plot_metric(history, 'train_roc_auc', save_path, include_tikz=include_tikz, clamp=clamp)
-        plot_metric(history, 'val_roc_auc', save_path, include_tikz=include_tikz, clamp=clamp)
-    plot_metric(history, 'val_roc_auc', save_path, 'train_roc_auc', include_tikz=include_tikz, clamp=clamp)
+        plot_metric(history, 'train_roc_auc', save_path, include_tikz=include_tikz, clamp=clamp, include_line_fit=False)
+        plot_metric(history, 'val_roc_auc', save_path, include_tikz=include_tikz, clamp=clamp, include_line_fit=False)
+    plot_metric(history, 'val_roc_auc', save_path, 'train_roc_auc', include_tikz=include_tikz, clamp=clamp,
+                include_line_fit=False)
 
 
 def plot_dice_scores(history, save_path: str, include_raw: bool = False, include_tikz: bool = False,
+                     include_line_fit: bool = False,
                      clamp: float = None):
     if include_raw:
-        plot_metric(history, 'train_dice_score', save_path, include_tikz=include_tikz, clamp=clamp)
-        plot_metric(history, 'val_dice_score', save_path, include_tikz=include_tikz, clamp=clamp)
-    plot_metric(history, 'val_dice_score', save_path, 'train_dice_score', include_tikz=include_tikz, clamp=clamp)
+        plot_metric(history, 'train_dice_score', save_path, include_tikz=include_tikz, clamp=clamp,
+                    include_line_fit=False)
+        plot_metric(history, 'val_dice_score', save_path, include_tikz=include_tikz, clamp=clamp,
+                    include_line_fit=False)
+    plot_metric(history, 'val_dice_score', save_path, 'train_dice_score', include_tikz=include_tikz, clamp=clamp,
+                include_line_fit=include_line_fit)
 
 
-def plot_attetion_otsu_threshold(history, save_path: str, label: int, include_raw: bool = False,
-                                 include_tikz: bool = False, clamp: float = None):
+def plot_attention_otsu_threshold(history, save_path: str, label: int, include_raw: bool = False,
+                                  include_tikz: bool = False, clamp: float = None):
     if include_raw:
         plot_metric(history, 'train_otsu_threshold_label' + str(label), save_path, include_tikz=include_tikz,
-                    clamp=clamp)
-        plot_metric(history, 'val_otsu_threshold_label' + str(label), save_path, include_tikz=include_tikz, clamp=clamp)
+                    clamp=clamp, include_line_fit=False)
+        plot_metric(history, 'val_otsu_threshold_label' + str(label), save_path, include_tikz=include_tikz, clamp=clamp,
+                    include_line_fit=False)
     plot_metric(history, 'val_otsu_threshold_label' + str(label), save_path, 'train_otsu_threshold_label' + str(label),
-                include_tikz=include_tikz, clamp=clamp)
+                include_tikz=include_tikz, clamp=clamp, include_line_fit=False)
 
 
 def plot_attention_entropy(history, save_path: str, label: int, include_raw: bool = False, include_tikz: bool = False,
                            clamp: float = None):
     if include_raw:
         plot_metric(history, 'train_entropy_attention_label' + str(label), save_path, include_tikz=include_tikz,
-                    clamp=clamp)
+                    clamp=clamp, include_line_fit=False)
         plot_metric(history, 'val_entropy_attention_label' + str(label), save_path, include_tikz=include_tikz,
-                    clamp=clamp)
+                    clamp=clamp, include_line_fit=False)
     plot_metric(history, 'val_entropy_attention_label' + str(label), save_path,
-                'train_entropy_attention_label' + str(label), include_tikz=include_tikz, clamp=clamp)
+                'train_entropy_attention_label' + str(label), include_tikz=include_tikz, clamp=clamp,
+                include_line_fit=False)
 
 
-def plot_sigmoid_scores(history, save_path: str, include_tikz: bool = False):
-    plot_metric(history, 'val_mean_sigmoid_scores', save_path, include_tikz=include_tikz, clamp=None)
+def plot_sigmoid_scores(history, save_path: str, include_tikz: bool = False, include_line_fit: bool = False):
+    plot_metric(history, 'val_mean_sigmoid_scores', save_path, include_tikz=include_tikz, clamp=None,
+                include_line_fit=include_line_fit)
 
 
-def plot_losses(history, save_path: str, include_raw: bool = False, include_tikz: bool = False, clamp: float = None):
+def plot_losses(history, save_path: str, include_raw: bool = False, include_tikz: bool = False, clamp: float = None,
+                include_line_fit: bool = False):
     ''' takes a history object and plots the losses
     '''
     if include_raw:
-        plot_metric(history, 'val_loss', save_path, include_tikz=include_tikz, clamp=clamp)
-        plot_metric(history, 'train_loss', save_path, include_tikz=include_tikz, clamp=clamp)
-    plot_metric(history, 'val_loss', save_path, 'train_loss', include_tikz=include_tikz, clamp=clamp)
+        plot_metric(history, 'val_loss', save_path, include_tikz=include_tikz, clamp=clamp, include_line_fit=False)
+        plot_metric(history, 'train_loss', save_path, include_tikz=include_tikz, clamp=clamp, include_line_fit=False)
+    plot_metric(history, 'val_loss', save_path, 'train_loss', include_tikz=include_tikz, clamp=clamp,
+                include_line_fit=include_line_fit)
 
 
 def plot_metric(history, metric_name: str, out_dir: str, second_metric_name: str = None, dpi: int = 350,
-                include_tikz: bool = False, clamp: float = None):
+                include_tikz: bool = False, clamp: float = None, include_line_fit: bool = False):
     metric_values = [i[metric_name] for i in history]
     metric_title = _get_metric_title(metric_name)
     metric_color, metric_type = _get_metric_color(metric_name)
@@ -127,9 +141,28 @@ def plot_metric(history, metric_name: str, out_dir: str, second_metric_name: str
     tikz_data_list = [metric_values]
     tikz_colors = [metric_color]
     tikz_legend = None
+    plt_legend = [metric_title]
 
+    metric_alpha = 1.0
+    if include_line_fit:
+        metric_alpha = 0.4
     plt.clf()
-    plt.plot(metric_values, color=metric_color)
+    plt.plot(metric_values, color=metric_color, alpha=metric_alpha)
+
+    # fitting and drawing secondary line
+    if include_line_fit:
+        poly_color = _get_metric_color_poly_fit(metric_name)
+        poly = np.polyfit(list(range(len(metric_values))), metric_values, 15)
+        poly_y = np.poly1d(poly)(list(range(len(metric_values))))
+        plt.plot(list(range(len(metric_values))), poly_y, color=poly_color, linewidth=1.1337)
+
+        tikz_data_list.append(poly_y)
+        tikz_colors.append(poly_color)
+        plt_legend.append('Fit')
+        tikz_legend = [metric_type + " " + metric_title, 'Fit']
+
+        del poly, poly_y, poly_color
+
     if second_metric_name is None:
         out_file_name = 'raw-' + metric_name
         plt_title = metric_type + ': ' + metric_title
@@ -137,22 +170,46 @@ def plot_metric(history, metric_name: str, out_dir: str, second_metric_name: str
         out_file_name = metric_name.lower().replace('val_', '').replace('train_', '')
         second_metric_values = [i[second_metric_name] for i in history]
         second_metric_color, second_metric_type = _get_metric_color(second_metric_name)
+        plt_title = 'Training & Validation'
 
         if clamp is not None:
             second_metric_values = [max(min(i, clamp), clamp * -1) for i in second_metric_values]
 
-        plt.plot(second_metric_values, color=second_metric_color)
-        plt.legend([metric_type + " " + metric_title, second_metric_type + " " + metric_title])
-        plt_title = 'Training & Validation'
-
-        tikz_data_list.append(second_metric_values)
+        plt.plot(second_metric_values, color=second_metric_color, alpha=metric_alpha)
         tikz_colors.append(second_metric_color)
-        tikz_legend = [metric_type, second_metric_type]
+        plt_legend.append(second_metric_type + " " + metric_title)
+
+        if tikz_legend is None:
+            tikz_legend = [metric_type + " " + metric_title, second_metric_type + " " + metric_title]
+
+        if include_line_fit:
+            poly_color = _get_metric_color_poly_fit(second_metric_name)
+            poly = np.polyfit(list(range(len(second_metric_values))), second_metric_values, 15)
+            poly_y = np.poly1d(poly)(list(range(len(second_metric_values))))
+            plt.plot(list(range(len(second_metric_values))), poly_y, color=poly_color, linewidth=1.1337)
+
+            tikz_data_list.append(poly_y)
+            tikz_legend.append(second_metric_type + " " + metric_title)
+            tikz_legend.append('Fit')
+            plt_legend.append('Fit')
+            tikz_colors.append(poly_color)
+
+            del poly, poly_y, poly_color
+
+        plt.legend(plt_legend)
+        tikz_data_list.append(second_metric_values)
 
     plt.title(plt_title)
     plt.xlabel('Epoch')
     plt.ylabel(metric_title)
     plt.tight_layout()
+
+    # plt.plot(single_losses, alpha=0.4)
+    # plt.ylabel("Loss")
+    # plt.xlabel("Example Image #")
+    # poly = np.polyfit(list(range(len(single_losses))), single_losses, 15)
+    # poly_y = np.poly1d(poly)(list(range(len(single_losses))))
+    # plt.plot(list(range(len(single_losses))), poly_y, color="red", linewidth=2.0)
 
     os.makedirs(out_dir, exist_ok=True)
     plt.autoscale()
@@ -168,7 +225,9 @@ def plot_metric(history, metric_name: str, out_dir: str, second_metric_name: str
         f.close()
 
 
-def plot_accuracies(history, out_dir: str, dpi: int = 600, include_tikz: bool = False, clamp: float = None):
+def plot_accuracies(history, out_dir: str, dpi: int = 600, include_tikz: bool = False, clamp: float = None,
+                    include_line_fit: bool = False,  # TODO implement
+                    ):
     values_train_acc_tiles = [i['train_acc_tiles'] for i in history]
     values_val_acc_tiles = [i['val_acc_tiles'] for i in history]
     values_train_acc_bags = [i['train_acc'] for i in history]
@@ -218,6 +277,15 @@ def _get_metric_color(metric_name: str):
     if metric_name.startswith('val_'):
         return 'orange', 'Validation'
     return 'black', '??'
+
+
+def _get_metric_color_poly_fit(metric_name: str):
+    color, _ = _get_metric_color(metric_name=metric_name)
+    if color == 'blue':
+        return 'darkblue'
+    if color == 'orange':
+        return 'red'
+    return 'black'
 
 
 def _get_metric_title(metric_name: str):

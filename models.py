@@ -29,6 +29,7 @@ import torch.nn.functional as F
 from torch import Tensor
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 
 def save_model(state, save_path: str, verbose: bool = False):
@@ -432,6 +433,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
     sigmoid_evaluation_enabled: bool = sigmoid_evaluation_enabled and X_metadata_sigmoid is not None
     log.write('Training a new model. Sigmoid validation enabled: ' + str(sigmoid_evaluation_enabled))
+    log.write('Training duration: ' + str(epochs) + ' epochs.')
 
     checkpoint_out_dir = out_dir_base + 'checkpoints' + os.sep
     metrics_dir_live = out_dir_base + training_metrics_live_dir_name + os.sep
@@ -922,18 +924,21 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         # Saving raw history
         try:
             mil_metrics.write_history(history, history_keys, metrics_dir=metrics_dir_live)
-            mil_metrics.plot_accuracy(history, metrics_dir_live, include_raw=False, include_tikz=False)
-            mil_metrics.plot_accuracy_tiles(history, metrics_dir_live, include_raw=False, include_tikz=False)
-            mil_metrics.plot_losses(history, metrics_dir_live, include_raw=False, include_tikz=False)
-            mil_metrics.plot_accuracies(history, metrics_dir_live, include_tikz=False)
-            mil_metrics.plot_dice_scores(history, metrics_dir_live, include_tikz=False)
-            mil_metrics.plot_sigmoid_scores(history, metrics_dir_live, include_tikz=False)
+            mil_metrics.plot_accuracy(history, metrics_dir_live, include_raw=False, include_tikz=False,
+                                      include_line_fit=False)
+            mil_metrics.plot_accuracy_tiles(history, metrics_dir_live, include_raw=False, include_tikz=False,
+                                            include_line_fit=False)
+            mil_metrics.plot_losses(history, metrics_dir_live, include_raw=False, include_tikz=False,
+                                    include_line_fit=False)
+            mil_metrics.plot_accuracies(history, metrics_dir_live, include_tikz=False, include_line_fit=False)
+            mil_metrics.plot_dice_scores(history, metrics_dir_live, include_tikz=False, include_line_fit=False)
+            mil_metrics.plot_sigmoid_scores(history, metrics_dir_live, include_tikz=False, include_line_fit=False)
             mil_metrics.plot_binary_roc_curves(history, metrics_dir_live, include_tikz=False)
 
             if model.enable_attention:
-                mil_metrics.plot_attetion_otsu_threshold(history, metrics_dir_live, label=0, include_tikz=False)
+                mil_metrics.plot_attention_otsu_threshold(history, metrics_dir_live, label=0, include_tikz=False)
                 mil_metrics.plot_attention_entropy(history, metrics_dir_live, label=0, include_tikz=False)
-                mil_metrics.plot_attetion_otsu_threshold(history, metrics_dir_live, label=1, include_tikz=False)
+                mil_metrics.plot_attention_otsu_threshold(history, metrics_dir_live, label=1, include_tikz=False)
                 mil_metrics.plot_attention_entropy(history, metrics_dir_live, label=1, include_tikz=False)
         except Exception as e:
             log.write('Failed to write metrics for this epoch.')

@@ -693,12 +693,13 @@ def render_attention_cell_distributions(out_dir, distributions, X_metadata, alph
         x_oligo = []
         x_nucleus = []
         for i in range(len(current_metadata)):
-            assert neuron_count[i][0] == oligo_count[i][0]
-            assert neuron_count[i][0] == nucleus_count[i][0]
-            y.append(neuron_count[i][0])
-            x_neuron.append(neuron_count[i][1])
-            x_oligo.append(oligo_count[i][1])
-            x_nucleus.append(nucleus_count[i][1])
+            if not math.isnan(neuron_count[i][0]):
+                assert neuron_count[i][0] == oligo_count[i][0]
+                assert neuron_count[i][0] == nucleus_count[i][0]
+                y.append(neuron_count[i][0])
+                x_neuron.append(neuron_count[i][1])
+                x_oligo.append(oligo_count[i][1])
+                x_nucleus.append(nucleus_count[i][1])
 
         plt.clf()
         if include_neuron:
