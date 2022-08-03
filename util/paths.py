@@ -65,7 +65,7 @@ all_prediction_dirs_unix = [
     '/mil/oligo-diff/training_data/curated_linux_overlap/ESM26'
     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK159_BaP',
     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK180_PG',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK184_NH3',
+    # '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK184_NH3',
     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK198_UA',
     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK199_UA',
     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK201_AL08',
@@ -95,6 +95,17 @@ default_sigmoid_validation_dirs_win = [
 
 curated_overlapping_source_dirs_win = [
     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_win'
+]
+
+curated_overlapping_source_dirs_unix_debug = [
+    # Overlapping Experiments from the ENDpoiNTs dataset #1
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK129_PG',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK153_Calcitriol',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK176_MP',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK177_SR92',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS64_GW39',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS66_SR92',
+    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKS127_GW4671'
 ]
 
 curated_overlapping_source_dirs_unix = [
@@ -145,7 +156,7 @@ curated_overlapping_source_dirs_unix = [
     # Overlapping Experiments from ENDPoiNTs, Jun22
     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK159_BaP',
     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK180_PG',
-    '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK184_NH3',
+    # '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK184_NH3',
     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK198_UA',
     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK199_UA',
     '/mil/oligo-diff/training_data/curated_linux_overlap/EPKK201_AL08',

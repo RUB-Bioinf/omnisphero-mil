@@ -47,8 +47,8 @@ def binary_accuracy(outputs, targets):
 
 # PLOTS
 
-def plot_accuracy(history, save_path: str, include_raw: bool = False, include_tikz: bool = False,
-                  include_line_fit: bool = False):
+def plot_accuracy_bags(history, save_path: str, include_raw: bool = False, include_tikz: bool = False,
+                       include_line_fit: bool = False):
     ''' takes a history object and plots the accuracies
     '''
     if include_raw:
@@ -141,7 +141,7 @@ def plot_metric(history, metric_name: str, out_dir: str, second_metric_name: str
     tikz_data_list = [metric_values]
     tikz_colors = [metric_color]
     tikz_legend = None
-    plt_legend = [metric_title]
+    plt_legend = [metric_type + " " + metric_title]
 
     metric_alpha = 1.0
     if include_line_fit:

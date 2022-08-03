@@ -29,7 +29,6 @@ import torch.nn.functional as F
 from torch import Tensor
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 
 
 def save_model(state, save_path: str, verbose: bool = False):
@@ -396,20 +395,24 @@ def load_checkpoint(load_path: str, model: OmniSpheroMil, optimizer: Optimizer =
 
 ####
 
-def choose_optimizer(model: OmniSpheroMil, selection: str) -> Optimizer:
+def choose_optimizer(model: OmniSpheroMil, selection: str) -> (Optimizer, float):
     """ Chooses an optimizer according to the string specifed in the model CLI argument and build with specified args
     """
+    initial_lr = float('NaN')
     if selection == 'adam':
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0,
                                      amsgrad=False)
+        initial_lr = 0.001
     elif selection == 'adadelta':
         optimizer = torch.optim.Adadelta(model.parameters(), lr=1.0, rho=0.9, eps=1e-06, weight_decay=0)
+        initial_lr = 1.0
     elif selection == 'momentum':
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, dampening=0, weight_decay=0,
                                     nesterov=False)
+        initial_lr = 0.01
     else:
         raise Exception("Error! Chosen optimizer or its parameters are unclear: '" + selection + "'")
-    return optimizer
+    return optimizer, initial_lr
 
 
 def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: OmniSpheroDataLoader, bag_names: [str],
@@ -537,6 +540,8 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         train_TN = 0
         start_time_epoch = datetime.now()
         epochs_remaining = epochs - epoch
+
+        log.write(' ## DEBUG ##\nModel training callback optimizer state: ' + str(optimizer))
 
         for batch_id, (data, label, tile_labels, bag_index) in enumerate(training_data):
             # TODO check if running on GPU and clear cache
@@ -924,8 +929,8 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         # Saving raw history
         try:
             mil_metrics.write_history(history, history_keys, metrics_dir=metrics_dir_live)
-            mil_metrics.plot_accuracy(history, metrics_dir_live, include_raw=False, include_tikz=False,
-                                      include_line_fit=False)
+            mil_metrics.plot_accuracy_bags(history, metrics_dir_live, include_raw=False, include_tikz=False,
+                                           include_line_fit=False)
             mil_metrics.plot_accuracy_tiles(history, metrics_dir_live, include_raw=False, include_tikz=False,
                                             include_line_fit=False)
             mil_metrics.plot_losses(history, metrics_dir_live, include_raw=False, include_tikz=False,

@@ -66,6 +66,7 @@ def train_model(
         # Callback configurations
         stop_when_spiking_loss: bool = True,
         early_stopping_enabled: bool = True,
+        halve_lr_enabled: bool = True, initial_lr_override: float = None,
         # Tile shuffling
         loading_preview_rate: float = 0.5,
         repack_percentage: float = 0.0,
@@ -218,6 +219,7 @@ def train_model(
     X_sigmoid = []
     if sigmoid_evaluation_enabled:
         f.write('Sigmoid validation dirs:' + str(sigmoid_validation_dirs))
+        log.write('##### LOADING SIGMOID VALIDATION DIRS ####')
 
         X_sigmoid, _, _, _, X_metadata_sigmoid, _, _, sigmoid_experiment_names, _, errors_sigmoid, loaded_files_list_sigmoid = loader.load_bags_json_batch(
             batch_dirs=sigmoid_validation_dirs,
@@ -261,6 +263,7 @@ def train_model(
         unrestricted_experiments_override = sigmoid_experiment_names
 
     # TODO Write well / label mapping to protocol file!
+    log.write('##### LOADING TRAINING / VALIDATION DATA DIRS ####')
     loading_start_time = datetime.now()
     X, y, y_tiles, X_raw, X_metadata, bag_names, _, _, _, errors, loaded_files_list = loader.load_bags_json_batch(
         batch_dirs=source_dirs,
@@ -577,22 +580,37 @@ def train_model(
     torch.save(model, untrained_model_path)
     log.write('Saving trained model to: ' + untrained_model_path)
 
-    model_optimizer = models.choose_optimizer(model, selection=optimizer)
+    model_optimizer, initial_lr = models.choose_optimizer(model, selection=optimizer)
+    if initial_lr_override is not None:
+        initial_lr = initial_lr_override
+    initial_lr = float(initial_lr)
+
     log.write('Finished loading data and model')
     log.write('Optimizer: ' + str(model_optimizer))
+    log.write('Initial learning rate: ' + str(initial_lr))
 
     # Callbacks
     callbacks = []
     hnm_callbacks = []
+    early_stopping_epoch_threshold = int(epochs / 5 + 1)
+    halve_lr_epoch_threshold = int(early_stopping_epoch_threshold / 2 + 1)
     if stop_when_spiking_loss:
         callbacks.append(torch_callbacks.SpikingLossCallback(loss_max=40.0))
         hnm_callbacks.append(torch_callbacks.SpikingLossCallback(loss_max=40.0))
     if early_stopping_enabled:
-        hnm_callbacks.append(torch_callbacks.EarlyStopping(epoch_threshold=int(epochs / 5 + 1)))
-        callbacks.append(torch_callbacks.EarlyStopping(epoch_threshold=int(epochs / 5 + 1)))
+        hnm_callbacks.append(torch_callbacks.EarlyStopping(epoch_threshold=early_stopping_epoch_threshold))
+        callbacks.append(torch_callbacks.EarlyStopping(epoch_threshold=early_stopping_epoch_threshold))
+    if halve_lr_enabled:
+        hnm_callbacks.append(
+            torch_callbacks.ReduceLearnRate(epoch_threshold=halve_lr_epoch_threshold, initial_lr=initial_lr,
+                                            optimizer=model_optimizer))
+        callbacks.append(
+            torch_callbacks.ReduceLearnRate(epoch_threshold=halve_lr_epoch_threshold, initial_lr=initial_lr,
+                                            optimizer=model_optimizer))
 
     protocol_f.write('\n\n == Model Information==')
     protocol_f.write('\nDevice Ordinals: ' + str(device_ordinals))
+    protocol_f.write('\nInitial LR: ' + str(initial_lr))
     protocol_f.write('\nInput dim: ' + str(input_dim))
     protocol_f.write('\ntorch Device: ' + str(device))
     protocol_f.write('\nLoss Function: ' + str(loss_function))
@@ -602,8 +620,13 @@ def train_model(
     protocol_f.write('\n\nData Loader - Cores: ' + str(data_loader_cores))
     protocol_f.write('\nData Loader - Pin Memory: ' + str(data_loader_pin_memory))
     protocol_f.write('\nCallback Count: ' + str(len(callbacks)))
-    protocol_f.write('\nCallbacks: ' + str(callbacks))
-    protocol_f.write('\nBuilt Optimizer: ' + str(model_optimizer))
+    protocol_f.write('\n\nCallbacks: ' + str(callbacks))
+    protocol_f.write(
+        '\nEarly stopping threshold (enabled: ' + str(early_stopping_enabled) + '): ' + str(
+            early_stopping_epoch_threshold))
+    protocol_f.write(
+        '\nLearn Rate reduction threshold (enabled: ' + str(halve_lr_enabled) + '): ' + str(halve_lr_epoch_threshold))
+    protocol_f.write('\n\nBuilt Optimizer: ' + str(model_optimizer))
     protocol_f.close()
     del protocol_f
 
@@ -656,8 +679,8 @@ def train_model(
         mil_metrics.write_history(history, history_keys, metrics_dir)
         mil_metrics.plot_losses(history, metrics_dir, include_raw=True, include_tikz=True, clamp=2.0,
                                 include_line_fit=include_line_fit)
-        mil_metrics.plot_accuracy(history, metrics_dir, include_raw=True, include_tikz=True,
-                                  include_line_fit=include_line_fit)
+        mil_metrics.plot_accuracy_bags(history, metrics_dir, include_raw=True, include_tikz=True,
+                                       include_line_fit=include_line_fit)
         mil_metrics.plot_accuracy_tiles(history, metrics_dir, include_raw=True, include_tikz=True,
                                         include_line_fit=include_line_fit)
         mil_metrics.plot_accuracies(history, metrics_dir, include_tikz=True, include_line_fit=include_line_fit)
@@ -779,8 +802,8 @@ def train_model(
         mil_metrics.write_history(history, history_keys, metrics_dir)
         mil_metrics.plot_losses(history, metrics_dir, include_raw=True, include_tikz=True, clamp=2.0,
                                 include_line_fit=include_line_fit)
-        mil_metrics.plot_accuracy(history, metrics_dir, include_raw=True, include_tikz=True,
-                                  include_line_fit=include_line_fit)
+        mil_metrics.plot_accuracy_bags(history, metrics_dir, include_raw=True, include_tikz=True,
+                                       include_line_fit=include_line_fit)
         mil_metrics.plot_accuracy_tiles(history, metrics_dir, include_raw=True, include_tikz=True,
                                         include_line_fit=include_line_fit)
         mil_metrics.plot_accuracies(history, metrics_dir, include_tikz=True, include_line_fit=include_line_fit)
@@ -840,7 +863,7 @@ def train_model(
                 checkpoint_file=model_save_path_best,
                 bag_paths=[path],
                 out_dir=prediction_out_path,
-                gpu_enabled=gpu_enabled,
+                gpu_enabled=False,  # Force setting it to 'false'
                 channel_inclusions=channel_inclusions,
 
                 # (Re-) using the same normalization settings and other directories. Now used for predictions.
@@ -989,13 +1012,13 @@ def main(debug: bool = False):
     print('Debug mode: ' + str(debug))
     log.write('Python: ' + str(sys.version_info))
 
-    current_epochs = 450
+    current_epochs = 350
     current_max_workers = 35
     default_out_dir_base = default_out_dir_unix_base
     current_sources_dir = paths.curated_overlapping_source_dirs_unix
     current_gpu_enabled = True
     if debug:
-        current_sources_dir = [current_sources_dir[0]]
+        current_sources_dir = paths.curated_overlapping_source_dirs_unix_debug
         current_epochs = 5
 
     # Preparing for model loading
@@ -1051,6 +1074,7 @@ def main(debug: bool = False):
                     predict_training_data_afterwards=False,
                     stop_when_spiking_loss=False,
                     early_stopping_enabled=False,
+                    halve_lr_enabled=True,
                     tile_constraints_0=loader.default_tile_constraints_nuclei,
                     tile_constraints_1=loader.default_tile_constraints_oligos,
                     label_1_well_indices=loader.default_well_indices_debug_early,
@@ -1064,50 +1088,39 @@ def main(debug: bool = False):
                     sigmoid_validation_dirs=paths.default_sigmoid_validation_dirs_win
                     )
     elif debug:
-        log.write("Testing all source dirs, if they are trainable!")
-        time.sleep(2)
+        log.write("Debugging model on Linux!")
+        time.sleep(3)
 
-        for i in range(len(paths.curated_overlapping_source_dirs_unix)):
-            source_dir = paths.curated_overlapping_source_dirs_unix[i]
-            log.write('Source ' + str(i) + ': ' + str(source_dir) + '. Exists: ' + str(os.path.exists(source_dir)))
-            time.sleep(0.1)
-            del i
-        time.sleep(1)
-
-        for c in range(len(paths.curated_overlapping_source_dirs_unix)):
-            source_dir = paths.curated_overlapping_source_dirs_unix[c]
-
-            copy_dirs = paths.curated_overlapping_source_dirs_unix.copy()
-            random.shuffle(copy_dirs)
-            # source_dirs = [source_dir, copy_dirs[0], copy_dirs[1]]
-            source_dirs = [source_dir]
-            log.write('DEBUGGING SOURCE DIRS:\n' + str(source_dirs))
-
-            train_model(source_dirs=source_dirs,
-                        device_ordinals=current_device_ordinals,
-                        training_label='debug-sorce-test-' + str(c),
-                        image_folder=image_folder,
-                        normalize_enum=6,
-                        use_hard_negative_mining=False,
-                        model_enable_attention=True,
-                        model_use_max=False,
-                        augment_validation=False,
-                        augment_train=False,
-                        predict_sigmoid_data_afterwards=True,
-                        predict_training_data_afterwards=False,
-                        max_workers=27,
-                        optimizer='adadelta',
-                        loss_function='binary_cross_entropy',
-                        channel_inclusions=loader.default_channel_inclusions_no_neurites,
-                        tile_constraints_0=loader.default_tile_constraints_nuclei,
-                        tile_constraints_1=loader.default_tile_constraints_nuclei,
-                        repack_percentage=0,
-                        label_1_well_indices=loader.default_well_bmc_threshold_control,
-                        label_0_well_indices=loader.default_well_bmc_threshold_effect,
-                        sigmoid_validation_dirs=paths.default_sigmoid_validation_dirs_win,
-                        gpu_enabled=True,
-                        epochs=5
-                        )
+        copy_dirs = paths.curated_overlapping_source_dirs_unix.copy()
+        random.shuffle(copy_dirs)
+        # source_dirs = [source_dir, copy_dirs[0], copy_dirs[1]]
+        log.write('DEBUGGING SOURCE DIRS:\n' + str(current_sources_dir))
+        train_model(source_dirs=current_sources_dir,
+                    device_ordinals=current_device_ordinals,
+                    training_label='debug-unix-test',
+                    image_folder=image_folder,
+                    normalize_enum=6,
+                    use_hard_negative_mining=False,
+                    model_enable_attention=True,
+                    model_use_max=False,
+                    augment_validation=False,
+                    augment_train=False,
+                    predict_sigmoid_data_afterwards=True,
+                    predict_training_data_afterwards=False,
+                    halve_lr_enabled=True,
+                    max_workers=27,
+                    optimizer='adadelta',
+                    loss_function='binary_cross_entropy',
+                    channel_inclusions=loader.default_channel_inclusions_no_neurites,
+                    tile_constraints_0=loader.default_tile_constraints_nuclei,
+                    tile_constraints_1=loader.default_tile_constraints_nuclei,
+                    repack_percentage=0,
+                    label_1_well_indices=loader.default_well_bmc_threshold_control,
+                    label_0_well_indices=loader.default_well_bmc_threshold_effect,
+                    sigmoid_validation_dirs=paths.default_sigmoid_validation_dirs_unix,
+                    gpu_enabled=True,
+                    epochs=current_epochs
+                    )
     else:
         # '/mil/oligo-diff/models/linux/hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
         c = 0
@@ -1122,10 +1135,10 @@ def main(debug: bool = False):
                             augment_validation = aug[0]
                             augment_train = aug[1]
                             training_label = 'ep-overlap-' + o + '-n-' + str(i) + '-rp-' + str(
-                                p) + '-l-' + l + '-BMC-wholeSphere-reserved'
+                                p) + '-l-' + l + '-BMC-wholeSphere-reserved-lr'
 
                             log.write('Training label: ' + training_label)
-                            if os.path.exists(current_out_dir + os.sep + training_label):
+                            if os.path.exists(current_out_dir + os.sep + training_label) and not debug:
                                 log.write('MODEL PATH ALREADY EXISTS!')
                                 time.sleep(1)
                                 print('\n')
@@ -1142,6 +1155,9 @@ def main(debug: bool = False):
                                         normalize_enum=i,
                                         training_label=training_label,
                                         global_log_dir=current_global_log_dir,
+                                        stop_when_spiking_loss=True,
+                                        early_stopping_enabled=True,
+                                        halve_lr_enabled=True,
                                         predict_sigmoid_data_afterwards=True,
                                         predict_training_data_afterwards=False,
                                         data_split_percentage_validation=0.25,
