@@ -44,9 +44,9 @@ class BaseTorchCallback:
         pass
 
     def __str__(self) -> str:
-        return "Torch Callback: " + self._describe()
+        return "Torch Callback: " + self.describe()
 
-    def _describe(self) -> str:
+    def describe(self) -> str:
         return None
 
 
@@ -85,7 +85,7 @@ class EarlyStopping(BaseTorchCallback):
                 log.write('Epoch threshold without metric improvement met. Early stopping training.')
                 self.request_cancellation()
 
-    def _describe(self) -> str:
+    def describe(self) -> str:
         return 'Early Stopping. Metric: "' + self.metric + ". Threshold: " + str(self.epoch_threshold)
 
 
@@ -124,7 +124,7 @@ class ReduceLearnRate(BaseTorchCallback):
 
     def on_epoch_finished(self, model, epoch: int, epoch_result, history):
         super().on_epoch_finished(model, epoch, epoch_result, history)
-        log.write(' ## DEBUG ##\nTorch callback optimizer state: ' + str(self.optimizer))
+        # log.write(' ## DEBUG ##\nTorch callback optimizer state: ' + str(self.optimizer))
 
         current_metric: float = epoch_result[self.metric]
         if current_metric < self.best_metric:
@@ -134,11 +134,12 @@ class ReduceLearnRate(BaseTorchCallback):
             self.epochs_without_improvement = self.epochs_without_improvement + 1
             if self.epochs_without_improvement >= self.epoch_threshold:
                 log.write('Epoch threshold without metric improvement met. Reducing learn rate.')
-                log.write('Optimizer state before reduction: '+str(self.optimizer))
+                log.write('Optimizer state before reduction: ' + str(self.optimizer))
                 self._apply_lr_reduction()
-                log.write('Optimizer state after reduction: '+str(self.optimizer))
+                self.epochs_without_improvement = 0
+                log.write('Optimizer state after reduction: ' + str(self.optimizer))
 
-    def _describe(self) -> str:
+    def describe(self) -> str:
         return 'Automated learning rate reduction enabled. Epochs: ' + str(
             self.epoch_threshold) + '. Metric: ' + self.metric + '. LR scaling factor: ' + str(
             self.lr_scaling_factor) + ' starting from ' + str(self.initial_lr)
@@ -187,7 +188,7 @@ class SpikingLossCallback(BaseTorchCallback):
     def reset(self):
         self.irrational_epochs_count = 0
 
-    def _describe(self) -> str:
+    def describe(self) -> str:
         return 'Unreasonable Loss. Max Loss: "' + str(self.loss_max) + ' for ' + str(self.tolerance) + ' epochs.'
 
 

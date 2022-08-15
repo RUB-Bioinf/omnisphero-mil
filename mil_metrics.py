@@ -9,6 +9,7 @@ Originally used in the JoshNet
 import itertools
 import math
 import os
+import traceback
 from typing import Dict
 from typing import List
 
@@ -131,6 +132,49 @@ def plot_losses(history, save_path: str, include_raw: bool = False, include_tikz
 
 def plot_metric(history, metric_name: str, out_dir: str, second_metric_name: str = None, dpi: int = 350,
                 include_tikz: bool = False, clamp: float = None, include_line_fit: bool = False):
+    error_file = out_dir + os.sep + 'all_metric_errors.txt'
+    if not os.path.exists(error_file):
+        f = open(error_file, 'w')
+        f.write('Errors will be written here.')
+        f.close()
+
+    try:
+        _plot_and_save(history=history, metric_name=metric_name, out_dir=out_dir, second_metric_name=second_metric_name,
+                       dpi=dpi, include_tikz=include_tikz, clamp=clamp, include_line_fit=include_line_fit)
+    except Exception as e:
+        error_text = "Error while rendering metric '" + metric_name + "'! Reason: " + str(e) + "."
+        if include_line_fit:
+            error_text = error_text + '\n["line_fit" was on. Trying again!]'
+        error_text = error_text + "\nParams: history=" + str(history) + ", metric_name=" + str(
+            metric_name) + ", out_dir=" + str(out_dir) + ", second_metric_name=" + str(
+            second_metric_name) + ",dpi=" + str(dpi) + ", include_tikz=" + str(
+            include_tikz) + ", clamp=" + str(clamp) + ", include_line_fit=" + str(include_line_fit)
+
+        log.write(error_text)
+        f = open(error_file, 'a')
+        f.write(error_text + '\n')
+
+        tb = traceback.TracebackException.from_exception(e)
+        for line in tb.stack:
+            log.write(str(line))
+            f.write('\n' + str(line))
+        f.close()
+
+        if include_line_fit:
+            try:
+                plot_metric(history=history, metric_name=metric_name, out_dir=out_dir,
+                            second_metric_name=second_metric_name, dpi=dpi, include_tikz=include_tikz, clamp=clamp,
+                            include_line_fit=False)
+            except Exception as e:
+                error_text = "Error while re-rendering metric '" + metric_name + "'! Reason: " + str(e)
+                log.write(error_text)
+                f = open(error_file, 'a')
+                f.write(error_text + '\n')
+                f.close()
+
+
+def _plot_and_save(history, metric_name: str, out_dir: str, second_metric_name: str, dpi: int, include_tikz: bool,
+                   clamp: float, include_line_fit: bool):
     metric_values = [i[metric_name] for i in history]
     metric_title = _get_metric_title(metric_name)
     metric_color, metric_type = _get_metric_color(metric_name)
@@ -203,13 +247,6 @@ def plot_metric(history, metric_name: str, out_dir: str, second_metric_name: str
     plt.xlabel('Epoch')
     plt.ylabel(metric_title)
     plt.tight_layout()
-
-    # plt.plot(single_losses, alpha=0.4)
-    # plt.ylabel("Loss")
-    # plt.xlabel("Example Image #")
-    # poly = np.polyfit(list(range(len(single_losses))), single_losses, 15)
-    # poly_y = np.poly1d(poly)(list(range(len(single_losses))))
-    # plt.plot(list(range(len(single_losses))), poly_y, color="red", linewidth=2.0)
 
     os.makedirs(out_dir, exist_ok=True)
     plt.autoscale()

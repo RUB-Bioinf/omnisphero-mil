@@ -73,7 +73,6 @@ def _write(output, print_to_console: bool = True, include_timestamp: bool = True
             except Exception as e:
                 print('Failed to log to: ' + str(current_out_file))
                 print(str(e))
-                pass
                 # TODO: Better log error
 
 

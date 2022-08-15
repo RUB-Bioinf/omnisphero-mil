@@ -37,16 +37,22 @@ def save_model(state, save_path: str, verbose: bool = False):
     torch.save(state, save_path)
 
 
-# MODEL
-#######
-
 device_ordinals_cpu = None
 device_ordinals_local = [0, 0, 0, 0]
 device_ordinals_ehrlich = [0, 1, 2, 3]
 device_ordinals_cluster = [0, 1, 2, 3]
 
+
+def build_single_card_device_ordinals(card_index: int):
+    return [card_index, card_index, card_index, card_index]
+
+
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 
+
+##############
+# MODEL CLASS
+##############
 
 class OmniSpheroMil(nn.Module):
 
@@ -62,6 +68,7 @@ class OmniSpheroMil(nn.Module):
         if self.is_cpu():
             return 'cpu'
 
+        self.synchronize_gpu()
         return 'cuda:' + str(self._device_ordinals[index])
 
     def is_cpu(self) -> bool:
@@ -71,10 +78,15 @@ class OmniSpheroMil(nn.Module):
         return self._device_ordinals.copy()
 
     def compute_loss(self, X: Tensor, y: Tensor) -> (Tensor, [Tensor]):
+        # abstract function
         pass
 
     def compute_accuracy(self, X: Tensor, y: Tensor, y_tiles: Tensor):
+        # abstract function
         pass
+
+    def synchronize_gpu(self):
+        torch.cuda.synchronize()
 
 
 ####
@@ -83,6 +95,9 @@ class BaselineMIL(OmniSpheroMil):
     def __init__(self, input_dim, device, loss_function: str, accuracy_function: str, use_bias=True, use_max=True,
                  device_ordinals=None, enable_attention: bool = False):
         super().__init__(device, device_ordinals)
+        log.write('Creating "BaselineMIL". Device: ' + str(device) + '. Input Dim: ' + str(
+            input_dim) + '. Device ordinals: ' + str(device_ordinals))
+
         self.linear_nodes: int = 512
         self.num_classes: int = 1  # 3
         self.input_dim = input_dim
@@ -98,6 +113,11 @@ class BaselineMIL(OmniSpheroMil):
 
         if self.enable_attention:
             self.use_max = False
+
+        #################
+        # SETUP LAYERS
+        #################
+        log.write('Setting up Layers.')
 
         # add batch norm? increases model complexity but possibly speeds up convergence
         self.feature_extractor_0 = nn.Sequential(
@@ -120,6 +140,7 @@ class BaselineMIL(OmniSpheroMil):
             # nn.MaxPool2d(2, stride=2)
         )
         self.feature_extractor_0 = self.feature_extractor_0.to(self.get_device_ordinal(0))
+        log.write('Finished: feature_extractor_0 on ' + str(self.get_device_ordinal(0)))
 
         self.feature_extractor_1 = nn.Sequential(
             nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, bias=self.use_bias),
@@ -141,6 +162,7 @@ class BaselineMIL(OmniSpheroMil):
             # nn.MaxPool2d(2, stride=2)
         )
         self.feature_extractor_1 = self.feature_extractor_1.to(self.get_device_ordinal(1))
+        log.write('Finished: feature_extractor_1 on ' + str(self.get_device_ordinal(1)))
 
         self.feature_extractor_2 = nn.Sequential(
             nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, bias=self.use_bias),
@@ -162,9 +184,9 @@ class BaselineMIL(OmniSpheroMil):
             nn.MaxPool2d(2, stride=2)
         )
         self.feature_extractor_2 = self.feature_extractor_2.to(self.get_device_ordinal(2))
+        log.write('Finished: feature_extractor_2 on ' + str(self.get_device_ordinal(2)))
 
         size_after_conv = self._get_conv_output(self.input_dim)
-
         self.feature_extractor_3 = nn.Sequential(
             nn.Flatten(),
             nn.Linear(in_features=size_after_conv, out_features=self.linear_nodes, bias=self.use_bias),
@@ -180,6 +202,7 @@ class BaselineMIL(OmniSpheroMil):
             nn.Dropout(0.5)
         )
         self.feature_extractor_3 = self.feature_extractor_3.to(self.get_device_ordinal(3))  # bag of embeddings
+        log.write('Finished: feature_extractor_3 on ' + str(self.get_device_ordinal(3)))
 
         # if not self.use_max:
         #    self.mean_pool = nn.Sequential(
@@ -198,6 +221,7 @@ class BaselineMIL(OmniSpheroMil):
                 nn.Linear(self.attention_nodes, 1)  # self.num_classes, bias=self.use_bias)
             )
             self.attention = self.attention.to(self.get_device_ordinal(3))  # two-layer NN that
+        log.write('Finished: attention on ' + str(self.get_device_ordinal(3)))
 
         self.classifier = nn.Sequential(
             nn.Linear(self.linear_nodes, self.num_classes),  # * self.num_classes, self.num_classes),
@@ -205,6 +229,8 @@ class BaselineMIL(OmniSpheroMil):
             nn.Sigmoid()
         )
         self.classifier = self.classifier.to(self.get_device_ordinal(3))
+        log.write('Finished: classifier on ' + str(self.get_device_ordinal(3)))
+        log.write('Finished all layers.')
 
     def forward(self, x):
         """ Forward NN pass, declaring the exact interplay of model components
@@ -540,8 +566,7 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         train_TN = 0
         start_time_epoch = datetime.now()
         epochs_remaining = epochs - epoch
-
-        log.write(' ## DEBUG ##\nModel training callback optimizer state: ' + str(optimizer))
+        # log.write(' ## DEBUG ##\nModel training callback optimizer state: ' + str(optimizer))
 
         for batch_id, (data, label, tile_labels, bag_index) in enumerate(training_data):
             # TODO check if running on GPU and clear cache
@@ -1021,10 +1046,13 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     log.write('End of list.')
 
     if sigmoid_video_render_enabled and len(sigmoid_render_out_dirs) > 0:
-        video_render_ffmpeg.render_image_dir_to_video_multiple(image_paths=sigmoid_render_out_dirs, fps=render_fps,
-                                                               verbose=True)
-        # video_render.render_images_to_video_multiple(image_paths=sigmoid_render_out_dirs, fps=render_fps, verbose=True)
-        pass
+        try:
+            # video_render.render_images_to_video_multiple(image_paths=sigmoid_render_out_dirs, fps=render_fps, verbose=True)
+            video_render_ffmpeg.render_image_dir_to_video_multiple(image_paths=sigmoid_render_out_dirs, fps=render_fps,
+                                                                   verbose=True)
+        except Exception as e:
+            log.write(str(e))
+            log.write("ERROR! FAILED TO RENDER VIDEO!")
     else:
         log.write('Video render not done. Enabled: ' + str(sigmoid_video_render_enabled) + '.')
 
@@ -1256,11 +1284,20 @@ def _binary_accuracy(outputs: Tensor, targets: Tensor) -> Tensor:
 
 def debug_all_models(gpu_enabled: bool = True):
     device = hardware.get_hardware_device(gpu_preferred=gpu_enabled)
-    print('Selected device: ' + str(device))
+    device_ordinals = build_single_card_device_ordinals(0)
+    accuracy_function = 'binary'
+    loss_function = 'mean_square_error'
+    log.write('Selected device: ' + str(device))
 
-    print('Checking the baseline model')
-    m = BaselineMIL()
+    log.write('Checking the baseline model')
+    m = BaselineMIL(input_dim=(3, 150, 150),
+                    device=device,
+                    loss_function=loss_function,
+                    accuracy_function=accuracy_function,
+                    enable_attention=True,
+                    device_ordinals=device_ordinals)
     print(m)
+    log.write(str(m))
 
 
 def predict_dose_response(experiment_holder: dict, experiment_name: str, model,

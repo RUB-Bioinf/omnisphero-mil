@@ -1,6 +1,6 @@
 import math
 import os
-
+import socket
 import numpy as np
 
 from util import log
@@ -20,8 +20,7 @@ r_test_file = os.path.abspath(r_test_file)
 prodi_r_test_file = os.path.abspath(prodi_r_test_file)
 
 
-def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_filename: str,
-                              global_bmc_30: bool = True,
+def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_filename: str, global_bmc_30: bool = True,
                               testing_connection: bool = False, save_sigmoid_plot: bool = False, verbose: bool = False):
     assert len(doses) == len(responses)
     assert len(doses) > 1
@@ -29,7 +28,7 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
 
     if testing_connection:
         save_sigmoid_plot = False
-        verbose = False
+        # verbose = False
 
     # Setting up the out dir
     if save_sigmoid_plot:
@@ -244,7 +243,7 @@ def prediction_sigmoid_evaluation(X_metadata, y_pred: [np.ndarray], out_dir: str
     return sigmoid_score_map, sigmoid_plot_score_detail_map, sigmoid_plot_estimation_map, sigmoid_fitted_plot_map, sigmoid_instructions_map, sigmoid_bmc30_map
 
 
-def has_connection(also_test_script: bool = False) -> bool:
+def has_connection(also_test_script: bool = False, verbose: bool = False) -> bool:
     try:
         import pyRserve
         conn = pyRserve.connect()
@@ -254,7 +253,7 @@ def has_connection(also_test_script: bool = False) -> bool:
             response = [0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3, 0.4]
             dose = [100, 100, 50, 0, 100, 100, 50, 0, 100, 100, 50, 0]
             pooled_sigmoid_evaluation(doses=dose, responses=response, out_image_filename='test.png',
-                                      save_sigmoid_plot=False, testing_connection=True, verbose=True)
+                                      save_sigmoid_plot=False, testing_connection=True, verbose=verbose)
     except Exception as e:
         # Failed to close connection.
         log.write('Cannot connect to Rserve: ' + str(e))
@@ -264,8 +263,9 @@ def has_connection(also_test_script: bool = False) -> bool:
 
 def main():
     log.write('This function is used to evaluate predictions using R.')
+    log.write('You are now on: ' + str(socket.gethostname()))
     log.write('Testing the connection:')
-    connected = has_connection(also_test_script=True)
+    connected = has_connection(also_test_script=True, verbose=True)
 
     log.write('Testing done. Test succeeded: ' + str(connected))
 

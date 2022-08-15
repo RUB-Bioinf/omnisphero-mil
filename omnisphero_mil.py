@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from torch.utils.data import DataLoader
 
+import multiprocessing
+import socket
 import hardware
 import loader
 import mil_metrics
@@ -132,7 +134,7 @@ def train_model(
     os.makedirs(sigmoid_validation_dir, exist_ok=True)
 
     if gpu_enabled:
-        log.write('Number of visible devices: ' + str(torch.cuda.device_count()))
+        log.write('Number of visible GPU devices: ' + str(torch.cuda.device_count()))
 
     log.write('Model classification - Use Max: ' + str(model_use_max))
     log.write('Model classification - Use Attention: ' + str(model_enable_attention))
@@ -143,6 +145,7 @@ def train_model(
     # Logging params and args
     protocol_f = open(out_dir + os.sep + 'protocol.txt', 'w')
     protocol_f.write('Start time: ' + utils.gct())
+    protocol_f.write('\nHostname: ' + str(socket.gethostname()))
     protocol_f.write('\n\n == General Params ==')
     protocol_f.write('\nSource dirs: ' + str(len(source_dirs)))
     protocol_f.write('\nLoss function: ' + loss_function)
@@ -566,6 +569,7 @@ def train_model(
     ################
     # Setting up Model
     log.write('Setting up model.')
+    log.write('Device Ordinals: ' + str(device_ordinals))
     accuracy_function = 'binary'
     model = models.BaselineMIL(input_dim=input_dim, device=device,
                                use_max=model_use_max,
@@ -573,13 +577,16 @@ def train_model(
                                device_ordinals=device_ordinals,
                                loss_function=loss_function,
                                accuracy_function=accuracy_function)
+    log.write('Created blank model.')
 
     # Saving the raw version of this model
     untrained_model_path = out_dir + os.sep + 'model.h5'
+    log.write('Saving soon to be trained model to: ' + untrained_model_path)
     torch.save(model.state_dict(), out_dir + 'model.pt')
     torch.save(model, untrained_model_path)
-    log.write('Saving trained model to: ' + untrained_model_path)
+    log.write('Saved.')
 
+    log.write('Setting up optimizer.')
     model_optimizer, initial_lr = models.choose_optimizer(model, selection=optimizer)
     if initial_lr_override is not None:
         initial_lr = initial_lr_override
@@ -619,10 +626,14 @@ def train_model(
     protocol_f.write('\nModel classification - Use Attention: ' + str(model_enable_attention))
     protocol_f.write('\n\nData Loader - Cores: ' + str(data_loader_cores))
     protocol_f.write('\nData Loader - Pin Memory: ' + str(data_loader_pin_memory))
-    protocol_f.write('\nCallback Count: ' + str(len(callbacks)))
-    protocol_f.write('\n\nCallbacks: ' + str(callbacks))
+
+    protocol_f.write('\n\nCallback Count: ' + str(len(callbacks)))
+    protocol_f.write('\nCallbacks: ' + str(callbacks))
+    for c in callbacks:
+        protocol_f.write('\n' + c.describe())
+
     protocol_f.write(
-        '\nEarly stopping threshold (enabled: ' + str(early_stopping_enabled) + '): ' + str(
+        '\n\nEarly stopping threshold (enabled: ' + str(early_stopping_enabled) + '): ' + str(
             early_stopping_epoch_threshold))
     protocol_f.write(
         '\nLearn Rate reduction threshold (enabled: ' + str(halve_lr_enabled) + '): ' + str(halve_lr_epoch_threshold))
@@ -1012,8 +1023,14 @@ def main(debug: bool = False):
     print('Debug mode: ' + str(debug))
     log.write('Python: ' + str(sys.version_info))
 
+    host_name = str(socket.gethostname())
+    log.write('Host name: ' + host_name)
     current_epochs = 350
-    current_max_workers = 35
+
+    cpu_count = int(multiprocessing.cpu_count())
+    current_max_workers = math.ceil(cpu_count * 1.1337) + 1
+    log.write('CPU cores on this device: ' + str(cpu_count) + ' -> Workers: ' + str(current_max_workers))
+
     default_out_dir_base = default_out_dir_unix_base
     current_sources_dir = paths.curated_overlapping_source_dirs_unix
     current_gpu_enabled = True
@@ -1021,8 +1038,15 @@ def main(debug: bool = False):
         current_sources_dir = paths.curated_overlapping_source_dirs_unix_debug
         current_epochs = 5
 
-    # Preparing for model loading
-    current_device_ordinals = models.device_ordinals_ehrlich
+    # Device ordinals
+    current_device_ordinals = models.build_single_card_device_ordinals(2)
+    if host_name == 'e82560f50252':  # hostname of ehrlich
+        log.write('Welcome to Ehrlich')
+        current_device_ordinals = models.device_ordinals_ehrlich
+    log.write('Selected Device Ordinals: ' + str(current_device_ordinals))
+    time.sleep(2)
+
+    # Setting up paths
     image_folder: str = None
     sigmoid_input_dirs: [str] = []
 
@@ -1058,7 +1082,7 @@ def main(debug: bool = False):
     if debug and sys.platform == 'win32':
         training_label = 'debug-sigmoid'
         train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
-                    max_workers=current_max_workers, gpu_enabled=current_gpu_enabled, image_folder=image_folder,
+                    max_workers=5, gpu_enabled=current_gpu_enabled, image_folder=image_folder,
                     device_ordinals=current_device_ordinals,
                     normalize_enum=6,
                     training_label=training_label,
@@ -1108,7 +1132,7 @@ def main(debug: bool = False):
                     predict_sigmoid_data_afterwards=True,
                     predict_training_data_afterwards=False,
                     halve_lr_enabled=True,
-                    max_workers=27,
+                    max_workers=current_max_workers,
                     optimizer='adadelta',
                     loss_function='binary_cross_entropy',
                     channel_inclusions=loader.default_channel_inclusions_no_neurites,
@@ -1135,7 +1159,7 @@ def main(debug: bool = False):
                             augment_validation = aug[0]
                             augment_train = aug[1]
                             training_label = 'ep-overlap-' + o + '-n-' + str(i) + '-rp-' + str(
-                                p) + '-l-' + l + '-BMC-wholeSphere-reserved-lr'
+                                p) + '-l-' + l + '-BMC-wholeSphere-constrainedNone'
 
                             log.write('Training label: ' + training_label)
                             if os.path.exists(current_out_dir + os.sep + training_label) and not debug:
@@ -1175,8 +1199,8 @@ def main(debug: bool = False):
                                         model_enable_attention=True,
                                         positive_bag_min_samples=4,
                                         reserve_sigmoid_experiments_as_test_data=True,
-                                        tile_constraints_0=loader.default_tile_constraints_nuclei,
-                                        tile_constraints_1=loader.default_tile_constraints_oligos,
+                                        tile_constraints_0=loader.default_tile_constraints_none,
+                                        tile_constraints_1=loader.default_tile_constraints_none,
                                         label_1_well_indices=loader.default_well_bmc_threshold_control,
                                         label_0_well_indices=loader.default_well_bmc_threshold_effect,
                                         device_ordinals=current_device_ordinals,
