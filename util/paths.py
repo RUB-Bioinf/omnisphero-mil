@@ -3,8 +3,11 @@ import os
 from util import log
 
 default_out_dir_unix_base = '/mil/oligo-diff/models/linux'
-
 training_metrics_live_dir_name = 'metrics_live'
+
+##################################
+# PREDICTION DIRS
+##################################
 
 debug_prediction_dirs_win = [
     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\test_data\\debug_win\\'
@@ -83,15 +86,32 @@ all_prediction_dirs_unix = [
     '/mil/oligo-diff/training_data/curated_linux_overlap/EPSH93_AL08'
 ]
 
+##################################
+# SIGMOID VALIDATION DIRS
+##################################
+
 default_sigmoid_validation_dirs_unix = [
     '/mil/oligo-diff/training_data/curated_linux_overlap/EJK228',
     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS681',
     '/mil/oligo-diff/training_data/curated_linux_overlap/ESM36'
 ]
 
+##################################
+# SIGMOID COMPOUNDS
+##################################
+sigmoid_compounds_none = []
+sigmoid_compounds_all = ['TBBPA', 'Endosulfan sulfate', 'Chlorpromazine hydrochloride']
+sigmoid_compounds_all_EJK228 = ['TBBPA']
+sigmoid_compounds_all_ELS681 = ['Endosulfan sulfate']
+sigmoid_compounds_all_ESM36 = ['Chlorpromazine hydrochloride']
+
 default_sigmoid_validation_dirs_win = [
     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_win\\sigmoid'
 ]
+
+##################################
+# TRAINING / VALIDATION DIRS
+##################################
 
 curated_overlapping_source_dirs_win = [
     'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\training_data\\curated_win'
@@ -210,10 +230,18 @@ curated_overlapping_debug_dirs_unix = [
     '/mil/oligo-diff/training_data/curated_linux_overlap/ELS719'
 ]
 
+##################################
+# PRACTICAL COURSE DIRS
+##################################
+
 big_data_praktikum_paths = [
     '/bph/puredata4/bioinfdata/work/OmniSphero/BigDataOligodendrocyteMILPreprocessing/CourseData/TestRun_150_offset_75/output/EJK228',
     '/bph/puredata4/bioinfdata/work/OmniSphero/BigDataOligodendrocyteMILPreprocessing/CourseData/TestRun_150_offset_75/output/ELS510'
 ]
+
+##################################
+# ffmpeg
+##################################
 
 # ffmpeg paths:
 ffmpeg_win = 'Z:\\nilfoe\\Python\\omnisphero-mil\\ffmpeg\\win\\ffmpeg.exe'

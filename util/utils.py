@@ -303,13 +303,42 @@ def line_print(text: str, max_width: int = None, cutoff_too_large_text: bool = T
 # PROJECT UTILS
 ###########################
 
+def get_experiment_names_for_compound(X_metadata, compound_names: [str]) -> [str]:
+    experiment_names = []
+    if compound_names is None:
+        compound_names = []
+    compound_names_lower = [n.lower() for n in compound_names]
+
+    for metadata in X_metadata:
+        metadata = metadata[0]
+
+        if metadata.plate_metadata is not None:
+            plate_metadata = metadata.plate_metadata
+            current_compound = plate_metadata.compound_name
+
+            if current_compound is not None:
+                if current_compound.lower() in compound_names_lower:
+                    experiment_names.append(metadata.experiment_name)
+
+    return experiment_names
+
+
 # shuffle data and split into training and validation set
-def shuffle_and_split_data(dataset, split_percentage: float, _recursion_depth: int = 0, additional_dataset: [] = None):
+def shuffle_and_split_data(dataset, split_percentage: float, _recursion_depth: int = 0,
+                           additional_dataset_validation: [] = None,
+                           additional_dataset_training: [] = None,
+                           training_data_compounds=None, validation_data_compounds=None):
     '''
     Takes a dataset that was converted from bags to batches and shuffles and splits it into two splits (train/val)
     '''
-    if additional_dataset is None:
-        additional_dataset = []
+    if additional_dataset_validation is None:
+        additional_dataset_validation = []
+    if additional_dataset_training is None:
+        additional_dataset_training = []
+    if training_data_compounds is None:
+        training_data_compounds = []
+    if validation_data_compounds is None:
+        validation_data_compounds = []
 
     split_percentage_index = math.ceil(split_percentage * len(dataset))
     indices = np.arange(len(dataset))
@@ -343,11 +372,19 @@ def shuffle_and_split_data(dataset, split_percentage: float, _recursion_depth: i
 
             del training_ds, validation_ds
             return shuffle_and_split_data(dataset=dataset, split_percentage=split_percentage,
-                                          _recursion_depth=_recursion_depth + 1, additional_dataset=additional_dataset)
+                                          training_data_compounds=training_data_compounds,
+                                          validation_data_compounds=validation_data_compounds,
+                                          additional_dataset_training=additional_dataset_training,
+                                          _recursion_depth=_recursion_depth + 1,
+                                          additional_dataset_validation=additional_dataset_validation)
 
     # Adding the forced 'additional dataset' to the validation set
-    if len(additional_dataset) > 1 and validation_ds is not None:
-        validation_ds.extend(additional_dataset)
+    if len(additional_dataset_validation) > 1 and validation_ds is not None:
+        validation_ds.extend(additional_dataset_validation)
+
+    # Adding the forced 'additional dataset' to the training set
+    if len(additional_dataset_training) > 1 and training_ds is not None:
+        training_ds.extend(additional_dataset_training)
 
     # clearing memory and returning results
     del dataset
@@ -471,10 +508,10 @@ def extract_experiments_from_bags(X, X_metadata, X_raw, y, y_tiles, bag_names, e
     y_extracted = []
     y_tiles_extracted = []
     bag_names_extracted = []
-    log.write('Checking ' + str(len(X)) + ' bags if they contain sigmoid experiments: ' + str(experiment_names))
+    log.write('Checking ' + str(len(X)) + ' bags if they contain experiments to be extracted: ' + str(experiment_names))
 
     if len(experiment_names) == 0:
-        log.write('No need. No sigmoid experiments loaded.')
+        log.write('No need. No experiments to be extracted loaded.')
         return X, X_metadata, X_raw, y, y_tiles, bag_names, X_extracted, X_metadata_extracted, X_raw_extracted, y_extracted, y_tiles_extracted, bag_names_extracted
 
     print('')

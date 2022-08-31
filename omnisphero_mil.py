@@ -37,7 +37,7 @@ os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 import torch
 from torch.optim import Optimizer
 
-# On windows, if there's not enough RAM:
+# On Windows, if there's not enough RAM:
 # https://github.com/Spandan-Madan/Pytorch_fine_tuning_Tutorial/issues/10
 
 # normalize_enum is an enum to determine normalisation as follows:
@@ -99,6 +99,10 @@ def train_model(
         testing_model_enabled: bool = True,
         # Sigmoid validation dirs
         sigmoid_validation_dirs: [str] = None, reserve_sigmoid_experiments_as_test_data: bool = True,
+        # reserve compounds for datasets
+        reserve_compound_train=None,
+        reserve_compound_test=None,
+        reserve_compound_validation=None,
         # After training, should the model be run on input experiments again?
         predict_training_data_afterwards: bool = False,
         predict_sigmoid_data_afterwards: bool = False
@@ -112,6 +116,14 @@ def train_model(
         reserve_sigmoid_experiments_as_test_data = False
     sigmoid_evaluation_enabled = len(sigmoid_validation_dirs) > 0
     repack_percentage = float(repack_percentage)
+
+    # mutable fix
+    if reserve_compound_train is None:
+        reserve_compound_train = []
+    if reserve_compound_test is None:
+        reserve_compound_test = []
+    if reserve_compound_validation is None:
+        reserve_compound_validation = []
 
     # This param is unused and should not be "True"!
     if type(label_0_well_indices) == list and type(label_1_well_indices) == list:
@@ -184,6 +196,9 @@ def train_model(
     protocol_f.write('\nSigmoid validation enabled: ' + str(sigmoid_evaluation_enabled))
     protocol_f.write(
         '\nSigmoid validation experiments reserved for test data: ' + str(reserve_sigmoid_experiments_as_test_data))
+    protocol_f.write('\nCompounds to be put in training data: ' + str(reserve_compound_train))
+    protocol_f.write('\nCompounds to be put in validation data: ' + str(reserve_compound_validation))
+    protocol_f.write('\nCompounds to be put in test data: ' + str(reserve_compound_test))
 
     global_log_filename = None
     local_log_filename = out_dir + os.sep + 'log.txt'
@@ -384,26 +399,69 @@ def train_model(
     bag_names_sigmoid_overlap = None
     X_raw_sigmoid_overlap = None
 
+    X_train_overlap = None
+    y_train_overlap = None
+    y_tiles_train_overlap = None
+    bag_names_train_overlap = None
+    X_raw_train_overlap = None
+
+    X_test_overlap = None
+    y_test_overlap = None
+    y_tiles_test_overlap = None
+    bag_names_test_overlap = None
+    X_raw_test_overlap = None
+
+    X_validation_overlap = None
+    y_validation_overlap = None
+    y_tiles_validation_overlap = None
+    bag_names_validation_overlap = None
+    X_raw_validation_overlap = None
+
+    # Extracting experiment names for reserved compounds
+    reserve_experiments_validation = utils.get_experiment_names_for_compound(X_metadata=X_metadata,
+                                                                             compound_names=reserve_compound_validation)
+    reserve_experiments_train = utils.get_experiment_names_for_compound(X_metadata=X_metadata,
+                                                                        compound_names=reserve_compound_train)
+    reserve_experiments_test = utils.get_experiment_names_for_compound(X_metadata=X_metadata,
+                                                                       compound_names=reserve_compound_test)
+
     f = open(out_dir + 'reserve-sigmoid-as-test-data.txt', 'w')
     f.write('## Param sigmoid_evaluation_enabled: ' + str(sigmoid_evaluation_enabled) + '\n')
     f.write(
         '## Param reserve_sigmoid_experiments_as_test_data: ' + str(reserve_sigmoid_experiments_as_test_data) + '\n')
     f.write('## Param testing_model_enabled: ' + str(testing_model_enabled) + '\n\n')
     if sigmoid_evaluation_enabled and reserve_sigmoid_experiments_as_test_data and testing_model_enabled:
-        f.write('Number of bags loaded: ' + str(len(X)) + '\n')
-        f.write('Names of sigmoid experiments loaded: ' + str(sigmoid_experiment_names) + '\n')
-        f.write('Number of sigmoid experiments loaded: ' + str(len(sigmoid_experiment_names)) + '\n')
-
-        X, X_metadata, X_raw, y, y_tiles, bag_names, X_sigmoid_overlap, X_metadata_sigmoid_overlap, X_raw_sigmoid_overlap, y_sigmoid_overlap, y_tiles_sigmoid_overlap, bag_names_sigmoid_overlap = utils.extract_experiments_from_bags(
-            X=X, X_raw=X_raw, y=y, y_tiles=y_tiles, bag_names=bag_names, X_metadata=X_metadata,
-            experiment_names=sigmoid_experiment_names)
-
-        f.write('\n\n### AFTER SIGMOID REMOVAL ###\n\n')
-        f.write('Bags (without sigmoid experiments): ' + str(len(X)) + '\n')
-        f.write('Bags (only sigmoid experiments): ' + str(len(X_sigmoid_overlap)) + '\n')
+        X, X_metadata, X_raw, y, y_tiles, bag_names, X_sigmoid_overlap, X_metadata_sigmoid_overlap, X_raw_sigmoid_overlap, y_sigmoid_overlap, y_tiles_sigmoid_overlap, bag_names_sigmoid_overlap = extract_experiment_names_from_loaded_data(
+            out_dir=out_dir, file_name_suffix='-sigmoid-experiments',
+            extraction_experiment_names=sigmoid_experiment_names,
+            X=X, X_raw=X_raw, y=y, y_tiles=y_tiles, bag_names=bag_names, X_metadata=X_metadata
+        )
     else:
-        f.write('Not running.\n')
-    f.close()
+        f.write('Not running.')
+
+    if len(reserve_experiments_validation) > 0:
+        X, X_metadata, X_raw, y, y_tiles, bag_names, X_validation_overlap, X_metadata_validation_overlap, X_raw_validation_overlap, y_validation_overlap, y_tiles_validation_overlap, bag_names_validation_overlap = extract_experiment_names_from_loaded_data(
+            out_dir=out_dir, file_name_suffix='-validation-experiments',
+            extraction_experiment_names=reserve_experiments_validation,
+            X=X, X_raw=X_raw, y=y, y_tiles=y_tiles, bag_names=bag_names, X_metadata=X_metadata
+        )
+
+    if len(reserve_experiments_test) > 0:
+        X, X_metadata, X_raw, y, y_tiles, bag_names, X_test_overlap, X_metadata_test_overlap, X_raw_test_overlap, y_test_overlap, y_tiles_test_overlap, bag_names_test_overlap = extract_experiment_names_from_loaded_data(
+            out_dir=out_dir, file_name_suffix='-test-experiments',
+            extraction_experiment_names=reserve_experiments_test,
+            X=X, X_raw=X_raw, y=y, y_tiles=y_tiles, bag_names=bag_names, X_metadata=X_metadata
+        )
+
+    if len(reserve_experiments_train) > 0:
+        X, X_metadata, X_raw, y, y_tiles, bag_names, X_train_overlap, X_metadata_train_overlap, X_raw_train_overlap, y_train_overlap, y_tiles_train_overlap, bag_names_train_overlap = extract_experiment_names_from_loaded_data(
+            out_dir=out_dir, file_name_suffix='-train-experiments',
+            extraction_experiment_names=reserve_experiments_train,
+            X=X, X_raw=X_raw, y=y, y_tiles=y_tiles, bag_names=bag_names, X_metadata=X_metadata
+        )
+
+    # After repacking, X_metadata is invalidated! Must be deleted now. For your own safety
+    del X_metadata
 
     # Printing Bag Shapes
     # Setting up bags for MIL
@@ -431,12 +489,26 @@ def train_model(
         print_bag_metadata(X, y, y_tiles, bag_names, file_name=out_dir + 'bags.csv')
         if sigmoid_evaluation_enabled and reserve_sigmoid_experiments_as_test_data and testing_model_enabled:
             print_bag_metadata(X_sigmoid_overlap, y_sigmoid_overlap, y_tiles_sigmoid_overlap, bag_names_sigmoid_overlap,
-                               file_name=out_dir + 'bags-sigmoid-overlap-csv')
+                               file_name=out_dir + 'bags-sigmoid-overlap.csv')
 
-    # After repacking, X_metadata is invalidated! Must be deleted now.
-    del X_metadata
+        if len(reserve_experiments_validation) > 0:
+            print_bag_metadata(X_validation_overlap, y_validation_overlap, y_tiles_validation_overlap,
+                               bag_names_validation_overlap,
+                               file_name=out_dir + 'bags-validation-overlap.csv')
+
+        if len(reserve_experiments_train) > 0:
+            print_bag_metadata(X_train_overlap, y_train_overlap, y_tiles_train_overlap, bag_names_train_overlap,
+                               file_name=out_dir + 'bags-train-overlap.csv')
+
+        if len(reserve_experiments_test) > 0:
+            print_bag_metadata(X_test_overlap, y_test_overlap, y_tiles_test_overlap, bag_names_test_overlap,
+                               file_name=out_dir + 'bags-test-overlap.csv')
+
     # Removing unnecessary sigmoid overlap data
     del bag_names_sigmoid_overlap, X_raw_sigmoid_overlap
+    del bag_names_validation_overlap, X_raw_validation_overlap
+    del bag_names_test_overlap, X_raw_test_overlap
+    del bag_names_train_overlap, X_raw_train_overlap
 
     #########################
     # WRITING BAG PREVIEWS
@@ -481,29 +553,63 @@ def train_model(
             plt.imsave(preview_image_filename, out_image)
             line_print('Saved: ' + preview_image_filename)
 
+    ######################################
+    # Converted raw data into datasets
+    ######################################
     dataset, input_dim = loader.convert_bag_to_batch(bags=X, labels=y, y_tiles=y_tiles)
     dataset_sigmoid_overlap = None
+    dataset_train_overlap = None
+    dataset_test_overlap = None
+    dataset_validation_overlap = None
+
     log.write('Detected input dim: ' + str(input_dim))
     if sigmoid_evaluation_enabled and reserve_sigmoid_experiments_as_test_data and testing_model_enabled:
         dataset_sigmoid_overlap, _ = loader.convert_bag_to_batch(bags=X_sigmoid_overlap, labels=y_sigmoid_overlap,
                                                                  y_tiles=y_tiles_sigmoid_overlap)
 
+    if len(reserve_experiments_validation) > 0:
+        dataset_validation_overlap, _ = loader.convert_bag_to_batch(bags=X_validation_overlap,
+                                                                    labels=y_validation_overlap,
+                                                                    y_tiles=y_tiles_validation_overlap)
+    if len(reserve_experiments_train) > 0:
+        dataset_train_overlap, _ = loader.convert_bag_to_batch(bags=X_train_overlap, labels=y_train_overlap,
+                                                               y_tiles=y_tiles_train_overlap)
+    if len(reserve_experiments_test) > 0:
+        dataset_test_overlap, _ = loader.convert_bag_to_batch(bags=X_test_overlap, labels=y_test_overlap,
+                                                              y_tiles=y_tiles_test_overlap)
+
     del X, y, preview_indexes, preview_indexes_positive, preview_indexes_negative
     del X_sigmoid_overlap, y_sigmoid_overlap, y_tiles_sigmoid_overlap
+    del X_test_overlap, y_test_overlap, y_tiles_test_overlap
+    del X_train_overlap, y_train_overlap, y_tiles_train_overlap
+    del X_validation_overlap, y_validation_overlap, y_tiles_validation_overlap
 
     ##########################
     # RANDOM TRAIN TEST SPLIT
     ##########################
     log.write('Shuffling and splitting data into train and val set')
     test_data = []
+
     training_data, validation_data = shuffle_and_split_data(dataset,
-                                                            additional_dataset=None,
+                                                            additional_dataset_training=dataset_train_overlap,
+                                                            additional_dataset_validation=dataset_validation_overlap,
                                                             split_percentage=data_split_percentage_validation)
     if data_split_percentage_test is not None and data_split_percentage_test > 0:
+        combined_test_dataset = []
+        if dataset_sigmoid_overlap is not None:
+            combined_test_dataset.extend(dataset_sigmoid_overlap.copy())
+        if dataset_test_overlap is not None:
+            combined_test_dataset.extend(dataset_test_overlap.copy())
+
         training_data, test_data = shuffle_and_split_data(dataset=training_data,
-                                                          additional_dataset=dataset_sigmoid_overlap,
+                                                          additional_dataset_training=dataset_train_overlap,
+                                                          additional_dataset_validation=combined_test_dataset,
                                                           split_percentage=data_split_percentage_test)
+        del combined_test_dataset
+
+    # Clearing up memory from all these datasets
     del dataset
+    del dataset_sigmoid_overlap, dataset_train_overlap, dataset_validation_overlap
 
     f = open(out_dir + 'data-distribution.txt', 'w')
     training_data_tiles: int = sum([training_data[i][0].shape[0] for i in range(len(training_data))])
@@ -1017,6 +1123,30 @@ def print_bag_metadata(X, y, y_tiles, bag_names, file_name: str):
     f.close()
 
 
+def extract_experiment_names_from_loaded_data(out_dir, file_name_suffix, extraction_experiment_names, X, X_raw, y,
+                                              y_tiles, bag_names, X_metadata):
+    # TODO add param classes
+    os.makedirs(out_dir, exist_ok=True)
+    file_name_suffix = file_name_suffix.strip()
+
+    # Extracting reserved Sigmoid experiments from loaded bags
+    f = open(out_dir + os.sep + 'extracting_experiments' + file_name_suffix + '.txt', 'w')
+    f.write('Number of bags loaded: ' + str(len(X)) + '\n')
+    f.write('Names of experiments to extract loaded: ' + str(extraction_experiment_names) + '\n')
+    f.write('Number of experiments to extract loaded: ' + str(len(extraction_experiment_names)) + '\n')
+
+    X, X_metadata, X_raw, y, y_tiles, bag_names, X_sigmoid_overlap, X_metadata_sigmoid_overlap, X_raw_sigmoid_overlap, y_sigmoid_overlap, y_tiles_sigmoid_overlap, bag_names_sigmoid_overlap = utils.extract_experiments_from_bags(
+        X=X, X_raw=X_raw, y=y, y_tiles=y_tiles, bag_names=bag_names, X_metadata=X_metadata,
+        experiment_names=extraction_experiment_names)
+
+    f.write('\n\n### AFTER SIGMOID REMOVAL ###\n\n')
+    f.write('Bags (without sigmoid experiments): ' + str(len(X)) + '\n')
+    f.write('Bags (only sigmoid experiments): ' + str(len(X_sigmoid_overlap)) + '\n')
+    f.close()
+
+    return X, X_metadata, X_raw, y, y_tiles, bag_names, X_sigmoid_overlap, X_metadata_sigmoid_overlap, X_raw_sigmoid_overlap, y_sigmoid_overlap, y_tiles_sigmoid_overlap, bag_names_sigmoid_overlap
+
+
 def main(debug: bool = False):
     if sys.platform == 'win32':
         debug = True
@@ -1037,6 +1167,15 @@ def main(debug: bool = False):
     if debug:
         current_sources_dir = paths.curated_overlapping_source_dirs_unix_debug
         current_epochs = 5
+
+    # setting up sigmoid compound tubles
+    sigmoid_compounds = [
+        ('EJK228', paths.sigmoid_compounds_all_EJK228),
+        ('ELS681', paths.sigmoid_compounds_all_ELS681),
+        ('ESM36', paths.sigmoid_compounds_all_ESM36),
+        ('all', paths.sigmoid_compounds_all),
+        ('none', paths.sigmoid_compounds_none)
+    ]
 
     # Device ordinals
     current_device_ordinals = models.build_single_card_device_ordinals(2)
@@ -1108,6 +1247,7 @@ def main(debug: bool = False):
                     writing_metrics_enabled=True,
                     use_hard_negative_mining=False,
                     reserve_sigmoid_experiments_as_test_data=True,
+                    reserve_compound_train=paths.sigmoid_compounds_all_EJK228,
                     # sigmoid_validation_dirs=None
                     sigmoid_validation_dirs=paths.default_sigmoid_validation_dirs_win
                     )
@@ -1155,11 +1295,14 @@ def main(debug: bool = False):
                 for p in [0.0]:  # [0.3, 0.35, 0.6]:  # [0.10, 0.20, 0.3, 0.05, 0.15, 0.25, 0.3, 0.35]:
                     # best: 0.65 or 0.3
                     for i in [6, 7, 8, 4]:
-                        for aug in [[True, True]]:  # , [True, False], [False, True]]:
-                            augment_validation = aug[0]
-                            augment_train = aug[1]
+                        for s in sigmoid_compounds:  # , [True, False], [False, True]]:
+                            used_sigmoid_labels = s[0]
+                            used_sigmoid_compounds = s[1]
+                            print('Used sigmoid labels: ' + str(used_sigmoid_labels))
+                            print('Used sigmoid compounds: ' + str(used_sigmoid_compounds))
+
                             training_label = 'ep-overlap-' + o + '-n-' + str(i) + '-rp-' + str(
-                                p) + '-l-' + l + '-BMC-wholeSphere-constrainedNone'
+                                p) + '-l-' + l + '-wholeSphere-constrainedNone-test_compound-' + used_sigmoid_labels
 
                             log.write('Training label: ' + training_label)
                             if os.path.exists(current_out_dir + os.sep + training_label) and not debug:
@@ -1193,9 +1336,12 @@ def main(debug: bool = False):
                                         repack_percentage=p,
                                         optimizer=o,
                                         channel_inclusions=loader.default_channel_inclusions_no_neurites,
-                                        augment_validation=augment_validation,
-                                        augment_train=augment_train,
+                                        augment_validation=True,
+                                        augment_train=True,
                                         model_use_max=False,
+                                        reserve_compound_test=used_sigmoid_compounds,
+                                        reserve_compound_validation=None,
+                                        reserve_compound_train=None,
                                         model_enable_attention=True,
                                         positive_bag_min_samples=4,
                                         reserve_sigmoid_experiments_as_test_data=True,
