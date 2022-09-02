@@ -89,12 +89,16 @@ class PlateMetadata:
 
         sigmoid_score, score_detail, estimate_plot, fitted_plot, instructions, bmc_30_plate_well = r.pooled_sigmoid_evaluation(
             doses=doses, responses=responses, out_image_filename='Test.png')
+        bmc_out_text_content = ''
 
         plt.clf()
         plt.plot(doses, responses, linestyle='-', marker='o', color='blue')
         plt.plot(fitted_plot[0], fitted_plot[1], color='lightblue')
         legend_entries = ['Raw Measurements', 'Curve Fit']
-        y_axis_max = float(max(1.0, max(fitted_plot[1]), max(responses)))
+        legend_entries_tex = legend_entries.copy()
+        y_axis_max: float = float(max(1.0, max(fitted_plot[1]), max(responses)))
+        x_axis_max: int = math.floor(max(1.0, max(fitted_plot[0]), max(doses)))
+        x_axis_min: int = math.floor(min(x_axis_max, min(fitted_plot[0]), min(doses)))
 
         bmc_30_plate_concentration = self.interpolate_well_index_to_concentration(bmc_30_plate_well)
         self.plate_bmc30 = bmc_30_plate_concentration
@@ -102,6 +106,7 @@ class PlateMetadata:
         if not math.isnan(bmc_30_plate_concentration):
             plt.plot([bmc_30_plate_well, bmc_30_plate_well], [0, y_axis_max], color='lightgreen')
             legend_entries.append(bmc_30_plate_text)
+            bmc_out_text_content = bmc_out_text_content + bmc_30_plate_text + ' at ' + str(bmc_30_plate_well) + '\n'
 
         if not math.isnan(bmc_30_compound_concentration):
             bmc_30_compound_well = self.interpolate_concentration_to_well(bmc_30_compound_concentration)
@@ -109,30 +114,81 @@ class PlateMetadata:
                 round(bmc_30_compound_concentration, 3)) + ' ' + utils.mu + 'M'
             plt.plot([bmc_30_compound_well, bmc_30_compound_well], [0, y_axis_max], color='darkgreen')
             legend_entries.append(bmc_30_compound_text)
+            bmc_out_text_content = bmc_out_text_content + bmc_30_compound_text + ' at ' + str(
+                bmc_30_compound_well) + '\n'
 
-        plt.title(
-            'AXIS Oligo Diff: ' + self.experiment_id + '\n' + self.compound_name + '\n Sigmoid Score: ' + str(
-                round(sigmoid_score, 3)))
+        plt_title = 'AXIS Oligo Diff: ' + self.experiment_id + '\n' + self.compound_name + '\n Sigmoid Score: ' + str(
+            round(sigmoid_score, 3))
+        plt.title(plt_title)
         plt.xlabel('Well Index / Compound Concentration')
         plt.ylabel('% Control')
 
         plt.legend(legend_entries, loc='best')
 
         well_ticks = [i + 2 for i in range(wells)]
-        well_indices = [str(i + 2) + ' (' + str(round(self.get_concentration_at(i + 2), 3)) + ' ' + utils.mu + 'M)' for
-                        i in range(wells)]
+        all_well_indices = well_ticks.copy()
+        well_ticks = [str(i + 2) + ' (' + str(round(self.get_concentration_at(i + 2), 3)) + ' ' + utils.mu + 'M)' for
+                      i in range(wells)]
 
         plt.tight_layout()
         plt.autoscale()
-        plt.xticks(well_ticks, well_indices, rotation=45)
+        plt.xticks(all_well_indices, well_ticks, rotation=45)
         plt.ylim([0.0, y_axis_max + 0.05])
         plt.xlim([float(self.well_control) - 0.15, float(self.well_max_compound_concentration) + 0.15])
         plt.tight_layout()
 
-        # TODO save as .csv
+        # Saving as image
         plt.savefig(out_name + '.png', dpi=dpi)
         plt.savefig(out_name + '.svg', dpi=dpi, transparent=True)
         plt.savefig(out_name + '.pdf', dpi=dpi)
+
+        # Saving as .txt
+        data_list_y = [responses, fitted_plot[1]]
+        data_list_x = [doses, fitted_plot[0]]
+        tikz_colors = ['blue', 'cyan']
+
+        tikz = utils.get_plt_as_tex(data_list_y=data_list_y, data_list_x=data_list_x, plot_colors=tikz_colors,
+                                    title=plt_title.replace('\n', ' - ').replace('  ', ' ').replace('_', '-'),
+                                    plot_titles=legend_entries_tex,
+                                    max_y=y_axis_max + 0.15, max_x=int(x_axis_max) + 1,
+                                    min_x=x_axis_min, tick_count_x=len(well_ticks),
+                                    legend_pos='south west',
+                                    label_y='\\% Control', label_x='Well Index')
+        f = open(out_name + '.tex', 'w')
+        f.write(tikz)
+        f.close()
+        del f
+
+        # Saving fit TO CSV
+        sigmoid_out_csv = out_name + '-sigmoid_fit.csv'
+        f = open(sigmoid_out_csv, 'w')
+        f.write('i;x;y\n')
+        [f.write(str(i) + ';' + str(fitted_plot[0][i]) + ';' + str(fitted_plot[1][i]) + '\n')
+         for i in range(len(fitted_plot[0]))]
+        f.close()
+        del f
+
+        # writing data to CSV
+        out_csv = out_name + '-raw-measurements.csv'
+        f = open(out_csv, 'w')
+        # headers
+        f.write(self.experiment_id + ' [Score: ' + str(sigmoid_score) + '];')
+        [f.write(str(i) + ';') for i in all_well_indices]
+        # responses
+        f.write('\nResponse;')
+        [f.write(str(self.compound_oligo_diff[i - self.well_control]) + ';') for i in all_well_indices]
+        # concentrations
+        f.write('\nConcentration;')
+        [f.write(str(self.get_concentration_at(i)) + ';') for i in all_well_indices]
+        f.close()
+        del f
+
+        # Writing the BMCs:
+        f = open(out_name + '-bmc.txt', 'w')
+        f.write(bmc_out_text_content.replace(utils.mu, 'u'))
+        f.close()
+
+        # Notifying the user by writing to the log
         log.write('Saved baked plate bmc evaluations here: ' + out_name + '.png', print_to_console=verbose)
 
     def get_concentration_at(self, well_index: int) -> float:

@@ -281,21 +281,13 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
         experiment_dir = out_dir + os.sep + experiment_name + os.sep
         os.makedirs(experiment_dir, exist_ok=True)
 
-        # # Loading plate metadata
-        # metadata_path = paths.mil_metadata_file_linux
-        # if sys.platform == 'win32':
-        #     metadata_path = paths.mil_metadata_file_win
-        # if not os.path.exists(metadata_path):
-        #     log.write('Failed to locate metadata file: ' + metadata_path)
-        #     assert False
-        # TODO delete this??
-
-        # plate_metadata = loader.get_experiment_metadata(metadata_path=metadata_path, experiment_name=experiment_name)
         plate_metadata = experiment_compound_metadata_map[experiment_name]
         bmc30_plate = float('NaN')
         bmc30_compound = float('NaN')
         bmc30_plate_text = '?'
         bmc30_compound_text = '?'
+        bmc_out_text_content = ''
+
         if plate_metadata is not None:
             bmc30_plate_text = '{:0.2f}'.format(plate_metadata.plate_bmc30) + ' ' + utils.mu + 'M'
             bmc30_compound_text = '{:0.2f}'.format(plate_metadata.compound_bmc30) + ' ' + utils.mu + 'M'
@@ -327,8 +319,8 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
                          for i in range(len(sigmoid_plot_fit[0]))]
                     except Exception as e:
                         f.write('FATAL ERROR!\n')
-                        f.write(str(e)+'\n')
-                        f.write(str(e.__class__)+'\n')
+                        f.write(str(e) + '\n')
+                        f.write(str(e.__class__) + '\n')
                 f.close()
             else:
                 sigmoid_score = 'Not available.'
@@ -451,14 +443,23 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
         # Plotting the BMC30
         plt.plot([bmc30_prediction, bmc30_prediction], [0, 1], color='lightgreen')
         legend_entries.append('BMC30 (pred.): ' + bmc30_prediction_text)
+        bmc_out_text_content = bmc_out_text_content + 'BMC30 (pred.): ' + bmc30_prediction_text + ' at ' + str(
+            bmc30_prediction) + '\n'
+
         if not math.isnan(bmc30_plate):
             plt.plot([bmc30_plate, bmc30_plate], [0, 1], color='green')
             legend_entries.append('BMC30 (plate): ' + bmc30_plate_text)
+            bmc_out_text_content = bmc_out_text_content + 'BMC30 (plate.): ' + bmc30_plate_text + ' at ' + str(
+                bmc30_plate) + '\n'
+
         if not math.isnan(bmc30_compound):
             plt.plot([bmc30_compound, bmc30_compound], [0, 1], color='darkgreen')
             legend_entries.append('BMC30 (compound): ' + bmc30_compound_text)
+            bmc_out_text_content = bmc_out_text_content + 'BMC30 (compound.): ' + bmc30_compound_text + ' at ' + str(
+                bmc30_compound) + '\n'
 
         title = 'Predictions: ' + experiment_name + ' ' + title_suffix
+        title_tex = title
         if plate_metadata is not None:
             title = title + '\n' + plate_metadata.compound_name + ' [' + plate_metadata.compound_cas + ']'
 
@@ -484,9 +485,6 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
                 title = title + '\n\nFinal Sigmoid Score: ' + sigmoid_score
 
         # Setting the legend (should be done first)
-        # if plate_metadata is not None and plate_metadata.has_valid_bmcs():
-        #     plt.legend(legend_entries, bbox_to_anchor=(1.05, 1.0), loc='upper left')
-        # else:
         plt.legend(legend_entries, loc='best')
 
         # Setting the x label
@@ -511,12 +509,42 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
         if experiment_dir not in all_render_out_dirs:
             all_render_out_dirs.append(experiment_dir)
 
+        # Rendering the images
         out_plot_name_base = experiment_dir + os.sep + experiment_name + '-predictions_concentration_response' + file_name_suffix
         plt.savefig(out_plot_name_base + '.png', dpi=dpi)
         plt.savefig(out_plot_name_base + '.svg', dpi=dpi, transparent=True)
         plt.savefig(out_plot_name_base + '.pdf', dpi=dpi)
 
-        # TODO save as .tex!!
+        # Writing the BMCs:
+        f = open(out_plot_name_base + '-bmc.txt', 'w')
+        f.write(bmc_out_text_content.replace(utils.mu, 'u'))
+        f.close()
+
+        # Writing as .tex
+        data_list_y = [prediction_entries]
+        data_list_x = [well_indices]
+        tikz_colors = ['blue']
+        legend_entries_tex = ['Mean Predictions']
+        if sigmoid_plot_fit is not None:
+            data_list_y.append(sigmoid_plot_fit[1])
+            data_list_x.append(sigmoid_plot_fit[0])
+
+            tikz_colors.append('cyan')
+            legend_entries_tex.append('Curve fit')
+
+        all_well_indices = list(range(min(well_indices), max(well_indices), 1))
+        tikz = utils.get_plt_as_tex(data_list_y=data_list_y, data_list_x=data_list_x, plot_colors=tikz_colors,
+                                    title=title_tex.replace('\n', ' - ').replace('  ', ' ').replace('_', '-').replace(
+                                        utils.mu, 'm'),
+                                    plot_titles=legend_entries_tex,
+                                    max_y=1.15, min_y=0.0,
+                                    max_x=max(well_indices), min_x=min(well_indices),
+                                    tick_count_x=len(all_well_indices),
+                                    legend_pos='south west',
+                                    label_y='Predictions', label_x='Well Index')
+        f = open(out_plot_name_base + '.tex', 'w')
+        f.write(tikz)
+        f.close()
 
     # Rending done. Returning the newly created directories
     return all_render_out_dirs

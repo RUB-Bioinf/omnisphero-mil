@@ -76,7 +76,7 @@ def get_time_diff(start_time: datetime) -> str:
 # ###############################
 
 def create_tikz_axis(title: str, label_y: str, label_x: str = 'Epoch', max_x: float = 1.0, min_x: float = 0.0,
-                     max_y: float = 1.0, min_y: float = 0.0, tick_count: int = 10,
+                     max_y: float = 1.0, min_y: float = 0.0, tick_count_x: int = 10, tick_count_y: int = 10,
                      legend_pos: str = 'north west') -> str:
     """
     Sets up a basic tikz plot environment to be used in a LaTeX document.
@@ -92,7 +92,8 @@ def create_tikz_axis(title: str, label_y: str, label_x: str = 'Epoch', max_x: fl
     :param min_x: Optional argument. The minimum span for the x axis. Default: 0.0
     :param max_y: Optional argument. The maximum span for the y axis. Default: 1.0
     :param min_y: Optional argument. The maximum span for the y axis. Default: 0.0
-    :param tick_count: Optional argument. In how many 'ticks' should the plot be partitioned? Default: 10.
+    :param tick_count_x: Optional argument. In how many 'ticks' should the plot be partitioned on the x axix? Default: 10.
+    :param tick_count_y: Optional argument. In how many 'ticks' should the plot be partitioned on the y axix? Default: 10.
     :param legend_pos: Optional argument. The position of the legend. Default: 'north-west'.
 
     :type title: str
@@ -111,10 +112,11 @@ def create_tikz_axis(title: str, label_y: str, label_x: str = 'Epoch', max_x: fl
 
     max_x = float(max_x)
     max_y = float(max_y)
-    tick_count = float(tick_count)
+    tick_count_x = float(tick_count_x)
+    tick_count_y = float(tick_count_y)
 
-    tick_x = max_x / tick_count
-    tick_y = max_y / tick_count
+    tick_x = max_x / tick_count_x
+    tick_y = max_y / tick_count_y
     if min_x + max_x > 10:
         tick_x = int(tick_x)
     if min_y + max_y > 10:
@@ -133,10 +135,11 @@ def create_tikz_axis(title: str, label_y: str, label_x: str = 'Epoch', max_x: fl
 def get_plt_as_tex(data_list_y: [[float]], plot_colors: [str], title: str, label_y: str, data_list_x: [[float]] = None,
                    plot_titles: [str] = None, label_x: str = 'Epoch', max_x: float = 1.0, min_x: float = 0.0,
                    max_y: float = 1.0,
-                   min_y: float = 0.0, max_entries: int = 4000, tick_count: int = 10, legend_pos: str = 'north west'):
+                   tick_count_y: int = 10, tick_count_x: int = 10,
+                   min_y: float = 0.0, max_entries: int = 4000, legend_pos: str = 'north west'):
     """
     Formats a list of given plots in a single tikz axis to be compiled in LaTeX.
-    
+
     This function respects the limits of the tikz compiler.
     That compiler can only use a limited amount of virtual memory that is (to my knowledge not changeable).
     Hence this function can limit can limit the line numbers for the LaTeX document.
@@ -159,7 +162,8 @@ def get_plt_as_tex(data_list_y: [[float]], plot_colors: [str], title: str, label
     :param min_x: Optional argument. The minimum span for the x axis. Default: 0.0
     :param max_y: Optional argument. The maximum span for the y axis. Default: 1.0
     :param min_y: Optional argument. The maximum span for the y axis. Default: 0.0
-    :param tick_count: Optional argument. In how many 'ticks' should the plot be partitioned? Default: 10.
+    :param tick_count_x: Optional argument. In how many 'ticks' should the plot be partitioned on the x axix? Default: 10.
+    :param tick_count_y: Optional argument. In how many 'ticks' should the plot be partitioned on the y axix? Default: 10.
     :param legend_pos: Optional argument. The position of the legend. Default: 'north-west'.
     :param max_entries: Limits the amount of nodes for the plot to this number. This does not cut of the data, but increases scanning offsets. Use a smaller number for faster compile times in LaTeX. Default: 4000.
 
@@ -204,12 +208,13 @@ def get_plt_as_tex(data_list_y: [[float]], plot_colors: [str], title: str, label
     """
 
     out_text = create_tikz_axis(title=title, label_y=label_y, label_x=label_x, max_x=max_x, min_x=min_x, max_y=max_y,
-                                min_y=min_y, tick_count=tick_count, legend_pos=legend_pos) + '\n'
-    line_count = len(data_list_y[0])
+                                min_y=min_y, tick_count_x=tick_count_x, tick_count_y=tick_count_y,
+                                legend_pos=legend_pos) + '\n'
     data_x = None
     steps = int(max(len(data_list_y) / max_entries, 1))
 
     for j in range(0, len(data_list_y), steps):
+        line_count = len(data_list_y[j])
         data_y = data_list_y[j]
         if data_list_x is not None:
             data_x = data_list_x[j]
