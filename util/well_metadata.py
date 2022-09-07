@@ -88,6 +88,7 @@ class PlateMetadata:
             return
 
         sigmoid_score, score_detail, estimate_plot, fitted_plot, instructions, bmc_30_plate_well = r.pooled_sigmoid_evaluation(
+            save_sigmoid_plot=False,
             doses=doses, responses=responses, out_image_filename='Test.png')
         bmc_out_text_content = ''
 

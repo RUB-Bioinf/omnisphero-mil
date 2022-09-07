@@ -240,7 +240,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
         if experiment_name not in experiment_names_unique:
             experiment_names_unique.append(experiment_name)
 
-    return X_full, y_full, y_tiles_full, X_raw_full, X_metadata_full, bag_names_full, experiment_names_full,experiment_names_unique, well_names_full, error_list, loaded_files_list_full
+    return X_full, y_full, y_tiles_full, X_raw_full, X_metadata_full, bag_names_full, experiment_names_full, experiment_names_unique, well_names_full, error_list, loaded_files_list_full
 
 
 # Main Loading function
@@ -573,7 +573,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     assert include_raw
 
     if unrestricted_experiments_override is None:
-        unrestricted_experiments_override=[]
+        unrestricted_experiments_override = []
 
     # Renaming the thread, so profilers can keep up
     threading.current_thread().setName('Parsing JSON: ' + zipped_data_name)
@@ -719,6 +719,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
                                 plate_metadata=plate_metadata,
                                 well_image_height=well_image_height, read_from_source=True)
         X_metadata.append(metadata)
+        del metadata
 
         # Checking the constraints...
         if count_nuclei < used_constraints[0] or count_oligos < used_constraints[1] or count_neurons < used_constraints[
@@ -942,6 +943,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
             current_rgb[np.where(np.isnan(current_rgb))] = 0
 
             X[i] = current_rgb
+            del current_rgb
 
     # Checking if there is actually something loaded
     if len(X) == 0:
@@ -964,9 +966,10 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
         # Saving preview (if it exists)
         if used_constraints is not None:
             try:
-                save_save_bag_preview(X=X, out_dir_base=filepath, experiment_name=experiment_name, well=well,
+                save_save_bag_preview(X=X, out_dir_base=filepath,
                                       normalize_enum=normalize_enum, preview_constraints=used_constraints,
                                       channel_inclusions=channel_inclusions,
+                                      X_metadata=X_metadata,
                                       bit_depth=bit_depth, X_raw=X_raw, verbose=worker_verbose)
             except Exception as e:
                 # TODO handle this better
@@ -984,12 +987,23 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     return X, label, y_tiles, X_raw, X_metadata, bag_name, experiment_name, well
 
 
-def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constraints, normalize_enum, bit_depth,
-                          channel_inclusions: [bool], X_raw, dpi: int = (1337 * 1.5), colormap_name: str = 'jet',
-                          v_min: float = -3.0, v_max=3.0, outline: int = 2, verbose: bool = False):
+def save_save_bag_preview(X: np.ndarray, X_metadata: [TileMetadata], out_dir_base: str,
+                          preview_constraints: [int, int, int], normalize_enum: int, bit_depth: int,
+                          channel_inclusions: [bool], X_raw: np.ndarray, dpi: int = (1337 * 1.5),
+                          colormap_name: str = 'jet', v_min: float = -3.0, v_max=3.0, outline: int = 2,
+                          verbose: bool = False):
     width = None
     height = None
     z_mode = normalize_enum > 4
+    dpi = int(dpi)
+    assert X.shape[0] == len(X_metadata)
+    assert X.shape[0] == X_raw.shape[0]
+
+    metadata: TileMetadata = X_metadata[0]
+    experiment_name = metadata.experiment_name
+    well = metadata.get_formatted_well(long=True)
+    well_image_height=metadata.well_image_height
+    well_image_width=metadata.well_image_width
 
     if platform == "linux" or platform == "linux2":
         # going one level up for linux dirs
@@ -1008,6 +1022,15 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
 
     out_file_name = out_dir + experiment_name + '-' + well + '.png'
     out_file_name_raw = out_dir + experiment_name + '-' + well + '-raw.png'
+    out_file_name_location = out_dir + experiment_name + '-' + well + '_localized.png'
+    out_file_name_location_raw = out_dir + experiment_name + '-' + well + '_localized-raw.png'
+
+    out_image_localized = np.zeros((metadata.well_image_height, metadata.well_image_width, 3), dtype=np.uint8)
+    out_image_localized_zscore_r = np.zeros((metadata.well_image_height, metadata.well_image_width, 3), dtype=np.uint8)
+    out_image_localized_zscore_g = np.zeros((metadata.well_image_height, metadata.well_image_width, 3), dtype=np.uint8)
+    out_image_localized_zscore_b = np.zeros((metadata.well_image_height, metadata.well_image_width, 3), dtype=np.uint8)
+    out_image_localized_raw = np.zeros((metadata.well_image_height, metadata.well_image_width, 3), dtype=np.uint8)
+
     # print('debug out fname: ' + out_file_name)
     if os.path.exists(out_file_name):
         # Preview already exists. Nothing to do.
@@ -1024,15 +1047,23 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
     z_out_file_name_r = z_out_dir + experiment_name + '-' + well + '_r.png'
     z_out_file_name_g = z_out_dir + experiment_name + '-' + well + '_g.png'
     z_out_file_name_b = z_out_dir + experiment_name + '-' + well + '_b.png'
+    z_out_file_name_localized_r = z_out_dir + experiment_name + '-' + well + '-localized_r.png'
+    z_out_file_name_localized_g = z_out_dir + experiment_name + '-' + well + '-localized_g.png'
+    z_out_file_name_localized_b = z_out_dir + experiment_name + '-' + well + '-localized_b.png'
 
-    # Collecting every samples in the bag to save them on the device
+    # Collecting every sample in the bag to save them on the device
     assert len(X) > 0
     global thread_lock
 
     for i in range(len(X)):
         sample = X[i]
         sample_raw = X_raw[i]
+        metadata: TileMetadata = X_metadata[i]
+
         width, height, _ = sample.shape
+        pos_x: int = int(metadata.pos_x)
+        pos_y: int = int(metadata.pos_y)
+        out_image_localized_raw[pos_y:pos_y + height, pos_x:pos_x + width] = sample_raw
 
         # Storing raw samples
         sample_raw = mil_metrics.outline_rgb_array(sample_raw, None, None, outline=outline,
@@ -1042,16 +1073,24 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
         # Storing the actual sample, based if it's z-scored or normalized
         if z_mode:
             z_score_channels = z_score_to_rgb(img=sample, colormap=colormap_name, a_min=v_min, a_max=v_max)
+            z_score_channel_r = z_score_channels[0]
+            z_score_channel_g = z_score_channels[1]
+            z_score_channel_b = z_score_channels[2]
+            out_image_localized_zscore_r[pos_y:pos_y + height, pos_x:pos_x + width] = z_score_channel_r
+            out_image_localized_zscore_g[pos_y:pos_y + height, pos_x:pos_x + width] = z_score_channel_g
+            out_image_localized_zscore_b[pos_y:pos_y + height, pos_x:pos_x + width] = z_score_channel_b
 
-            sample_r = mil_metrics.outline_rgb_array(z_score_channels[0], None, None, outline=outline,
+            sample_r = mil_metrics.outline_rgb_array(z_score_channel_r, None, None, outline=outline,
                                                      override_colormap=[255, 255, 255])
-            sample_g = mil_metrics.outline_rgb_array(z_score_channels[1], None, None, outline=outline,
+            sample_g = mil_metrics.outline_rgb_array(z_score_channel_g, None, None, outline=outline,
                                                      override_colormap=[255, 255, 255])
-            sample_b = mil_metrics.outline_rgb_array(z_score_channels[2], None, None, outline=outline,
+            sample_b = mil_metrics.outline_rgb_array(z_score_channel_b, None, None, outline=outline,
                                                      override_colormap=[255, 255, 255])
             z_r_samples.append(sample_r)
             z_g_samples.append(sample_g)
             z_b_samples.append(sample_b)
+            del z_score_channels, z_score_channel_r, z_score_channel_g, z_score_channel_b
+            del sample_r, sample_g, sample_b
         else:
             if normalize_enum == 0:
                 sample = (sample / bit_max) * 255
@@ -1062,6 +1101,7 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
             sample = mil_metrics.outline_rgb_array(sample, None, None, outline=outline,
                                                    override_colormap=[255, 255, 255])
             rgb_samples.append(sample)
+            out_image_localized[pos_y:pos_y + height, pos_x:pos_x + width] = sample
 
     # Saving the image
     if z_mode:
@@ -1069,6 +1109,7 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
         fused_image_r = mil_metrics.fuse_image_tiles(images=z_r_samples, image_width=width, image_height=height)
         fused_image_g = mil_metrics.fuse_image_tiles(images=z_g_samples, image_width=width, image_height=height)
         fused_image_b = mil_metrics.fuse_image_tiles(images=z_b_samples, image_width=width, image_height=height)
+        fused_image_localized = mil_metrics.fuse_image_tiles(images=[out_image_localized_zscore_r,out_image_localized_zscore_g,out_image_localized_zscore_b], image_width=well_image_width, image_height=well_image_height)
 
         # Saving single chanel z-score rgb images
         fused_images = [fused_image_r, fused_image_g, fused_image_b]
@@ -1076,6 +1117,14 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
         plt.imsave(z_out_file_name_r, fused_image_r)
         plt.imsave(z_out_file_name_g, fused_image_g)
         plt.imsave(z_out_file_name_b, fused_image_b)
+
+        # and the localized versions
+        plt.imsave(z_out_file_name_localized_r, out_image_localized_zscore_r)
+        plt.imsave(z_out_file_name_localized_g, out_image_localized_zscore_g)
+        plt.imsave(z_out_file_name_localized_b, out_image_localized_zscore_b)
+
+        plt.imsave(out_file_name_location, fused_image_localized)
+        del fused_image_localized
 
         # saving the raw included version
         out_image_raw = mil_metrics.fuse_image_tiles(images=rgb_samples_raw, image_width=width, image_height=height)
@@ -1122,6 +1171,14 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
         out_image_raw = mil_metrics.fuse_image_tiles(images=[out_image, out_image_raw], image_width=fused_width,
                                                      image_height=fused_height)
         plt.imsave(out_file_name_raw, out_image_raw)
+        plt.imsave(out_file_name_location, out_image_localized)
+
+    # All done. Image is saved at this point.
+    if verbose:
+        log.write('Saved the preview image: ' + out_file_name_raw)
+
+    # Now saving the 'localized' image:
+    plt.imsave(out_file_name_location_raw, out_image_localized_raw)
 
 
 def get_bag_mean(n: [np.ndarray], axis: int = None, channel_inclusions=default_channel_inclusions_all):

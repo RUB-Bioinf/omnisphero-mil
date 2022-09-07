@@ -245,8 +245,8 @@ def train_model(
             include_raw=True,
             force_balanced_batch=False,
             channel_inclusions=channel_inclusions,
-            constraints_0=loader.default_tile_constraints_nuclei,
-            constraints_1=loader.default_tile_constraints_nuclei,
+            constraints_0=tile_constraints_0,
+            constraints_1=tile_constraints_1,
             label_0_well_indices=loader.default_well_indices_all,
             label_1_well_indices=loader.default_well_indices_all,
             normalize_enum=normalize_enum)
@@ -1169,19 +1169,25 @@ def main(debug: bool = False):
         current_epochs = 5
 
     # setting up sigmoid compound tubles
-    sigmoid_compounds = [
+    sigmoid_compounds_test_all_variants = [
         ('EJK228', paths.sigmoid_compounds_all_EJK228),
         ('ELS681', paths.sigmoid_compounds_all_ELS681),
         ('ESM36', paths.sigmoid_compounds_all_ESM36),
         ('all', paths.sigmoid_compounds_all),
         ('none', paths.sigmoid_compounds_none)
     ]
+    sigmoid_compounds_test_none = [
+        ('none', paths.sigmoid_compounds_none)
+    ]
+    sigmoid_compounds_used = sigmoid_compounds_test_none
 
     # Device ordinals
     current_device_ordinals = models.build_single_card_device_ordinals(2)
     if host_name == 'e82560f50252':  # hostname of ehrlich
         log.write('Welcome to Ehrlich')
         current_device_ordinals = models.device_ordinals_ehrlich
+
+    current_device_ordinals = models.device_ordinals_ehrlich
     log.write('Selected Device Ordinals: ' + str(current_device_ordinals))
     time.sleep(2)
 
@@ -1288,70 +1294,72 @@ def main(debug: bool = False):
     else:
         # '/mil/oligo-diff/models/linux/hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
         c = 0
-        for l in ['mean_square_error', 'binary_cross_entropy']:
-            # best: binary_cross_entropy
-            for o in ['adadelta']:  # ['adam', 'adadelta']:
-                # best: adadelta
-                for p in [0.0]:  # [0.3, 0.35, 0.6]:  # [0.10, 0.20, 0.3, 0.05, 0.15, 0.25, 0.3, 0.35]:
-                    # best: 0.65 or 0.3
-                    for i in [6, 7, 8, 4]:
-                        for s in sigmoid_compounds:  # , [True, False], [False, True]]:
-                            used_sigmoid_labels = s[0]
-                            used_sigmoid_compounds = s[1]
-                            print('Used sigmoid labels: ' + str(used_sigmoid_labels))
-                            print('Used sigmoid compounds: ' + str(used_sigmoid_compounds))
+        for r in range(5):  # replicates
+            for l in ['mean_square_error', 'binary_cross_entropy']:
+                # best: binary_cross_entropy
+                for o in ['adadelta']:  # ['adam', 'adadelta']:
+                    # best: adadelta
+                    for p in [0.0]:  # [0.3, 0.35, 0.6]:  # [0.10, 0.20, 0.3, 0.05, 0.15, 0.25, 0.3, 0.35]:
+                        # best: 0.65 or 0.3
+                        for i in [6]:  # [6, 7, 8, 4]:
+                            for s in sigmoid_compounds_used:  # , [True, False], [False, True]]:
+                                used_sigmoid_labels = s[0]
+                                used_sigmoid_compounds = s[1]
+                                print('Used sigmoid labels: ' + str(used_sigmoid_labels))
+                                print('Used sigmoid compounds: ' + str(used_sigmoid_compounds))
 
-                            training_label = 'ep-overlap-' + o + '-n-' + str(i) + '-rp-' + str(
-                                p) + '-l-' + l + '-wholeSphere-constrainedNone-test_compound-' + used_sigmoid_labels
+                                training_label = 'ep-overlap-' + o + '-n-' + str(i) + '-rp-' + str(
+                                    p) + '-l-' + l + '-test_compound-' + used_sigmoid_labels + 'replicate' + str(r)
 
-                            log.write('Training label: ' + training_label)
-                            if os.path.exists(current_out_dir + os.sep + training_label) and not debug:
-                                log.write('MODEL PATH ALREADY EXISTS!')
-                                time.sleep(1)
-                                print('\n')
-                                log.write('SKIPPING!')
-                                print('\n')
-                                time.sleep(3)
-                                continue
+                                log.write('Training label: ' + training_label)
+                                if os.path.exists(current_out_dir + os.sep + training_label) and not debug:
+                                    log.write('MODEL PATH ALREADY EXISTS!')
+                                    time.sleep(1)
+                                    print('\n')
+                                    log.write('SKIPPING!')
+                                    print('\n')
+                                    time.sleep(3)
+                                    continue
 
-                            print('\n\n############################################################\n\n')
-                            train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
-                                        max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
-                                        image_folder=image_folder,
-                                        force_balanced_batch=True,
-                                        normalize_enum=i,
-                                        training_label=training_label,
-                                        global_log_dir=current_global_log_dir,
-                                        stop_when_spiking_loss=True,
-                                        early_stopping_enabled=True,
-                                        halve_lr_enabled=True,
-                                        predict_sigmoid_data_afterwards=True,
-                                        predict_training_data_afterwards=False,
-                                        data_split_percentage_validation=0.25,
-                                        data_split_percentage_test=0.15,
-                                        use_hard_negative_mining=False,
-                                        hnm_magnitude=5.5,
-                                        hnm_new_bag_percentage=0.35,
-                                        loss_function=l,
-                                        repack_percentage=p,
-                                        optimizer=o,
-                                        channel_inclusions=loader.default_channel_inclusions_no_neurites,
-                                        augment_validation=True,
-                                        augment_train=True,
-                                        model_use_max=False,
-                                        reserve_compound_test=used_sigmoid_compounds,
-                                        reserve_compound_validation=None,
-                                        reserve_compound_train=None,
-                                        model_enable_attention=True,
-                                        positive_bag_min_samples=4,
-                                        reserve_sigmoid_experiments_as_test_data=True,
-                                        tile_constraints_0=loader.default_tile_constraints_none,
-                                        tile_constraints_1=loader.default_tile_constraints_none,
-                                        label_1_well_indices=loader.default_well_bmc_threshold_control,
-                                        label_0_well_indices=loader.default_well_bmc_threshold_effect,
-                                        device_ordinals=current_device_ordinals,
-                                        sigmoid_validation_dirs=sigmoid_input_dirs
-                                        )
+                                print('\n\n############################################################\n\n')
+                                train_model(source_dirs=current_sources_dir, out_dir=current_out_dir,
+                                            epochs=current_epochs,
+                                            max_workers=current_max_workers, gpu_enabled=current_gpu_enabled,
+                                            image_folder=image_folder,
+                                            force_balanced_batch=True,
+                                            normalize_enum=i,
+                                            training_label=training_label,
+                                            global_log_dir=current_global_log_dir,
+                                            stop_when_spiking_loss=True,
+                                            early_stopping_enabled=True,
+                                            halve_lr_enabled=True,
+                                            predict_sigmoid_data_afterwards=True,
+                                            predict_training_data_afterwards=False,
+                                            data_split_percentage_validation=0.25,
+                                            data_split_percentage_test=0.15,
+                                            use_hard_negative_mining=False,
+                                            hnm_magnitude=5.5,
+                                            hnm_new_bag_percentage=0.35,
+                                            loss_function=l,
+                                            repack_percentage=p,
+                                            optimizer=o,
+                                            channel_inclusions=loader.default_channel_inclusions_no_neurites,
+                                            augment_validation=True,
+                                            augment_train=True,
+                                            model_use_max=False,
+                                            reserve_compound_test=used_sigmoid_compounds,
+                                            reserve_compound_validation=None,
+                                            reserve_compound_train=None,
+                                            model_enable_attention=True,
+                                            positive_bag_min_samples=4,
+                                            reserve_sigmoid_experiments_as_test_data=True,
+                                            tile_constraints_0=loader.default_tile_constraints_none,
+                                            tile_constraints_1=loader.default_tile_constraints_none,
+                                            label_1_well_indices=loader.default_well_bmc_threshold_control,
+                                            label_0_well_indices=loader.default_well_bmc_threshold_effect,
+                                            device_ordinals=current_device_ordinals,
+                                            sigmoid_validation_dirs=sigmoid_input_dirs
+                                            )
     log.write('Finished every training!')
 
 
