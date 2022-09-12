@@ -489,7 +489,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
 
     # Joining the processes
     for i in range(len(task_list)):
-        line_print('Joining task: ' + str(i+1) + '/' + str(len(task_list)))
+        line_print('Joining task: ' + str(i + 1) + '/' + str(len(task_list)))
         task_list[i].join()
 
     # for i in range(len(future_list)):
@@ -1206,8 +1206,8 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
     global thread_lock
 
     for i in range(len(X)):
-        sample = X[i]
-        sample_raw = X_raw[i]
+        sample = X[i].copy()
+        sample_raw = X_raw[i].copy()
         width, height, _ = sample.shape
 
         # Storing raw samples
@@ -1218,6 +1218,7 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
         # Storing the actual sample, based if it's z-scored or normalized
         if z_mode:
             z_score_channels = z_score_to_rgb(img=sample, colormap=colormap_name, a_min=v_min, a_max=v_max)
+            z_score_channels = z_score_channels.copy()
 
             sample_r = mil_metrics.outline_rgb_array(z_score_channels[0], None, None, outline=outline,
                                                      override_colormap=[255, 255, 255])
@@ -1235,6 +1236,7 @@ def save_save_bag_preview(X, out_dir_base, experiment_name, well, preview_constr
                 sample = sample * 255
 
             sample = sample.astype(np.uint8)
+            sample = sample.copy()
             sample = mil_metrics.outline_rgb_array(sample, None, None, outline=outline,
                                                    override_colormap=[255, 255, 255])
             rgb_samples.append(sample)

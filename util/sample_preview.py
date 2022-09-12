@@ -100,6 +100,7 @@ def save_hnm_bags(out_dir: str, new_bags: [np.ndarray], new_bags_raw: [np.ndarra
 
         for rgb in current_bag_raw:
             rgb = rgb.astype('uint8')
+            rgb = rgb.copy()
             image_width, image_height = rgb[0].shape
 
             rgb = np.einsum('abc->bca', rgb)

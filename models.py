@@ -88,6 +88,10 @@ class OmniSpheroMil(nn.Module):
     def synchronize_gpu(self):
         torch.cuda.synchronize()
 
+    def _sum_layers(self, input_dim):
+        from torchsummary import summary
+        summary(self, input_dim)
+
 
 ####
 
@@ -399,6 +403,9 @@ class BaselineMIL(OmniSpheroMil):
 
         accuracy = sum(accuracy_list) / len(accuracy_list)
         return accuracy, accuracy_list, tile_hat_list
+
+    def sum_layers(self):
+        self._sum_layers(self.input_dim)
 
 
 ####
@@ -1283,6 +1290,7 @@ def _binary_accuracy(outputs: Tensor, targets: Tensor) -> Tensor:
 
 
 def debug_all_models(gpu_enabled: bool = True):
+    log.write('Debugging all models.')
     device = hardware.get_hardware_device(gpu_preferred=gpu_enabled)
     device_ordinals = build_single_card_device_ordinals(0)
     accuracy_function = 'binary'
@@ -1294,10 +1302,15 @@ def debug_all_models(gpu_enabled: bool = True):
                     device=device,
                     loss_function=loss_function,
                     accuracy_function=accuracy_function,
-                    enable_attention=True,
+                    enable_attention=True, use_max=False,
                     device_ordinals=device_ordinals)
+
+    # Writing to the sdo
     print(m)
     log.write(str(m))
+
+    # writing layer summary
+    m.sum_layers()
 
 
 def predict_dose_response(experiment_holder: dict, experiment_name: str, model,

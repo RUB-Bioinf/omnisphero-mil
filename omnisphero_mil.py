@@ -62,7 +62,7 @@ def train_model(
         epochs: int = 3, max_workers: int = max_workers_default, normalize_enum: int = normalize_enum_default,
         out_dir: str = None, gpu_enabled: bool = False,
         shuffle_data_loaders: bool = True, model_enable_attention: bool = False, model_use_max: bool = True,
-        global_log_dir: str = None, optimizer: str = 'adam',
+        global_log_dir: str = None, optimizer: str = 'adam', include_line_fit_in_metrics_after_training: bool = True,
         # Clamp Loss function
         clamp_min: float = None, clamp_max: float = None,
         # Callback configurations
@@ -541,6 +541,7 @@ def train_model(
             for rgb in X_raw[i]:
                 # Creating a deep copy so it's not overwritten
                 rgb = np.copy(rgb)
+                rgb = rgb.copy()
 
                 image_width, image_height = rgb[0].shape
                 rgb = np.einsum('abc->bca', rgb)
@@ -789,7 +790,7 @@ def train_model(
     epochs_passed = len(history)
     include_line_fit = False
     if epochs_passed > 100:
-        include_line_fit = True
+        include_line_fit = True and include_line_fit_in_metrics_after_training
 
     if writing_metrics_enabled:
         log.write('Plotting and saving loss and acc plots...')
@@ -990,7 +991,7 @@ def train_model(
                 global_log_dir=global_log_dir,
 
                 # Setting the tile constraints to the default prediction settings
-                tile_constraints=loader.default_tile_constraints_nuclei,
+                tile_constraints=tile_constraints_0,
 
                 # deciding what to render:
                 render_merged_predicted_tiles_activation_overlays=False,
@@ -1229,7 +1230,7 @@ def main(debug: bool = False):
         train_model(source_dirs=current_sources_dir, out_dir=current_out_dir, epochs=current_epochs,
                     max_workers=5, gpu_enabled=current_gpu_enabled, image_folder=image_folder,
                     device_ordinals=current_device_ordinals,
-                    normalize_enum=6,
+                    normalize_enum=4,
                     training_label=training_label,
                     global_log_dir=current_global_log_dir,
                     save_sigmoid_plot_interval=1,
@@ -1269,7 +1270,7 @@ def main(debug: bool = False):
                     device_ordinals=current_device_ordinals,
                     training_label='debug-unix-test',
                     image_folder=image_folder,
-                    normalize_enum=6,
+                    normalize_enum=4,
                     use_hard_negative_mining=False,
                     model_enable_attention=True,
                     model_use_max=False,
@@ -1301,7 +1302,7 @@ def main(debug: bool = False):
                     # best: adadelta
                     for p in [0.0]:  # [0.3, 0.35, 0.6]:  # [0.10, 0.20, 0.3, 0.05, 0.15, 0.25, 0.3, 0.35]:
                         # best: 0.65 or 0.3
-                        for i in [6]:  # [6, 7, 8, 4]:
+                        for i in [4]:  # [6, 7, 8, 4]:
                             for s in sigmoid_compounds_used:  # , [True, False], [False, True]]:
                                 used_sigmoid_labels = s[0]
                                 used_sigmoid_compounds = s[1]
@@ -1330,6 +1331,7 @@ def main(debug: bool = False):
                                             normalize_enum=i,
                                             training_label=training_label,
                                             global_log_dir=current_global_log_dir,
+                                            include_line_fit_in_metrics_after_training=False,
                                             stop_when_spiking_loss=True,
                                             early_stopping_enabled=True,
                                             halve_lr_enabled=True,

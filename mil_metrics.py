@@ -594,7 +594,7 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
         added_attention_tiles_count = 0
         for current_index in max_attention_indexes[0]:
             max_attention_tile = raw_bag[current_index]
-            max_attention_tile = max_attention_tile.astype('uint8')
+            max_attention_tile = max_attention_tile.astype('uint8').copy()
             max_attention_tile = outline_rgb_array(max_attention_tile, None, None, outline=2,
                                                    override_colormap=[255, 255, 255])
             if y_bag_true == 1:
@@ -616,7 +616,7 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
         # Also extracting the minimum attention tiles
         for current_index in min_attention_indexes[0]:
             min_attention_tile = raw_bag[current_index]
-            min_attention_tile = min_attention_tile.astype('uint8')
+            min_attention_tile = min_attention_tile.astype('uint8').copy()
             min_attention_tile = outline_rgb_array(min_attention_tile, None, None, outline=2,
                                                    override_colormap=[255, 255, 255])
             if y_bag_true == 1:
@@ -670,7 +670,7 @@ def save_tile_attention(out_dir: str, model: BaselineMIL, dataset: DataLoader, X
             g = g.astype('uint8')
             b = b.astype('uint8')
 
-            rgb = np.dstack((r, g, b))
+            rgb = np.dstack((r, g, b)).copy()
             rgb = outline_rgb_array(rgb, None, None, outline=6,
                                     override_colormap=[attention_color[0] * 255, attention_color[1] * 255,
                                                        attention_color[2] * 255])
@@ -848,6 +848,7 @@ def outline_rgb_array(image: [np.ndarray], true_value: float, prediction: float,
         colormap = override_colormap
 
     # Creating a deep copy so it's not overwritten
+    image = image.copy()
     image = np.copy(image)
 
     image[0:outline, :] = colormap
@@ -855,6 +856,7 @@ def outline_rgb_array(image: [np.ndarray], true_value: float, prediction: float,
     image[:, 0:outline] = colormap
     image[:, height - outline:height] = colormap
     image = image.astype('uint8')
+    image = image.copy()
 
     return image
 
