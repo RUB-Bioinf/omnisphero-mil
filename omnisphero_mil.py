@@ -1183,12 +1183,7 @@ def main(debug: bool = False):
     sigmoid_compounds_used = sigmoid_compounds_test_none
 
     # Device ordinals
-    current_device_ordinals = models.build_single_card_device_ordinals(2)
-    if host_name == 'e82560f50252':  # hostname of ehrlich
-        log.write('Welcome to Ehrlich')
-        current_device_ordinals = models.device_ordinals_ehrlich
-
-    current_device_ordinals = models.device_ordinals_ehrlich
+    current_device_ordinals = get_device_ordinals_based_on_device(default_ordinals=models.device_ordinals_ehrlich)
     log.write('Selected Device Ordinals: ' + str(current_device_ordinals))
     time.sleep(2)
 
@@ -1295,14 +1290,14 @@ def main(debug: bool = False):
     else:
         # '/mil/oligo-diff/models/linux/hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
         c = 0
-        for r in range(5):  # replicates
+        for r in range(1):  # replicates
             for l in ['mean_square_error', 'binary_cross_entropy']:
                 # best: binary_cross_entropy
                 for o in ['adadelta']:  # ['adam', 'adadelta']:
                     # best: adadelta
                     for p in [0.0]:  # [0.3, 0.35, 0.6]:  # [0.10, 0.20, 0.3, 0.05, 0.15, 0.25, 0.3, 0.35]:
                         # best: 0.65 or 0.3
-                        for i in [4]:  # [6, 7, 8, 4]:
+                        for i in [0, 1, 2, 3, 4, 5, 6, 7, 8]:
                             for s in sigmoid_compounds_used:  # , [True, False], [False, True]]:
                                 used_sigmoid_labels = s[0]
                                 used_sigmoid_compounds = s[1]
@@ -1365,13 +1360,52 @@ def main(debug: bool = False):
     log.write('Finished every training!')
 
 
-def check_exists(paths: []):
+def check_exists(possible_paths: []):
     ret = True
-    for path in paths:
+    for path in possible_paths:
         if not os.path.exists(path):
             log.write('PATH DOES NOT EXIST: ' + path)
             ret = False
     return ret
+
+
+def get_device_ordinals_based_on_device(default_ordinals: [int, int, int, int]) -> [int, int, int, int]:
+    cpu_count = int(multiprocessing.cpu_count())
+    if cpu_count > 1:
+        print('Wow, you are on a big machine! Are you on "Thor"?')
+        time.sleep(2)
+    else:
+        return default_ordinals
+
+    log.write('Big sever detected. Asking user for manual device oridnal input.', print_to_console=False)
+    print('Enter the custom device ordinals you want to use: ')
+    print('  If you want to use a single card as ordinal, type a single digt. Eg: "1" -> [1,1,1,1]')
+    print('  If you want to specify ordinals individually, type 4 digits, separated by commas. Eg.: "0,1,1,2"')
+
+    input_ordinals = str(input())
+    input_ordinals = input_ordinals.replace(' ', '')
+    input_ordinals = input_ordinals.split(',')
+    l = len(input_ordinals)
+
+    # converting every element to int
+    for i in range(l):
+        try:
+            input_ordinals[i] = int(input_ordinals[i])
+        except Exception as e:
+            error_msg = 'All elements must be numeric. Failed to interpret this as a number: ' + str(input_ordinals[i])
+            log.write(str(e))
+            log.write(error_msg)
+            assert False, error_msg
+        del i
+
+    if l == 0:
+        assert False, 'Cannot use an empty input.'
+    elif l == 1:
+        return models.build_single_card_device_ordinals(int(input_ordinals[0]))
+    elif l >= 4:
+        return [int(input_ordinals[0]), int(input_ordinals[1]), int(input_ordinals[2]), int(input_ordinals[3])]
+    else:
+        assert False, 'Illegal input ordinal length. Expected 4, got: ' + str(l)
 
 
 if __name__ == '__main__':
