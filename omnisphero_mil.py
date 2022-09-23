@@ -1156,7 +1156,7 @@ def main(debug: bool = False):
 
     host_name = str(socket.gethostname())
     log.write('Host name: ' + host_name)
-    current_epochs = 350
+    current_epochs = 500
 
     cpu_count = int(multiprocessing.cpu_count())
     current_max_workers = math.ceil(cpu_count * 1.1337) + 1
@@ -1290,14 +1290,14 @@ def main(debug: bool = False):
     else:
         # '/mil/oligo-diff/models/linux/hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
         c = 0
-        for r in range(1):  # replicates
+        for r in range(5):  # replicates
             for l in ['mean_square_error', 'binary_cross_entropy']:
                 # best: binary_cross_entropy
                 for o in ['adadelta']:  # ['adam', 'adadelta']:
                     # best: adadelta
                     for p in [0.0]:  # [0.3, 0.35, 0.6]:  # [0.10, 0.20, 0.3, 0.05, 0.15, 0.25, 0.3, 0.35]:
                         # best: 0.65 or 0.3
-                        for i in [0, 1, 2, 3, 4, 5, 6, 7, 8]:
+                        for i in [4, 7]:
                             for s in sigmoid_compounds_used:  # , [True, False], [False, True]]:
                                 used_sigmoid_labels = s[0]
                                 used_sigmoid_compounds = s[1]
@@ -1371,7 +1371,7 @@ def check_exists(possible_paths: []):
 
 def get_device_ordinals_based_on_device(default_ordinals: [int, int, int, int]) -> [int, int, int, int]:
     cpu_count = int(multiprocessing.cpu_count())
-    if cpu_count > 1:
+    if cpu_count > 50:
         print('Wow, you are on a big machine! Are you on "Thor"?')
         time.sleep(2)
     else:
