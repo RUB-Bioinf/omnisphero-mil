@@ -82,6 +82,7 @@ def train_model(
         force_balanced_batch: bool = False,
         # Enable data augmentation?
         augment_train: bool = False, augment_validation: bool = False,
+        write_whole_bag_previews: bool = False, write_sample_previews: bool = False,
         # Training histogram bins override (if None, every histogram uses dynamic bin sizes)
         hist_bins_override: int = None,
         # Sigmoid Evaluation parameters
@@ -155,50 +156,53 @@ def train_model(
 
     log.write('Saving logs and protocols to: ' + out_dir)
     # Logging params and args
-    protocol_f = open(out_dir + os.sep + 'protocol.txt', 'w')
-    protocol_f.write('Start time: ' + utils.gct())
-    protocol_f.write('\nHostname: ' + str(socket.gethostname()))
-    protocol_f.write('\n\n == General Params ==')
-    protocol_f.write('\nSource dirs: ' + str(len(source_dirs)))
-    protocol_f.write('\nLoss function: ' + loss_function)
-    protocol_f.write('\nDevice ordinals: ' + str(device_ordinals))
-    protocol_f.write('\nR - Is pyRserve connection available: ' + str(r.has_connection()))
-    protocol_f.write('\nSaving sigmoid plot interval: ' + str(save_sigmoid_plot_interval))
-    protocol_f.write('\nEpochs: ' + str(epochs))
-    protocol_f.write('\nShuffle data loader: ' + str(shuffle_data_loaders))
-    protocol_f.write('\nMax File-Loader Workers: ' + str(max_workers))
-    protocol_f.write('\nMax "DataLoader" Workers: ' + str(data_loader_cores))
-    protocol_f.write('\nGPU Enabled: ' + str(gpu_enabled))
-    protocol_f.write('\nHNM Enabled: ' + str(use_hard_negative_mining))
-    protocol_f.write('\nClamp Min: ' + str(clamp_min))
-    protocol_f.write('\nClamp Max: ' + str(clamp_max))
 
-    protocol_f.write('\n\n == Loader Params ==')
-    protocol_f.write('\nNormalization Enum: ' + str(normalize_enum))
-    protocol_f.write('\nNormalization Strategy: ' + loader.normalize_enum_descriptions[normalize_enum])
-    protocol_f.write('\nInvert Bag Labels: <deprecated>')
-    protocol_f.write('\nRepack: Percentage: ' + str(repack_percentage))
-    protocol_f.write('\nLoading Preview Rate: ' + str(loading_preview_rate))
-    protocol_f.write('\nRepack: Minimum Positive Samples: ' + str(positive_bag_min_samples))
+    write_protocol(out_dir=out_dir, text='Start time: ' + utils.gct(), new_entry=True)
+    write_protocol(out_dir=out_dir, text='\nHostname: ' + str(socket.gethostname()))
+    write_protocol(out_dir=out_dir, text='\n\n == General Params ==')
+    write_protocol(out_dir=out_dir, text='\nSource dirs: ' + str(len(source_dirs)))
+    write_protocol(out_dir=out_dir, text='\nLoss function: ' + loss_function)
+    write_protocol(out_dir=out_dir, text='\nDevice ordinals: ' + str(device_ordinals))
+    write_protocol(out_dir=out_dir, text='\nR - Is pyRserve connection available: ' + str(r.has_connection()))
+    write_protocol(out_dir=out_dir, text='\nSaving sigmoid plot interval: ' + str(save_sigmoid_plot_interval))
+    write_protocol(out_dir=out_dir, text='\nEpochs: ' + str(epochs))
+    write_protocol(out_dir=out_dir, text='\nShuffle data loader: ' + str(shuffle_data_loaders))
+    write_protocol(out_dir=out_dir, text='\nMax File-Loader Workers: ' + str(max_workers))
+    write_protocol(out_dir=out_dir, text='\nMax "DataLoader" Workers: ' + str(data_loader_cores))
+    write_protocol(out_dir=out_dir, text='\nGPU Enabled: ' + str(gpu_enabled))
+    write_protocol(out_dir=out_dir, text='\nHNM Enabled: ' + str(use_hard_negative_mining))
+    write_protocol(out_dir=out_dir, text='\nClamp Min: ' + str(clamp_min))
+    write_protocol(out_dir=out_dir, text='\nClamp Max: ' + str(clamp_max))
 
-    protocol_f.write('\n\nWell indices label 0: ' + str(label_0_well_indices))
-    protocol_f.write('\nWell indices label 1: ' + str(label_1_well_indices))
-    protocol_f.write('\nForce Balanced Batch: ' + str(force_balanced_batch))
-    protocol_f.write('\nTile constraints explained: Minimum number of x [Nuclei, Oligos, Neurons]')
-    protocol_f.write('\nTile Constraints label 0: ' + str(tile_constraints_0))
-    protocol_f.write('\nTile Constraints label 1: ' + str(tile_constraints_1))
-    protocol_f.write('\nChannel_inclusions: ' + str(channel_inclusions))
+    write_protocol(out_dir=out_dir, text='\n\n == Loader Params ==')
+    write_protocol(out_dir=out_dir, text='\nNormalization Enum: ' + str(normalize_enum))
+    write_protocol(out_dir=out_dir,
+                   text='\nNormalization Strategy: ' + loader.normalize_enum_descriptions[normalize_enum])
+    write_protocol(out_dir=out_dir, text='\nInvert Bag Labels: <deprecated>')
+    write_protocol(out_dir=out_dir, text='\nRepack: Percentage: ' + str(repack_percentage))
+    write_protocol(out_dir=out_dir, text='\nLoading Preview Rate: ' + str(loading_preview_rate))
+    write_protocol(out_dir=out_dir, text='\nRepack: Minimum Positive Samples: ' + str(positive_bag_min_samples))
 
-    protocol_f.write('\n\n == Data splitting Params: ==')
-    protocol_f.write('\nData Split percentage: Validation: ' + str(data_split_percentage_validation))
-    protocol_f.write('\nData Split percentage: Test: ' + str(data_split_percentage_test))
-    protocol_f.write('\nNumber of Sigmoid Validation Dirs: ' + str(len(sigmoid_validation_dirs)))
-    protocol_f.write('\nSigmoid validation enabled: ' + str(sigmoid_evaluation_enabled))
-    protocol_f.write(
-        '\nSigmoid validation experiments reserved for test data: ' + str(reserve_sigmoid_experiments_as_test_data))
-    protocol_f.write('\nCompounds to be put in training data: ' + str(reserve_compound_train))
-    protocol_f.write('\nCompounds to be put in validation data: ' + str(reserve_compound_validation))
-    protocol_f.write('\nCompounds to be put in test data: ' + str(reserve_compound_test))
+    write_protocol(out_dir=out_dir, text='\n\nWell indices label 0: ' + str(label_0_well_indices))
+    write_protocol(out_dir=out_dir, text='\nWell indices label 1: ' + str(label_1_well_indices))
+    write_protocol(out_dir=out_dir, text='\nForce Balanced Batch: ' + str(force_balanced_batch))
+    write_protocol(out_dir=out_dir, text='\nTile constraints explained: Minimum number of x [Nuclei, Oligos, Neurons]')
+    write_protocol(out_dir=out_dir, text='\nTile Constraints label 0: ' + str(tile_constraints_0))
+    write_protocol(out_dir=out_dir, text='\nTile Constraints label 1: ' + str(tile_constraints_1))
+    write_protocol(out_dir=out_dir, text='\nChannel_inclusions: ' + str(channel_inclusions))
+
+    write_protocol(out_dir=out_dir, text='\n\n == Data splitting Params: ==')
+    write_protocol(out_dir=out_dir,
+                   text='\nData Split percentage: Validation: ' + str(data_split_percentage_validation))
+    write_protocol(out_dir=out_dir, text='\nData Split percentage: Test: ' + str(data_split_percentage_test))
+    write_protocol(out_dir=out_dir, text='\nNumber of Sigmoid Validation Dirs: ' + str(len(sigmoid_validation_dirs)))
+    write_protocol(out_dir=out_dir, text='\nSigmoid validation enabled: ' + str(sigmoid_evaluation_enabled))
+    write_protocol(out_dir=out_dir, text='\nSigmoid validation experiments reserved for test data: ' + str(
+        reserve_sigmoid_experiments_as_test_data))
+    write_protocol(out_dir=out_dir, text='\nCompounds to be put in training data: ' + str(reserve_compound_train))
+    write_protocol(out_dir=out_dir,
+                   text='\nCompounds to be put in validation data: ' + str(reserve_compound_validation))
+    write_protocol(out_dir=out_dir, text='\nCompounds to be put in test data: ' + str(reserve_compound_test))
 
     global_log_filename = None
     local_log_filename = out_dir + os.sep + 'log.txt'
@@ -210,21 +214,23 @@ def train_model(
     log.diagnose()
 
     # PREPARING DATA AND DIRECTORIES
-    protocol_f.write('\n\n == Directories ==')
-    protocol_f.write('\nGlobal Log dir: ' + str(global_log_dir))
-    protocol_f.write('\nLocal Log dir: ' + str(local_log_filename))
-    protocol_f.write('\nOut dir: ' + str(out_dir))
-    protocol_f.write('\nMetrics dir: ' + str(metrics_dir))
-    protocol_f.write('\nPreview tiles: ' + str(loading_preview_dir))
-    protocol_f.write('\nPredict training input data afterwards: ' + str(predict_training_data_afterwards))
-    protocol_f.write('\nPredict sigmoid input data afterwards: ' + str(predict_sigmoid_data_afterwards))
+    write_protocol(out_dir=out_dir, text='\n\n == Directories ==')
+    write_protocol(out_dir=out_dir, text='\nGlobal Log dir: ' + str(global_log_dir))
+    write_protocol(out_dir=out_dir, text='\nLocal Log dir: ' + str(local_log_filename))
+    write_protocol(out_dir=out_dir, text='\nOut dir: ' + str(out_dir))
+    write_protocol(out_dir=out_dir, text='\nMetrics dir: ' + str(metrics_dir))
+    write_protocol(out_dir=out_dir, text='\nPreview tiles: ' + str(loading_preview_dir))
+    write_protocol(out_dir=out_dir,
+                   text='\nPredict training input data afterwards: ' + str(predict_training_data_afterwards))
+    write_protocol(out_dir=out_dir,
+                   text='\nPredict sigmoid input data afterwards: ' + str(predict_sigmoid_data_afterwards))
 
     print('==== List of Source Dirs: =====')
     [print(str(p)) for p in source_dirs]
 
-    protocol_f.write('\n\n == GPU Status ==\n')
+    write_protocol(out_dir=out_dir, text='\n\n == GPU Status ==\n')
     for line in hardware.print_gpu_status(silent=True):
-        protocol_f.write(line)
+        write_protocol(out_dir=out_dir, text=line)
         log.write(line)
 
     ########################
@@ -327,6 +333,11 @@ def train_model(
         if os.name == 'nt':
             continue
 
+        # not doing that with disabled parameter
+        if not write_sample_previews:
+            continue
+            # TODO expose to outer loop
+
         line_print('Writing loading preview: ' + str(i + 1) + '/' + str(len(preview_indices)), include_in_log=False)
         current_x: np.ndarray = X[preview_indices[i]]
         j = random.randint(0, current_x.shape[0] - 1)
@@ -361,12 +372,12 @@ def train_model(
     log.write("y-size in memory (after loading all data): " + str(y_s))
     log.write("X-size (raw) in memory (after loading all data): " + str(X_s_raw))
 
-    protocol_f.write('\n\n == Loaded Data ==')
-    protocol_f.write('\nNumber of Bags: ' + str(len(X)))
-    protocol_f.write('\nBags with label 0: ' + str(len(np.where(np.asarray(y) == 0)[0])))
-    protocol_f.write('\nBags with label 1: ' + str(len(np.where(np.asarray(y) == 1)[0])))
-    protocol_f.write("\nX-size in memory: " + str(X_s))
-    protocol_f.write("\ny-size in memory: " + str(y_s))
+    write_protocol(out_dir=out_dir, text='\n\n == Loaded Data ==')
+    write_protocol(out_dir=out_dir, text='\nNumber of Bags: ' + str(len(X)))
+    write_protocol(out_dir=out_dir, text='\nBags with label 0: ' + str(len(np.where(np.asarray(y) == 0)[0])))
+    write_protocol(out_dir=out_dir, text='\nBags with label 1: ' + str(len(np.where(np.asarray(y) == 1)[0])))
+    write_protocol(out_dir=out_dir, text="\nX-size in memory: " + str(X_s))
+    write_protocol(out_dir=out_dir, text="\ny-size in memory: " + str(y_s))
 
     # Printing more data
     f = open(out_dir + 'loading-data-statistics.csv', 'w')
@@ -380,7 +391,7 @@ def train_model(
 
     if len(X) == 0:
         log.write('WARNING: NO DATA LOADED')
-        protocol_f.write('\n\nWARNING: NO DATA LOADED')
+        write_protocol(out_dir=out_dir, text='\n\nWARNING: NO DATA LOADED')
         return
 
     # Data Augmentation
@@ -524,44 +535,54 @@ def train_model(
     preview_indexes = preview_indexes_negative
     preview_indexes.extend(preview_indexes_positive)
     preview_indexes.sort()
-    log.write('Number of whole preview bags to save: ' + str(len(preview_indexes)) + '. -> ' + str(preview_indexes))
+    log.write('Number of whole bag previews to save: ' + str(len(preview_indexes)) + '. -> ' + str(preview_indexes))
     print('\n')
 
-    for i in range(len(X)):
-        preview_image_filename = loading_preview_dir_whole_bag + 'preview_' + str(i) + '-' + bag_names[i] + '_' + str(
-            y[i]) + '_bag.png'
-        line_print(
-            'Writing whole bag loading preview: ' + str(i + 1) + '/' + str(len(X)) + ' -> ' + preview_image_filename,
-            include_in_log=False)
+    # Writing whole bag previews
+    if write_whole_bag_previews:
+        log.write('Starting to write whole bag previews.')
+        for i in range(len(X)):
+            preview_image_filename = loading_preview_dir_whole_bag + 'preview_' + str(i) + '-' + bag_names[
+                i] + '_' + str(
+                y[i]) + '_bag.png'
+            line_print(
+                'Writing whole bag loading preview: ' + str(i + 1) + '/' + str(
+                    len(X)) + ' -> ' + preview_image_filename, include_in_log=False)
 
-        colored_tiles = []
-        image_width = None
-        image_height = None
-        if i in preview_indexes:
-            for rgb in X_raw[i]:
-                # Creating a deep copy so it's not overwritten
-                rgb = np.copy(rgb)
-                rgb = rgb.copy()
+            colored_tiles = []
+            image_width = None
+            image_height = None
+            if i in preview_indexes:
+                for rgb in X_raw[i]:
+                    # Creating a deep copy so it's not overwritten
+                    rgb = np.copy(rgb)
+                    rgb = rgb.copy()
 
-                image_width, image_height = rgb[0].shape
-                rgb = np.einsum('abc->bca', rgb)
-                rgb = mil_metrics.outline_rgb_array(rgb, None, None, outline=2, override_colormap=[255, 255, 255])
-                colored_tiles.append(rgb)
+                    image_width, image_height = rgb[0].shape
+                    rgb = np.einsum('abc->bca', rgb)
+                    rgb = mil_metrics.outline_rgb_array(rgb, None, None, outline=2, override_colormap=[255, 255, 255])
+                    colored_tiles.append(rgb)
 
-        if len(colored_tiles) > 0 and image_height is not None:
-            out_image = mil_metrics.fuse_image_tiles(images=colored_tiles, image_width=image_width,
-                                                     image_height=image_height)
-            plt.imsave(preview_image_filename, out_image)
-            line_print('Saved: ' + preview_image_filename)
+            if len(colored_tiles) > 0 and image_height is not None:
+                out_image = mil_metrics.fuse_image_tiles(images=colored_tiles, image_width=image_width,
+                                                         image_height=image_height)
+                plt.imsave(preview_image_filename, out_image)
+                line_print('Saved: ' + preview_image_filename)
+
+        log.write('Finished writing previews.')
+    else:
+        log.write('But not saving whole bag previews, due to user choice.')
 
     ######################################
     # Converted raw data into datasets
     ######################################
+    log.write('Converting bags into batches.')
     dataset, input_dim = loader.convert_bag_to_batch(bags=X, labels=y, y_tiles=y_tiles)
     dataset_sigmoid_overlap = None
     dataset_train_overlap = None
     dataset_test_overlap = None
     dataset_validation_overlap = None
+    log.write('Finished converting bags into patches.')
 
     log.write('Detected input dim: ' + str(input_dim))
     if sigmoid_evaluation_enabled and reserve_sigmoid_experiments_as_test_data and testing_model_enabled:
@@ -617,10 +638,10 @@ def train_model(
     validation_data_tiles: int = sum([validation_data[i][0].shape[0] for i in range(len(validation_data))])
     log.write('Training data: ' + str(training_data_tiles) + ' tiles over ' + str(len(training_data)) + ' bags.')
     log.write('Validation data: ' + str(validation_data_tiles) + ' tiles over ' + str(len(validation_data)) + ' bags.')
-    protocol_f.write(
-        '\nTraining data: ' + str(training_data_tiles) + ' tiles over ' + str(len(training_data)) + ' bags.')
-    protocol_f.write(
-        '\nValidation data: ' + str(validation_data_tiles) + ' tiles over ' + str(len(validation_data)) + ' bags.')
+    write_protocol(out_dir=out_dir, text='\nTraining data: ' + str(training_data_tiles) + ' tiles over ' + str(
+        len(training_data)) + ' bags.')
+    write_protocol(out_dir=out_dir, text='\nValidation data: ' + str(validation_data_tiles) + ' tiles over ' + str(
+        len(validation_data)) + ' bags.')
     f.write('Training data: ' + str(training_data_tiles) + ' tiles over ' + str(len(training_data)) + ' bags.\n')
     f.write('Validation data: ' + str(validation_data_tiles) + ' tiles over ' + str(len(validation_data)) + ' bags.\n')
 
@@ -628,7 +649,8 @@ def train_model(
         test_data_tiles: int = sum([test_data[i][0].shape[0] for i in range(len(test_data))])
         log.write('Test data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.')
         f.write('Test data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.\n')
-        protocol_f.write('\nTest data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.')
+        write_protocol(out_dir=out_dir,
+                       text='\nTest data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.')
     f.close()
 
     # Loading Hardware Device
@@ -722,31 +744,30 @@ def train_model(
             torch_callbacks.ReduceLearnRate(epoch_threshold=halve_lr_epoch_threshold, initial_lr=initial_lr,
                                             optimizer=model_optimizer))
 
-    protocol_f.write('\n\n == Model Information==')
-    protocol_f.write('\nDevice Ordinals: ' + str(device_ordinals))
-    protocol_f.write('\nInitial LR: ' + str(initial_lr))
-    protocol_f.write('\nInput dim: ' + str(input_dim))
-    protocol_f.write('\ntorch Device: ' + str(device))
-    protocol_f.write('\nLoss Function: ' + str(loss_function))
-    protocol_f.write('\nAccuracy Function: ' + str(accuracy_function))
-    protocol_f.write('\nModel classification - Use Max: ' + str(model_use_max))
-    protocol_f.write('\nModel classification - Use Attention: ' + str(model_enable_attention))
-    protocol_f.write('\n\nData Loader - Cores: ' + str(data_loader_cores))
-    protocol_f.write('\nData Loader - Pin Memory: ' + str(data_loader_pin_memory))
+    write_protocol(out_dir=out_dir, text='\n\n == Model Information==')
+    write_protocol(out_dir=out_dir, text='\nDevice Ordinals: ' + str(device_ordinals))
+    write_protocol(out_dir=out_dir, text='\nInitial LR: ' + str(initial_lr))
+    write_protocol(out_dir=out_dir, text='\nInput dim: ' + str(input_dim))
+    write_protocol(out_dir=out_dir, text='\ntorch Device: ' + str(device))
+    write_protocol(out_dir=out_dir, text='\nLoss Function: ' + str(loss_function))
+    write_protocol(out_dir=out_dir, text='\nAccuracy Function: ' + str(accuracy_function))
+    write_protocol(out_dir=out_dir, text='\nModel classification - Use Max: ' + str(model_use_max))
+    write_protocol(out_dir=out_dir, text='\nModel classification - Use Attention: ' + str(model_enable_attention))
+    write_protocol(out_dir=out_dir, text='\n\nData Loader - Cores: ' + str(data_loader_cores))
+    write_protocol(out_dir=out_dir, text='\nData Loader - Pin Memory: ' + str(data_loader_pin_memory))
 
-    protocol_f.write('\n\nCallback Count: ' + str(len(callbacks)))
-    protocol_f.write('\nCallbacks: ' + str(callbacks))
+    write_protocol(out_dir=out_dir, text='\n\nCallback Count: ' + str(len(callbacks)))
+    write_protocol(out_dir=out_dir, text='\nCallbacks: ' + str(callbacks))
     for c in callbacks:
-        protocol_f.write('\n' + c.describe())
+        write_protocol(out_dir=out_dir, text='\n' + c.describe())
 
-    protocol_f.write(
-        '\n\nEarly stopping threshold (enabled: ' + str(early_stopping_enabled) + '): ' + str(
-            early_stopping_epoch_threshold))
-    protocol_f.write(
-        '\nLearn Rate reduction threshold (enabled: ' + str(halve_lr_enabled) + '): ' + str(halve_lr_epoch_threshold))
-    protocol_f.write('\n\nBuilt Optimizer: ' + str(model_optimizer))
-    protocol_f.close()
-    del protocol_f
+    write_protocol(out_dir=out_dir,
+                   text='\n\nEarly stopping threshold (enabled: ' + str(early_stopping_enabled) + '): ' + str(
+                       early_stopping_epoch_threshold))
+    write_protocol(out_dir=out_dir,
+                   text='\nLearn Rate reduction threshold (enabled: ' + str(halve_lr_enabled) + '): ' + str(
+                       halve_lr_epoch_threshold))
+    write_protocol(out_dir=out_dir, text='\n\nBuilt Optimizer: ' + str(model_optimizer))
 
     # Printing the model
     f = open(out_dir + os.sep + 'model.txt', 'w')
@@ -1177,10 +1198,10 @@ def main(debug: bool = False):
         ('all', paths.sigmoid_compounds_all),
         ('none', paths.sigmoid_compounds_none)
     ]
-    sigmoid_compounds_test_none = [
-        ('none', paths.sigmoid_compounds_none)
+    sigmoid_compounds_test_all = [
+        ('all', paths.sigmoid_compounds_all)
     ]
-    sigmoid_compounds_used = sigmoid_compounds_test_none
+    sigmoid_compounds_used = sigmoid_compounds_test_all
 
     # Device ordinals
     current_device_ordinals = get_device_ordinals_based_on_device(default_ordinals=models.device_ordinals_ehrlich)
@@ -1212,12 +1233,9 @@ def main(debug: bool = False):
     os.makedirs(current_out_dir, exist_ok=True)
 
     # Checking if all specified paths actually exist
-    # assert os.path.exists(image_folder)
-    # assert np.all([os.path.exists(x) for x in sigmoid_input_dirs])
-    # assert np.all([os.path.exists(x) for x in current_sources_dir])
-    assert check_exists([image_folder])
-    assert check_exists(sigmoid_input_dirs)
-    assert check_exists(current_sources_dir)
+    assert check_paths_exists([image_folder])
+    assert check_paths_exists(sigmoid_input_dirs)
+    assert check_paths_exists(current_sources_dir)
 
     log.write('Starting Training...')
     if debug and sys.platform == 'win32':
@@ -1293,11 +1311,11 @@ def main(debug: bool = False):
         for r in range(5):  # replicates
             for l in ['mean_square_error', 'binary_cross_entropy']:
                 # best: binary_cross_entropy
-                for o in ['adadelta']:  # ['adam', 'adadelta']:
+                for o in ['adadelta', 'binary_cross_entropy']:  # ['adam', 'adadelta']:
                     # best: adadelta
                     for p in [0.0]:  # [0.3, 0.35, 0.6]:  # [0.10, 0.20, 0.3, 0.05, 0.15, 0.25, 0.3, 0.35]:
                         # best: 0.65 or 0.3
-                        for i in [4, 7]:
+                        for i in [4, 7]:  # normalisation enum
                             for s in sigmoid_compounds_used:  # , [True, False], [False, True]]:
                                 used_sigmoid_labels = s[0]
                                 used_sigmoid_compounds = s[1]
@@ -1360,13 +1378,40 @@ def main(debug: bool = False):
     log.write('Finished every training!')
 
 
-def check_exists(possible_paths: []):
+def check_paths_exists(possible_paths: []):
     ret = True
     for path in possible_paths:
         if not os.path.exists(path):
             log.write('PATH DOES NOT EXIST: ' + path)
             ret = False
     return ret
+
+
+def write_protocol(out_dir: str, text: str, new_entry: bool = False):
+    protocol_file_name = out_dir + os.sep + 'protocol.txt'
+    os.makedirs(out_dir, exist_ok=True)
+    text = str(text)
+
+    if new_entry or not os.path.exists(protocol_file_name):
+        try:
+            protocol_file_handle = open(protocol_file_name, 'w')
+            protocol_file_handle.write('')
+            protocol_file_handle.close()
+            del protocol_file_handle
+        except Exception as e:
+            pass
+            # TODO handle exception
+
+    try:
+        protocol_file_handle = open(protocol_file_name, 'a')
+        protocol_file_handle.write(text)
+        protocol_file_handle.close()
+        del protocol_file_handle
+    except Exception as e:
+        pass
+        # TODO handle exception
+
+    log.write('[PROTOCOL] ' + text.strip())
 
 
 def get_device_ordinals_based_on_device(default_ordinals: [int, int, int, int]) -> [int, int, int, int]:

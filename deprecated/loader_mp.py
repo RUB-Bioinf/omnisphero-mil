@@ -775,7 +775,8 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     bag_name = experiment_name + '-' + well
 
     if experiment_name in unrestricted_experiments_override:
-        log.write('Experiment name in unrestricted override. Removing restrictions.')
+        log.write('Experiment name "' + experiment_name + '" in unrestricted override. Removing restrictions.')
+        # This is just a logger. Check your 'unrestricted_experiments_override' earlier
         # TODO if there are constraints later, you can adjust those here in a future version.
 
     # Reading metadata for the well, if it exists

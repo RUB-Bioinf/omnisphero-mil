@@ -1221,7 +1221,8 @@ def get_bag_mean(n: [np.ndarray], axis: int = None, channel_inclusions=default_c
     return mean, std[0]
 
 
-def convert_bag_to_batch(bags: [np.ndarray], labels: [int] = None, y_tiles: [[int]] = None):
+def convert_bag_to_batch(bags: [np.ndarray], labels: [int] = None, y_tiles: [[int]] = None,
+                         delete_from_bag: bool = False, d_type: str = 'float32'):
     ''' Convert bag and label pairs into batch format
     Inputs:
         a list of bags and a list of bag-labels
@@ -1231,20 +1232,38 @@ def convert_bag_to_batch(bags: [np.ndarray], labels: [int] = None, y_tiles: [[in
     '''
     dataset = []
     input_dim = None
-
     if labels is None:
         labels = [math.nan for i in range(len(bags))]
     if y_tiles is None:
         y_tiles = [[math.nan for i in range(bag.shape[0])] for bag in bags]
-        # y_tiles = []
-        # for bag in bags:
-        #    y_tiles.append([math.nan for i in range(bag.shape[0])])
+
+    if bags is not None:
+        assert len(bags) == len(labels)
+        assert len(bags) == len(y_tiles)
+
+    # for index in reversed(range(len(bags))):
+    #     batch_data = np.asarray(bags[index], dtype=dtype).copy()
+    #     batch_label = np.asarray(labels[index], dtype=dtype).copy()
+    #     batch_label_tiles = np.asarray(y_tiles[index], dtype=dtype).copy()
+    #     batch_original_index = np.asarray(index, dtype=dtype).copy()
+    #     dataset.append((batch_data, batch_label, batch_label_tiles, batch_original_index))
+    #
+    #     if delete_from_bag:
+    #         bags[index] = None
+    #         labels[index] = None
+    #         y_tiles[index] = None
+    #
+    #         del bags[index]
+    #         del labels[index]
+    #         del y_tiles[index]
+    #
+    #     input_dim = batch_data.shape[1:]
 
     for index, (bag, bag_label, tile_labels) in enumerate(zip(bags, labels, y_tiles)):
-        batch_data = np.asarray(bag, dtype='float32')
-        batch_label = np.asarray(bag_label, dtype='float32')
-        batch_label_tiles = np.asarray(tile_labels, dtype='float32')
-        batch_original_index = np.asarray(index, dtype='float32')
+        batch_data = np.asarray(bag, dtype='float32').copy()
+        batch_label = np.asarray(bag_label, dtype='float32').copy()
+        batch_label_tiles = np.asarray(tile_labels, dtype='float32').copy()
+        batch_original_index = np.asarray(index, dtype='float32').copy()
         dataset.append((batch_data, batch_label, batch_label_tiles, batch_original_index))
 
         input_dim = batch_data.shape[1:]
