@@ -486,6 +486,11 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
     os.makedirs(sigmoid_data_dir_naive_live, exist_ok=True)
     os.makedirs(sigmoid_data_dir_naive_live_best, exist_ok=True)
 
+    best_epoch_log = metrics_dir_live + 'best_epochs.txt'
+    f = open(best_epoch_log, 'w')
+    f.write('Best epochs:')
+    f.close()
+
     # Writing Live Loss CSV
     batch_headers = ';'.join(
         ['Batch ' + str(batch_id) for batch_id, (data, label, tile_labels, batch_index) in enumerate(training_data)])
@@ -998,6 +1003,11 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
         if is_best:
             log.write('New best model! Saving...')
             save_model(state, model_save_path_best, verbose=False)
+
+            # Updating best epochs file
+            f = open(best_epoch_log, 'a')
+            f.write('\n' + str(utils.gct()) + ' - Epoch: ' + str(epoch))
+            f.close()
 
             # Rendering the sigmoid curves again, because of new best performance
             if r.has_connection() and X_metadata_sigmoid is not None and data_loader_sigmoid is not None and y_hats_sigmoid is not None:
