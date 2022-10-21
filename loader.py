@@ -571,6 +571,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     # Somehow, if 'include_raw' is false, nothing will be loaded. Why?
     # TODO FIXME
     assert include_raw
+    assert normalize_enum is not None
 
     if unrestricted_experiments_override is None:
         unrestricted_experiments_override = []

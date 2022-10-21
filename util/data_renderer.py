@@ -685,8 +685,319 @@ def rgb_to_gray(img: np.ndarray, weights_r=0.299, weights_g=0.587, weights_b=0.1
     return gray_image
 
 
-def render_attention_cell_distributions(out_dir, distributions, X_metadata, alpha: float = 0.3, dpi: int = 600,
-                                        include_neuron: bool = True, include_oligo: bool = True,
+def render_attention_cytometry_prediction_distributions(out_dir: str, X_metadata: [[TileMetadata]],
+                                                        y_preds: [float],
+                                                        all_attentions: [np.ndarray],
+                                                        title_suffix: str = None, filename_suffix: str = None,
+                                                        include_oligo: bool = False,
+                                                        include_neuron: bool = False,
+                                                        include_nucleus: bool = False,
+                                                        include_plate: bool = True,
+                                                        scatter_plot_item_scale: float = 20.0,
+                                                        dpi: int = 400):
+    assert include_oligo or include_neuron or include_nucleus
+    assert len(y_preds) == len(X_metadata)
+    assert len(all_attentions) == len(X_metadata)
+    scatter_plot_item_scale = float(scatter_plot_item_scale)
+    assert scatter_plot_item_scale > 0
+
+    os.makedirs(out_dir, exist_ok=True)
+    log.write('Writing Cytometry predictions to: ' + out_dir)
+    print('')
+
+    if title_suffix is None:
+        title_suffix = ''
+    if filename_suffix is None:
+        filename_suffix = ''
+
+    num_entries: int = 0
+    if include_oligo:
+        num_entries = num_entries + 1
+    if include_neuron:
+        num_entries = num_entries + 1
+    if include_nucleus:
+        num_entries = num_entries + 1
+
+    alpha = 1.0
+    alpha = alpha / float(num_entries)
+    assert num_entries > 0
+
+    experiment_names = []
+    plates_oligo_counts = {}
+    plates_neuron_counts = {}
+    plates_nuclei_counts = {}
+    plates_plot_x = {}
+    plates_plot_y_oligos = {}
+    plates_plot_y_neurons = {}
+    plates_plot_y_nuclei = {}
+    plates_plot_s_neurons = {}
+    plates_plot_s_oligos = {}
+    plates_plot_s_nuclei = {}
+    plates_oligo_count = {}
+    plates_neuron_count = {}
+    plates_nuclei_count = {}
+    plates_out_dir = {}
+
+    for i in range(len(y_preds)):
+        # pre-processing attention metric
+        attentions: np.ndarray = all_attentions[i]
+        attentions_min = float(min(attentions))
+        attentions_max = float(max(attentions))
+
+        y_pred: float = y_preds[i]
+        metadatas: [TileMetadata] = X_metadata[i]
+        assert len(attentions) == len(metadatas)
+
+        formatted_well = metadatas[0].get_formatted_well()
+        experiment_name = metadatas[0].experiment_name
+        utils.line_print(str(i + 1) + '/' + str(len(y_preds)) + ' - ' + formatted_well)
+        out_dir_current = out_dir + os.sep + experiment_name + os.sep + 'cytometry-distributions' + os.sep
+        os.makedirs(out_dir_current, exist_ok=True)
+
+        # Setting up for later when the whole plate will be used
+        if experiment_name in experiment_names:
+            plate_oligo_counts = plates_oligo_counts[experiment_name]
+            plate_neuron_counts = plates_neuron_counts[experiment_name]
+            plate_nuclei_counts = plates_nuclei_counts[experiment_name]
+            plate_plot_x = plates_plot_x[experiment_name]
+            plate_plot_y_oligos = plates_plot_y_oligos[experiment_name]
+            plate_plot_y_neurons = plates_plot_y_neurons[experiment_name]
+            plate_plot_y_nuclei = plates_plot_y_nuclei[experiment_name]
+            plate_plot_s_neurons = plates_plot_s_neurons[experiment_name]
+            plate_plot_s_oligos = plates_plot_s_oligos[experiment_name]
+            plate_plot_s_nuclei = plates_plot_s_nuclei[experiment_name]
+            plate_oligo_count = plates_oligo_count[experiment_name]
+            plate_neuron_count = plates_neuron_count[experiment_name]
+            plate_nuclei_count = plates_nuclei_count[experiment_name]
+        else:
+            experiment_names.append(experiment_name)
+            plate_oligo_counts = []
+            plate_neuron_counts = []
+            plate_nuclei_counts = []
+            plate_plot_x = []
+            plate_plot_y_oligos = []
+            plate_plot_y_neurons = []
+            plate_plot_y_nuclei = []
+            plate_plot_s_neurons = []
+            plate_plot_s_oligos = []
+            plate_plot_s_nuclei = []
+            plate_oligo_count = 0
+            plate_neuron_count = 0
+            plate_nuclei_count = 0
+
+        # checking the overall cell counts
+        oligo_counts = []
+        neuron_counts = []
+        nuclei_counts = []
+        for metadata in metadatas:
+            oligo_count = [m.count_oligos for m in metadatas].count(metadata.count_oligos)
+            oligo_counts.append(oligo_count)
+            plate_oligo_counts.append(oligo_count)
+            neuron_count = [m.count_neurons for m in metadatas].count(metadata.count_neurons)
+            neuron_counts.append(neuron_count)
+            plate_neuron_counts.append(neuron_count)
+            nuclei_count = [m.count_nuclei for m in metadatas].count(metadata.count_nuclei)
+            nuclei_counts.append(nuclei_count)
+            plate_nuclei_counts.append(nuclei_count)
+            del oligo_count, neuron_count, nuclei_count
+        oligo_counts.sort()
+        neuron_counts.sort()
+        nuclei_counts.sort()
+
+        oligo_counts = list(dict.fromkeys(oligo_counts))
+        neuron_counts = list(dict.fromkeys(neuron_counts))
+        nuclei_counts = list(dict.fromkeys(nuclei_counts))
+
+        oligo_counts_min = float(min(oligo_counts))
+        neuron_counts_min = float(min(neuron_counts))
+        nuclei_counts_min = float(min(nuclei_counts))
+        oligo_counts_max = float(max(oligo_counts))
+        neuron_counts_max = float(max(neuron_counts))
+        nuclei_counts_max = float(max(nuclei_counts))
+
+        # Counting the cells
+        oligo_count = sum([m.count_oligos for m in metadatas])
+        neuron_count = sum([m.count_neurons for m in metadatas])
+        nuclei_count = sum([m.count_nuclei for m in metadatas])
+        plate_oligo_count = plate_oligo_count + oligo_count
+        plate_neuron_count = plate_neuron_count + neuron_count
+        plate_nuclei_count = plate_nuclei_count + nuclei_count
+
+        title = 'Cytometry Distributions: ' + experiment_name + ' - ' + formatted_well + ' ' + title_suffix.strip()
+        title = title.strip()
+        title = title + '\nPredicted Label: ' + str(y_pred)
+
+        plot_x = []
+        plot_y_oligos = []
+        plot_y_neurons = []
+        plot_y_nuclei = []
+        plot_s_oligos = []
+        plot_s_neurons = []
+        plot_s_nuclei = []
+        for (metadata, attention) in zip(metadatas, attentions):
+            attention = float(attention)
+            normalized_attention = (attention - attentions_min) / (attentions_max - attentions_min)
+
+            # Counting how many times a cell has been counted
+            oligo_count_count = [m.count_oligos for m in metadatas].count(metadata.count_oligos)
+            neuron_count_count = [m.count_neurons for m in metadatas].count(metadata.count_neurons)
+            nuclei_count_count = [m.count_nuclei for m in metadatas].count(metadata.count_nuclei)
+            normalized_oligo_count = (float(oligo_count_count) - oligo_counts_min) / (
+                    oligo_counts_max - oligo_counts_min)
+            normalized_neuron_count = (float(neuron_count_count) - neuron_counts_min) / (
+                    neuron_counts_max - neuron_counts_min)
+            normalized_nuclei_count = (float(nuclei_count_count) - nuclei_counts_min) / (
+                    nuclei_counts_max - nuclei_counts_min)
+
+            plot_x.append(normalized_attention)
+            plot_y_oligos.append(metadata.count_oligos)
+            plot_y_neurons.append(metadata.count_neurons)
+            plot_y_nuclei.append(metadata.count_nuclei)
+
+            plate_plot_x.append(normalized_attention)
+            plate_plot_y_oligos.append(metadata.count_oligos)
+            plate_plot_y_neurons.append(metadata.count_neurons)
+            plate_plot_y_nuclei.append(metadata.count_nuclei)
+
+            plot_s_neurons.append(normalized_neuron_count * scatter_plot_item_scale)
+            plot_s_oligos.append(normalized_oligo_count * scatter_plot_item_scale)
+            plot_s_nuclei.append(normalized_nuclei_count * scatter_plot_item_scale)
+            plate_plot_s_neurons.append(normalized_neuron_count * scatter_plot_item_scale)
+            plate_plot_s_oligos.append(normalized_oligo_count * scatter_plot_item_scale)
+            plate_plot_s_nuclei.append(normalized_nuclei_count * scatter_plot_item_scale)
+            del metadata, attention
+
+        plt.clf()
+        plt.title(title)
+        legend_entries = []
+        if include_oligo:
+            plt.scatter(x=plot_x, y=plot_y_oligos, s=plot_s_oligos, color='green', alpha=alpha)
+            legend_entries.append('Oligodendrocytes [' + str(oligo_count) + ']')
+        if include_neuron:
+            plt.scatter(x=plot_x, y=plot_y_neurons, s=plot_s_neurons, color='blue', alpha=alpha)
+            legend_entries.append('Neurons [' + str(neuron_count) + ']')
+        if include_nucleus:
+            plt.scatter(x=plot_x, y=plot_y_nuclei, s=plot_s_nuclei, color='red', alpha=alpha)
+            legend_entries.append('Nuclei [' + str(nuclei_count) + ']')
+
+        plt.legend(legend_entries, loc='best')
+        out_name = out_dir_current + 'cytometry_' + experiment_name + '-' + formatted_well + filename_suffix
+        out_name = out_name.strip()
+
+        plt.ylabel('Cell Count\nSamples: ' + str(len(attentions)))
+        plt.xlabel('Attention (Normalized)')
+
+        plt.tight_layout()
+        plt.autoscale()
+        plt.savefig(out_name + '.png', dpi=dpi)
+        plt.savefig(out_name + '.pdf', dpi=dpi)
+        plt.savefig(out_name + '.svg', dpi=dpi)
+        # TODO save as .csv
+
+        # Adding to the plate dicts
+        plates_oligo_counts[experiment_name] = plate_oligo_counts
+        plates_neuron_counts[experiment_name] = plate_neuron_counts
+        plates_nuclei_counts[experiment_name] = plate_nuclei_counts
+        plates_plot_x[experiment_name] = plate_plot_x
+        plates_plot_y_oligos[experiment_name] = plate_plot_y_oligos
+        plates_plot_y_neurons[experiment_name] = plate_plot_y_neurons
+        plates_plot_y_nuclei[experiment_name] = plate_plot_y_nuclei
+        plates_plot_s_neurons[experiment_name] = plate_plot_s_neurons
+        plates_plot_s_oligos[experiment_name] = plate_plot_s_oligos
+        plates_plot_s_nuclei[experiment_name] = plate_plot_s_nuclei
+        plates_oligo_count[experiment_name] = plate_oligo_count
+        plates_neuron_count[experiment_name] = plate_neuron_count
+        plates_nuclei_count[experiment_name] = plate_nuclei_count
+        plates_out_dir[experiment_name] = out_dir_current
+        del experiment_name, title, legend_entries, out_dir_current
+        del oligo_counts
+        del neuron_counts
+        del nuclei_counts
+
+        del oligo_counts_min
+        del neuron_counts_min
+        del nuclei_counts_min
+        del oligo_counts_max
+        del neuron_counts_max
+        del nuclei_counts_max
+
+    print('')
+    # Also writing a combined 'plate' file
+    if include_plate:
+        log.write('Writing whole plate plots:')
+
+        for i in range(len(experiment_names)):
+            experiment_name = experiment_names[i]
+            utils.line_print(str(i + 1) + '/' + str(len(experiment_names)) + ' - ' + experiment_name)
+            title = 'Cytometry Distributions: ' + experiment_name + ' - Whole Plate ' + title_suffix
+            title = title.strip()
+
+            # extracting the well infos
+            plate_oligo_counts = plates_oligo_counts[experiment_name]
+            plate_neuron_counts = plates_neuron_counts[experiment_name]
+            plate_nuclei_counts = plates_nuclei_counts[experiment_name]
+            plate_plot_x = plates_plot_x[experiment_name]
+            plate_plot_y_oligos = plates_plot_y_oligos[experiment_name]
+            plate_plot_y_neurons = plates_plot_y_neurons[experiment_name]
+            plate_plot_y_nuclei = plates_plot_y_nuclei[experiment_name]
+            plate_plot_s_neurons = plates_plot_s_neurons[experiment_name]
+            plate_plot_s_oligos = plates_plot_s_oligos[experiment_name]
+            plate_plot_s_nuclei = plates_plot_s_nuclei[experiment_name]
+            plate_oligo_count = plates_oligo_count[experiment_name]
+            plate_neuron_count = plates_neuron_count[experiment_name]
+            plate_nuclei_count = plates_nuclei_count[experiment_name]
+            out_dir_current = plates_out_dir[experiment_name]
+
+            plate_oligo_counts.sort()
+            plate_neuron_counts.sort()
+            plate_nuclei_counts.sort()
+
+            plate_oligo_counts = list(dict.fromkeys(plate_oligo_counts))
+            plate_neuron_counts = list(dict.fromkeys(plate_neuron_counts))
+            plate_nuclei_counts = list(dict.fromkeys(plate_nuclei_counts))
+
+            plate_oligo_counts_min = float(min(plate_oligo_counts))
+            plate_neuron_counts_min = float(min(plate_neuron_counts))
+            plate_nuclei_counts_min = float(min(plate_nuclei_counts))
+            plate_oligo_counts_max = float(max(plate_oligo_counts))
+            plate_neuron_counts_max = float(max(plate_neuron_counts))
+            plate_nuclei_counts_max = float(max(plate_nuclei_counts))
+
+            # Finally plotting all this stuff
+            os.makedirs(out_dir_current, exist_ok=True)
+            plt.clf()
+            plt.title(title)
+            legend_entries = []
+            if include_oligo:
+                plt.scatter(x=plate_plot_x, y=plate_plot_y_oligos, s=plate_plot_s_oligos, color='green', alpha=alpha)
+                legend_entries.append('Oligodendrocytes [' + str(plate_oligo_count) + ']')
+            if include_neuron:
+                plt.scatter(x=plate_plot_x, y=plate_plot_y_neurons, s=plate_plot_s_neurons, color='blue', alpha=alpha)
+                legend_entries.append('Neurons [' + str(plate_neuron_count) + ']')
+            if include_nucleus:
+                plt.scatter(x=plate_plot_x, y=plate_plot_y_nuclei, s=plate_plot_s_nuclei, color='red', alpha=alpha)
+                legend_entries.append('Nuclei [' + str(plate_nuclei_count) + ']')
+
+            plt.legend(legend_entries, loc='best')
+            out_name = out_dir_current + 'cytometry_' + experiment_name + '-plate' + filename_suffix
+
+            plt.ylabel('Cell Count\nSamples: ' + str(len(plate_plot_y_nuclei)))
+            plt.xlabel('Attention (Normalized)')
+
+            plt.tight_layout()
+            plt.autoscale()
+            plt.savefig(out_name + '.png', dpi=float(dpi) * 1.337)
+            plt.savefig(out_name + '.pdf', dpi=float(dpi) * 1.337)
+            plt.savefig(out_name + '.svg', dpi=float(dpi) * 1.337)
+            # TODO save as .csv
+
+    log.write('Done.')
+
+
+def render_attention_cell_distributions(out_dir: str, distributions, X_metadata: [[TileMetadata]], alpha: float = 0.3,
+                                        dpi: int = 600,
+                                        include_neuron: bool = True,
+                                        include_oligo: bool = True,
                                         include_nucleus: bool = True,
                                         filename_suffix: str = None, title_suffix: str = None
                                         ):

@@ -230,8 +230,9 @@ def train_model(
 
     write_protocol(out_dir=out_dir, text='\n\n == GPU Status ==\n')
     for line in hardware.print_gpu_status(silent=True):
+        line = str(line).strip()
         write_protocol(out_dir=out_dir, text=line)
-        log.write(line)
+        log.write(line + '\n')
 
     ########################
     # LOADING SIGMOID DATA
@@ -636,21 +637,21 @@ def train_model(
     f = open(out_dir + 'data-distribution.txt', 'w')
     training_data_tiles: int = sum([training_data[i][0].shape[0] for i in range(len(training_data))])
     validation_data_tiles: int = sum([validation_data[i][0].shape[0] for i in range(len(validation_data))])
-    log.write('Training data: ' + str(training_data_tiles) + ' tiles over ' + str(len(training_data)) + ' bags.')
-    log.write('Validation data: ' + str(validation_data_tiles) + ' tiles over ' + str(len(validation_data)) + ' bags.')
-    write_protocol(out_dir=out_dir, text='\nTraining data: ' + str(training_data_tiles) + ' tiles over ' + str(
+    log.write('Training data: ' + str(training_data_tiles) + ' samples over ' + str(len(training_data)) + ' bags.')
+    log.write('Validation data: ' + str(validation_data_tiles) + ' samples over ' + str(len(validation_data)) + ' bags.')
+    write_protocol(out_dir=out_dir, text='\nTraining data: ' + str(training_data_tiles) + ' samples over ' + str(
         len(training_data)) + ' bags.')
-    write_protocol(out_dir=out_dir, text='\nValidation data: ' + str(validation_data_tiles) + ' tiles over ' + str(
+    write_protocol(out_dir=out_dir, text='\nValidation data: ' + str(validation_data_tiles) + ' samples over ' + str(
         len(validation_data)) + ' bags.')
-    f.write('Training data: ' + str(training_data_tiles) + ' tiles over ' + str(len(training_data)) + ' bags.\n')
-    f.write('Validation data: ' + str(validation_data_tiles) + ' tiles over ' + str(len(validation_data)) + ' bags.\n')
+    f.write('Training data: ' + str(training_data_tiles) + ' samples over ' + str(len(training_data)) + ' bags.\n')
+    f.write('Validation data: ' + str(validation_data_tiles) + ' samples over ' + str(len(validation_data)) + ' bags.\n')
 
     if data_split_percentage_test is not None:
         test_data_tiles: int = sum([test_data[i][0].shape[0] for i in range(len(test_data))])
-        log.write('Test data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.')
-        f.write('Test data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.\n')
+        log.write('Test data: ' + str(test_data_tiles) + ' samples over ' + str(len(test_data)) + ' bags.')
+        f.write('Test data: ' + str(test_data_tiles) + ' samples over ' + str(len(test_data)) + ' bags.\n')
         write_protocol(out_dir=out_dir,
-                       text='\nTest data: ' + str(test_data_tiles) + ' tiles over ' + str(len(test_data)) + ' bags.')
+                       text='\nTest data: ' + str(test_data_tiles) + ' samples over ' + str(len(test_data)) + ' bags.')
     f.close()
 
     # Loading Hardware Device
@@ -1019,6 +1020,7 @@ def train_model(
                 render_attention_histogram_enabled=True,
                 render_attention_cell_distributions=False,
                 render_dose_response_curves_enabled=True,
+                render_attention_cytometry_prediction_distributions_enabled=True,
 
                 # misc settings
                 sigmoid_verbose=False,
@@ -1310,8 +1312,7 @@ def main(debug: bool = False):
         c = 0
         for r in range(5):  # replicates
             for l in ['mean_square_error', 'binary_cross_entropy']:
-                # best: binary_cross_entropy
-                for o in ['adadelta', 'binary_cross_entropy']:  # ['adam', 'adadelta']:
+                for o in ['adadelta', 'adam']:  # ['adam', 'adadelta']:
                     # best: adadelta
                     for p in [0.0]:  # [0.3, 0.35, 0.6]:  # [0.10, 0.20, 0.3, 0.05, 0.15, 0.25, 0.3, 0.35]:
                         # best: 0.65 or 0.3

@@ -36,6 +36,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  render_merged_predicted_tiles_activation_overlays: bool = False, gpu_enabled: bool = False,
                  render_attention_cell_distributions: bool = False,
                  render_attention_histogram_enabled: bool = False,
+                 render_attention_cytometry_prediction_distributions_enabled: bool = False,
                  data_loader_data_saver: bool = False,
                  clear_global_logs: bool = True,
                  ):
@@ -161,6 +162,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  render_attention_spheres_enabled=render_attention_spheres_enabled,
                  render_dose_response_curves_enabled=render_dose_response_curves_enabled,
                  render_attention_cell_distributions=render_attention_cell_distributions,
+                 render_attention_cytometry_prediction_distributions_enabled=render_attention_cytometry_prediction_distributions_enabled,
                  well_names=well_names, out_dir=out_dir)
 
     del data_loader, X_raw, X_metadata
@@ -182,6 +184,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                  render_dose_response_curves_enabled: bool = True, histogram_bootstrap_replications: int = 1000,
                  histogram_resample_size: int = 100, attention_normalized_metrics: bool = True,
                  render_attention_spheres_enabled: bool = False, render_attention_histogram_enabled: bool = False,
+                 render_attention_cytometry_prediction_distributions_enabled: bool = True,
                  render_merged_predicted_tiles_activation_overlays: bool = False, clear_old_data: bool = False,
                  render_attention_cell_distributions: bool = False, dpi: int = 250):
     os.makedirs(out_dir, exist_ok=True)
@@ -198,6 +201,10 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
     assert len(X_metadata) == len(X_raw)
     del data_loader, model
 
+    #####################################################
+    # APPLYING THE MODEL, DOING THE PREDICTIONS
+    #####################################################
+
     # Evaluating attention metrics (histogram, entropy, etc.)
     attention_metadata_list, attention_n_list, attention_bins_list, attention_otsu_index_list, attention_otsu_threshold_list, attention_entropy_attention_list, attention_entropy_hist_list, error_list = mil_metrics.attention_metrics_batch(
         all_attentions=all_attentions,
@@ -205,12 +212,86 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
         hist_bins_override=hist_bins_override,
         normalized=attention_normalized_metrics)
 
+    # WRITING ERRORS (if they exist)
     log.write(" === START ERROR LIST ===")
     for error in error_list:
         log.write("ERROR WHILE PREDICTING: " + str(error))
         # TODO handle errors better
     log.write(" === END ERROR LIST ===")
 
+    #####################################################
+    # RENDERING CYTOMETRY PAPER PREDICTIONS PER SAMPLE
+    #####################################################
+    if render_attention_cytometry_prediction_distributions_enabled:
+        out_dir_cytometry = out_dir + os.sep
+
+        # Oligos
+        try:
+            data_renderer.render_attention_cytometry_prediction_distributions(out_dir=out_dir_cytometry,
+                                                                              X_metadata=X_metadata,
+                                                                              title_suffix=' (Oligodendrocytes)',
+                                                                              y_preds=y_preds,
+                                                                              all_attentions=all_attentions,
+                                                                              filename_suffix='_oligo',
+                                                                              include_oligo=True,
+                                                                              include_neuron=False,
+                                                                              include_nucleus=False,
+                                                                              dpi=dpi)
+        except Exception as e:
+            pass
+            # TODO save and display error
+
+        # Neurons
+        try:
+            data_renderer.render_attention_cytometry_prediction_distributions(out_dir=out_dir_cytometry,
+                                                                              X_metadata=X_metadata,
+                                                                              title_suffix=' (Neurons)',
+                                                                              y_preds=y_preds,
+                                                                              all_attentions=all_attentions,
+                                                                              filename_suffix='_neurons',
+                                                                              include_oligo=False,
+                                                                              include_neuron=True,
+                                                                              include_nucleus=False,
+                                                                              dpi=dpi)
+        except Exception as e:
+            pass
+            # TODO save and display error
+
+        # Nuclei
+        try:
+            data_renderer.render_attention_cytometry_prediction_distributions(out_dir=out_dir_cytometry,
+                                                                              X_metadata=X_metadata,
+                                                                              title_suffix=' (Nuclei)',
+                                                                              y_preds=y_preds,
+                                                                              all_attentions=all_attentions,
+                                                                              filename_suffix='_nuclei',
+                                                                              include_oligo=False,
+                                                                              include_neuron=False,
+                                                                              include_nucleus=True,
+                                                                              dpi=dpi)
+        except Exception as e:
+            pass
+            # TODO save and display error
+
+        # All
+        try:
+            data_renderer.render_attention_cytometry_prediction_distributions(out_dir=out_dir_cytometry,
+                                                                              X_metadata=X_metadata,
+                                                                              title_suffix=' (All)',
+                                                                              y_preds=y_preds,
+                                                                              all_attentions=all_attentions,
+                                                                              filename_suffix='_all',
+                                                                              include_oligo=True,
+                                                                              include_neuron=True,
+                                                                              include_nucleus=True,
+                                                                              dpi=dpi)
+        except Exception as e:
+            pass
+            # TODO save and display error
+
+    #####################################################
+    # RENDERING ATTENTION CELL DISTRIBUTIONS
+    #####################################################
     if render_attention_cell_distributions:
         # calculating the cell count distribution for every attention value
         distributions = mil_metrics.get_cells_per_attention(all_attentions, X_metadata)
@@ -243,6 +324,9 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                                                           include_nucleus=True,
                                                           dpi=dpi)
 
+    #####################################################
+    # RENDER ATTENTION HISTOGRAMS
+    #####################################################
     data_renderer.render_attention_histograms(out_dir=out_dir, metadata_list=attention_metadata_list,
                                               n_list=attention_n_list,
                                               bins_list=attention_bins_list, otsu_index_list=attention_otsu_index_list,
@@ -541,18 +625,17 @@ def main():
     data_saver = True
     render_attention_spheres_enabled = True
 
-    unix_out_dir = '/mil/oligo-diff/debug_predictions/endpoint-sigmoid-linux-norm6-mse-bmc2/'
-
     if sys.platform == 'win32':
         debug = True
 
-    normalize_enum = 6
+    normalize_enum = None
     model_path = default_out_dir_unix_base + os.sep + 'hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
     if sys.platform == 'win32':
         image_folder = paths.nucleus_predictions_image_folder_win
         current_global_log_dir = 'U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\'
         log.add_file('U:\\bioinfdata\\work\\OmniSphero\\Sciebo\\HCA\\00_Logs\\mil_log\\win\\all_logs.txt')
-        model_path = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\linux\\ep-aug-overlap-adadelta-n-6-rp-0.3-l-mean_square_error-BMC\\'
+        model_path = paths.windows_debug_model_path
+        normalize_enum = 6
     else:
         # good one:
         model_path = '/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-endpoints-wells-normalize-6no-repack-round1/'
@@ -561,16 +644,16 @@ def main():
         model_path = '/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-endpoints-wells-normalize-8repack-0.5-round1/'
         model_path = '/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-endpoints-wells-normalize-6repack-0.3-round1/'
 
-        # mse
-        model_path = '/mil/oligo-diff/models/linux/ep-aug-overlap-adadelta-n-6-rp-0.3-l-mean_square_error-BMC/'
+        # in production
+        model_path = '/mil/oligo-diff/models/production/paper_candidate_2/'
 
         current_global_log_dir = '/Sciebo/HCA/00_Logs/mil_log3/linux-pred/'
         image_folder = paths.nucleus_predictions_image_folder_unix
+        normalize_enum = 7
 
     print('Log location: ' + current_global_log_dir)
     print('Model path: ' + model_path)
     assert os.path.exists(model_path)
-    # assert os.path.exists(current_global_log_dir)
 
     checkpoint_file = model_path + os.sep + 'hnm' + os.sep + 'model_best.h5'
     if not os.path.exists(checkpoint_file):
@@ -592,6 +675,7 @@ def main():
             render_dose_response_curves_enabled=True,
             hist_bins_override=50,
             sigmoid_verbose=True,
+            render_attention_cytometry_prediction_distributions_enabled=True,
             out_dir='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\debug_predictions-win\\bmc\\',
             gpu_enabled=False, normalize_enum=normalize_enum, max_workers=4)
     elif sys.platform == 'win32':
@@ -610,17 +694,12 @@ def main():
                          hist_bins_override=50,
                          sigmoid_verbose=True,
                          render_dose_response_curves_enabled=True,
+                         render_attention_cytometry_prediction_distributions_enabled=True,
                          gpu_enabled=False, normalize_enum=normalize_enum, max_workers=6)
     else:
         print('Predicting linux batches')
 
-        out_dir_used = unix_out_dir
         prediction_dirs_used = [paths.all_prediction_dirs_unix]
-
-        # override for big data praktikum
-        prediction_dirs_used = [paths.big_data_praktikum_paths]
-        out_dir_used = '/bph/puredata4/bioinfdata/work/OmniSphero/BigDataOligodendrocyteMILPreprocessing/CourseData/TestRun_150_offset_75/output/predictions'
-
         if debug:
             prediction_dirs_used = [prediction_dirs_used[0][0:3]]
         if data_saver:
@@ -632,18 +711,19 @@ def main():
             log.write(str(i) + '/' + str(len(prediction_dirs_used)) + ' - Predicting: ' + str(prediction_dir))
             try:
                 predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path, bag_paths=prediction_dir,
-                             out_dir=out_dir_used,
+                             out_dir=paths.unix_predictions_out_dir,
                              global_log_dir=current_global_log_dir,
                              render_attention_spheres_enabled=render_attention_spheres_enabled,
                              render_merged_predicted_tiles_activation_overlays=False,
                              render_attention_histogram_enabled=True,
                              render_attention_cell_distributions=False,
                              render_dose_response_curves_enabled=True,
+                             render_attention_cytometry_prediction_distributions_enabled=True,
                              hist_bins_override=50,
                              sigmoid_verbose=False,
                              image_folder=image_folder,
-                             # tile_constraints=loader.default_tile_constraints_none,
-                             tile_constraints=loader.default_tile_constraints_nuclei,
+                             tile_constraints=loader.default_tile_constraints_none,
+                             # tile_constraints=loader.default_tile_constraints_nuclei,
                              channel_inclusions=loader.default_channel_inclusions_no_neurites,
                              gpu_enabled=False, normalize_enum=normalize_enum, max_workers=20)
             except Exception as e:

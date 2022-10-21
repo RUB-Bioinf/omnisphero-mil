@@ -34,6 +34,9 @@ def set_file(filename: str):
 
 def write(output: str, print_to_console: bool = True, include_timestamp: bool = True, include_in_files: bool = True):
     try:
+        if output is None:
+            output = '<none>'
+
         output = str(output)
         _write(output=output, print_to_console=print_to_console, include_timestamp=include_timestamp,
                include_in_files=include_in_files)

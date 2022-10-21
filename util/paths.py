@@ -240,6 +240,12 @@ big_data_praktikum_paths = [
 ]
 
 ##################################
+# VALIDATED MODEL PATHS
+##################################
+windows_debug_model_path = 'U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\production\\paper_candidate\\'
+unix_predictions_out_dir = '/mil/oligo-diff/models/production/predictions/paper_candidate_2/'
+
+##################################
 # ffmpeg
 ##################################
 

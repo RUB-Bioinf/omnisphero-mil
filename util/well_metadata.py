@@ -299,7 +299,7 @@ class TileMetadata:
 
     def get_formatted_well(self, long: bool = True):
         if not self.read_from_source:
-            return '<runtime generated tile>'
+            return '<Well info n/a. Runtime generated tile>'
 
         if len(self.well_letter) == 1 and long:
             return self.well_letter + '0' + str(self.well_number)
