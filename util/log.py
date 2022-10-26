@@ -1,7 +1,10 @@
 import os
 from pathlib import Path
-
 from util.utils import gct
+import torch
+
+# Just for pytorch: Setting the print-options so pytorch tensors are displayed in more detail
+torch.set_printoptions(sci_mode=False, precision=8)
 
 global _log_files
 _log_files = []

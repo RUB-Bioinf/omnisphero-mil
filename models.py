@@ -1082,7 +1082,8 @@ def fit(model: OmniSpheroMil, optimizer: Optimizer, epochs: int, training_data: 
 
 
 @torch.no_grad()
-def get_predictions(model: OmniSpheroMil, data_loader: DataLoader, verbose: bool = False):
+def get_predictions(model: OmniSpheroMil, data_loader: DataLoader, verbose: bool = False,
+                    attention_round_decimals: int = None):
     """ takes a trained model and validation or test dataloader
     and applies the model on the data producing predictions
 
@@ -1120,13 +1121,21 @@ def get_predictions(model: OmniSpheroMil, data_loader: DataLoader, verbose: bool
         predictions = predictions.squeeze(dim=0)  # for binary setting
         predictions = predictions.cpu()
 
+        # Predictions
         all_y_hats.append(y_hat.numpy().item())
         all_predictions.append(predictions.numpy().item())
         all_true.append(bag_label.numpy().item())
         # all_y_tiles = prediction_tiles.cpu().data.numpy()[0]
-        attention_scores = np.round(attention.cpu().data.numpy()[0], decimals=3)
+
+        # Attention
+        attention_scores = attention.cpu().data.numpy()[0]
+        if attention_round_decimals is not None:
+            attention_round_decimals = int(attention_round_decimals)
+            attention_scores = np.round(attention_scores, decimals=attention_round_decimals)
         all_attentions.append(attention_scores)
         # all_tiles_true.append(label_tiles.cpu().numpy()[0])
+
+        # Bag indices
         original_bag_indices.append(int(original_bag_index.cpu()))
 
         all_tiles_true.append(label_tiles.cpu().numpy()[0])
