@@ -638,13 +638,15 @@ def train_model(
     training_data_tiles: int = sum([training_data[i][0].shape[0] for i in range(len(training_data))])
     validation_data_tiles: int = sum([validation_data[i][0].shape[0] for i in range(len(validation_data))])
     log.write('Training data: ' + str(training_data_tiles) + ' samples over ' + str(len(training_data)) + ' bags.')
-    log.write('Validation data: ' + str(validation_data_tiles) + ' samples over ' + str(len(validation_data)) + ' bags.')
+    log.write(
+        'Validation data: ' + str(validation_data_tiles) + ' samples over ' + str(len(validation_data)) + ' bags.')
     write_protocol(out_dir=out_dir, text='\nTraining data: ' + str(training_data_tiles) + ' samples over ' + str(
         len(training_data)) + ' bags.')
     write_protocol(out_dir=out_dir, text='\nValidation data: ' + str(validation_data_tiles) + ' samples over ' + str(
         len(validation_data)) + ' bags.')
     f.write('Training data: ' + str(training_data_tiles) + ' samples over ' + str(len(training_data)) + ' bags.\n')
-    f.write('Validation data: ' + str(validation_data_tiles) + ' samples over ' + str(len(validation_data)) + ' bags.\n')
+    f.write(
+        'Validation data: ' + str(validation_data_tiles) + ' samples over ' + str(len(validation_data)) + ' bags.\n')
 
     if data_split_percentage_test is not None:
         test_data_tiles: int = sum([test_data[i][0].shape[0] for i in range(len(test_data))])
@@ -1023,6 +1025,7 @@ def train_model(
                 render_attention_cytometry_prediction_distributions_enabled=True,
 
                 # misc settings
+                out_image_dpi=600,
                 sigmoid_verbose=False,
                 clear_global_logs=False
             )

@@ -685,6 +685,155 @@ def rgb_to_gray(img: np.ndarray, weights_r=0.299, weights_g=0.587, weights_b=0.1
     return gray_image
 
 
+def render_attention_cytometry_prediction_distributions_partitioned(out_dir: str,
+                                                                    X_metadatas: [[TileMetadata]],
+                                                                    partitions: int,
+                                                                    y_preds: [float],
+                                                                    all_attentions: [np.ndarray],
+                                                                    title_suffix: str = None,
+                                                                    filename_suffix: str = None,
+                                                                    include_oligo: bool = False,
+                                                                    include_neuron: bool = False,
+                                                                    include_nucleus: bool = False,
+                                                                    scatter_plot_item_scale: float = 20.0,
+                                                                    dpi: int = 400) -> [str]:
+    if filename_suffix is None:
+        filename_suffix = ''
+
+    if isinstance(partitions, list):
+        for partition in partitions:
+            # Calling itself so it can process the list
+            render_attention_cytometry_prediction_distributions_partitioned(out_dir=out_dir,
+                                                                            X_metadatas=X_metadatas,
+                                                                            partitions=partition,
+                                                                            y_preds=y_preds,
+                                                                            all_attentions=all_attentions,
+                                                                            title_suffix=title_suffix,
+                                                                            filename_suffix=filename_suffix,
+                                                                            include_oligo=include_oligo,
+                                                                            include_neuron=include_neuron,
+                                                                            include_nucleus=include_nucleus,
+                                                                            scatter_plot_item_scale=scatter_plot_item_scale,
+                                                                            dpi=dpi,
+                                                                            )
+        return
+    partitions = int(partitions)
+
+    assert partitions % 2 == 0  # only allowing partitions to be divisible by 2
+    assert include_oligo or include_neuron or include_nucleus
+    assert len(y_preds) == len(X_metadatas)
+    assert len(all_attentions) == len(X_metadatas)
+    assert partitions > 0
+    scatter_plot_item_scale = float(scatter_plot_item_scale)
+    assert scatter_plot_item_scale > 0
+
+    os.makedirs(out_dir, exist_ok=True)
+    log.write('Writing partitioned Cytometry predictions to: ' + out_dir)
+    log.write('Number of partitions: ' + str(partitions))
+
+    # Sorting out negative bags
+    X_metadatas_positive = []
+    y_preds_positive = []
+    all_attentions_positive = []
+    for (X_metadata, y_pred, all_attention) in zip(X_metadatas, y_preds, all_attentions):
+        if y_pred == 1.0:
+            X_metadatas_positive.append(X_metadata)
+            y_preds_positive.append(y_pred)
+            all_attentions_positive.append(all_attention)
+
+        del X_metadata, y_pred, all_attention
+
+    # Running render for all positive bags
+    partitions_step = 1.0 / float(partitions)
+    for (X_metadata, y_pred, all_attention) in zip(X_metadatas_positive, y_preds_positive, all_attentions_positive):
+        assert len(X_metadata) == len(all_attention)
+        experiment_name = X_metadata[0].experiment_name
+        current_well = X_metadata[0].get_formatted_well()
+
+        out_dir_current = out_dir + os.sep + 'cytometry_distribution-partitions-' + str(partitions) + os.sep
+        out_dir_current_detailed = out_dir_current + 'detailed' + os.sep
+        os.makedirs(out_dir_current_detailed, exist_ok=True)
+        out_dirs_image_paths_detailed = []
+        whole_plate_image_path_detailed = []
+        for i in range(partitions):
+            partition_range_lower = 1.0 * float(i) * partitions_step
+            partition_range_upper = partition_range_lower + partitions_step
+            print('Partition range lower: ' + str(partition_range_lower))
+            print('Partition range upper: ' + str(partition_range_upper))
+
+            # attentions: np.ndarray = all_attention[i]
+            attentions_min = float(min(all_attention))
+            attentions_max = float(max(all_attention))
+            normalized_attention = (all_attention - attentions_min) / (attentions_max - attentions_min)
+
+            all_attention_partitioned = []
+            X_metadata_partitioned = []
+            for j in range(len(normalized_attention)):
+                attention_normalized = float(normalized_attention[j])
+                if partition_range_lower < attention_normalized < partition_range_upper:
+                    all_attention_partitioned.append(attention_normalized)
+                    X_metadata_partitioned.append(X_metadata[j])
+
+                del attention_normalized
+
+            # attention and metadata are now partitioned
+            assert len(all_attention_partitioned) > 0
+            assert len(X_metadata_partitioned) > 0
+
+            # Rendering them now
+            out_dirs_image_paths, whole_plate_image_path = render_attention_cytometry_prediction_distributions(
+                out_dir=out_dir_current_detailed,
+                X_metadata=[X_metadata_partitioned],
+                y_preds=[y_pred],
+                all_attentions=[all_attention_partitioned],
+                filename_suffix=filename_suffix + '_partition-' + str(i),
+                title_suffix=title_suffix + '\n[' + str(partition_range_lower) + '% - ' + str(
+                    partition_range_upper) + '%]',
+                include_oligo=include_oligo,
+                include_neuron=include_neuron,
+                include_nucleus=include_nucleus,
+                include_plate=False,
+                scatter_plot_item_scale=scatter_plot_item_scale,
+                dpi=dpi)
+
+            assert len(out_dirs_image_paths) == 1
+            out_dirs_image_paths_detailed.append(out_dirs_image_paths[0])
+            whole_plate_image_path_detailed.append(whole_plate_image_path)
+            del out_dirs_image_paths
+            del whole_plate_image_path
+
+        # Rendering composite images
+        out_dirs_images_detailed = read_and_composite_images(out_dirs_image_paths_detailed, light_mode=True)
+        # whole_plate_images_detailed = read_and_composite_images(whole_plate_image_path_detailed, light_mode=True)
+
+        out_dir_base = out_dir_current + os.sep + experiment_name + os.sep
+        os.makedirs(out_dir_base, exist_ok=True)
+        out_name_base = out_dir_base + os.sep + 'cytometry_' + experiment_name + '-' + current_well + filename_suffix + '-partitioned'
+
+        # Saving the images
+        plt.imsave(out_name_base + '.png', out_dirs_images_detailed)
+        # plt.imsave(out_name_base + '-whole_plate.png', whole_plate_images_detailed)
+
+
+def read_and_composite_images(image_paths: [str], light_mode: bool = True):
+    # Checking if exists
+    for path in image_paths:
+        assert os.path.exists(path)
+        del path
+
+    # Reading paths
+    images = []
+    for path in image_paths:
+        img = plt.imread(path)
+        img = img[:, :, :3] * 255
+        img = img.astype(np.uint8)
+        images.append(img)
+        del img
+
+    fused_images = mil_metrics.fuse_image_tiles(images=images, light_mode=light_mode)
+    return fused_images
+
+
 def render_attention_cytometry_prediction_distributions(out_dir: str, X_metadata: [[TileMetadata]],
                                                         y_preds: [float],
                                                         all_attentions: [np.ndarray],
@@ -694,7 +843,7 @@ def render_attention_cytometry_prediction_distributions(out_dir: str, X_metadata
                                                         include_nucleus: bool = False,
                                                         include_plate: bool = True,
                                                         scatter_plot_item_scale: float = 20.0,
-                                                        dpi: int = 400):
+                                                        dpi: int = 400) -> ([str], str):
     assert include_oligo or include_neuron or include_nucleus
     assert len(y_preds) == len(X_metadata)
     assert len(all_attentions) == len(X_metadata)
@@ -738,6 +887,8 @@ def render_attention_cytometry_prediction_distributions(out_dir: str, X_metadata
     plates_nuclei_count = {}
     plates_out_dir = {}
 
+    out_dirs_image_paths: [str] = []
+    whole_plate_image_path: str = None
     for i in range(len(y_preds)):
         # pre-processing attention metric
         attentions: np.ndarray = all_attentions[i]
@@ -745,11 +896,11 @@ def render_attention_cytometry_prediction_distributions(out_dir: str, X_metadata
         attentions_max = float(max(attentions))
 
         y_pred: float = y_preds[i]
-        metadatas: [TileMetadata] = X_metadata[i]
-        assert len(attentions) == len(metadatas)
+        meta_datas: [TileMetadata] = X_metadata[i]
+        assert len(attentions) == len(meta_datas)
 
-        formatted_well = metadatas[0].get_formatted_well()
-        experiment_name = metadatas[0].experiment_name
+        formatted_well = meta_datas[0].get_formatted_well()
+        experiment_name = meta_datas[0].experiment_name
         utils.line_print(str(i + 1) + '/' + str(len(y_preds)) + ' - ' + formatted_well)
         out_dir_current = out_dir + os.sep + experiment_name + os.sep + 'cytometry-distributions' + os.sep
         os.makedirs(out_dir_current, exist_ok=True)
@@ -789,14 +940,14 @@ def render_attention_cytometry_prediction_distributions(out_dir: str, X_metadata
         oligo_counts = []
         neuron_counts = []
         nuclei_counts = []
-        for metadata in metadatas:
-            oligo_count = [m.count_oligos for m in metadatas].count(metadata.count_oligos)
+        for metadata in meta_datas:
+            oligo_count = [m.count_oligos for m in meta_datas].count(metadata.count_oligos)
             oligo_counts.append(oligo_count)
             plate_oligo_counts.append(oligo_count)
-            neuron_count = [m.count_neurons for m in metadatas].count(metadata.count_neurons)
+            neuron_count = [m.count_neurons for m in meta_datas].count(metadata.count_neurons)
             neuron_counts.append(neuron_count)
             plate_neuron_counts.append(neuron_count)
-            nuclei_count = [m.count_nuclei for m in metadatas].count(metadata.count_nuclei)
+            nuclei_count = [m.count_nuclei for m in meta_datas].count(metadata.count_nuclei)
             nuclei_counts.append(nuclei_count)
             plate_nuclei_counts.append(nuclei_count)
             del oligo_count, neuron_count, nuclei_count
@@ -816,9 +967,9 @@ def render_attention_cytometry_prediction_distributions(out_dir: str, X_metadata
         nuclei_counts_max = float(max(nuclei_counts))
 
         # Counting the cells
-        oligo_count = sum([m.count_oligos for m in metadatas])
-        neuron_count = sum([m.count_neurons for m in metadatas])
-        nuclei_count = sum([m.count_nuclei for m in metadatas])
+        oligo_count = sum([m.count_oligos for m in meta_datas])
+        neuron_count = sum([m.count_neurons for m in meta_datas])
+        nuclei_count = sum([m.count_nuclei for m in meta_datas])
         plate_oligo_count = plate_oligo_count + oligo_count
         plate_neuron_count = plate_neuron_count + neuron_count
         plate_nuclei_count = plate_nuclei_count + nuclei_count
@@ -834,14 +985,14 @@ def render_attention_cytometry_prediction_distributions(out_dir: str, X_metadata
         plot_s_oligos = []
         plot_s_neurons = []
         plot_s_nuclei = []
-        for (metadata, attention) in zip(metadatas, attentions):
+        for (metadata, attention) in zip(meta_datas, attentions):
             attention = float(attention)
             normalized_attention = (attention - attentions_min) / (attentions_max - attentions_min)
 
             # Counting how many times a cell has been counted
-            oligo_count_count = [m.count_oligos for m in metadatas].count(metadata.count_oligos)
-            neuron_count_count = [m.count_neurons for m in metadatas].count(metadata.count_neurons)
-            nuclei_count_count = [m.count_nuclei for m in metadatas].count(metadata.count_nuclei)
+            oligo_count_count = [m.count_oligos for m in meta_datas].count(metadata.count_oligos)
+            neuron_count_count = [m.count_neurons for m in meta_datas].count(metadata.count_neurons)
+            nuclei_count_count = [m.count_nuclei for m in meta_datas].count(metadata.count_nuclei)
             normalized_oligo_count = (float(oligo_count_count) - oligo_counts_min) / (
                     oligo_counts_max - oligo_counts_min)
             normalized_neuron_count = (float(neuron_count_count) - neuron_counts_min) / (
@@ -892,6 +1043,7 @@ def render_attention_cytometry_prediction_distributions(out_dir: str, X_metadata
         plt.savefig(out_name + '.png', dpi=dpi)
         plt.savefig(out_name + '.pdf', dpi=dpi)
         plt.savefig(out_name + '.svg', dpi=dpi)
+        out_dirs_image_paths.append(out_name + '.png')
         # TODO save as .csv
 
         # Adding to the plate dicts
@@ -989,9 +1141,16 @@ def render_attention_cytometry_prediction_distributions(out_dir: str, X_metadata
             plt.savefig(out_name + '.png', dpi=float(dpi) * 1.337)
             plt.savefig(out_name + '.pdf', dpi=float(dpi) * 1.337)
             plt.savefig(out_name + '.svg', dpi=float(dpi) * 1.337)
+            whole_plate_image_path = out_name + '.png'
             # TODO save as .csv
 
-    log.write('Done.')
+    log.write('Images saved (Count: ' + str(len(out_dirs_image_paths)) + ')')
+    print('')
+    for image in out_dirs_image_paths:
+        utils.line_print(str(image))
+    log.write('\nDone.')
+
+    return out_dirs_image_paths, whole_plate_image_path
 
 
 def render_attention_cell_distributions(out_dir: str, distributions, X_metadata: [[TileMetadata]], alpha: float = 0.3,

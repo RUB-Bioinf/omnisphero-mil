@@ -39,6 +39,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  render_attention_cytometry_prediction_distributions_enabled: bool = False,
                  data_loader_data_saver: bool = False,
                  clear_global_logs: bool = True,
+                 out_image_dpi: int = 300,
                  ):
     start_time = datetime.now()
     log_label = str(start_time.strftime("%d-%m-%Y-%H-%M-%S"))
@@ -155,7 +156,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
     sparse = True
     predict_data(model=model, data_loader=data_loader, X_raw=X_raw, X_metadata=X_metadata,
                  experiment_names=experiment_names, input_dim=input_dim, sparse_hist=sparse,
-                 hist_bins_override=hist_bins_override,
+                 hist_bins_override=hist_bins_override, out_image_dpi=out_image_dpi,
                  normalized_attention=norm, clear_old_data=False, image_folder=image_folder,
                  sigmoid_verbose=sigmoid_verbose, render_attention_histogram_enabled=render_attention_histogram_enabled,
                  render_merged_predicted_tiles_activation_overlays=render_merged_predicted_tiles_activation_overlays,
@@ -186,7 +187,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                  render_attention_spheres_enabled: bool = False, render_attention_histogram_enabled: bool = False,
                  render_attention_cytometry_prediction_distributions_enabled: bool = True,
                  render_merged_predicted_tiles_activation_overlays: bool = False, clear_old_data: bool = False,
-                 render_attention_cell_distributions: bool = False, dpi: int = 250):
+                 render_attention_cell_distributions: bool = False, out_image_dpi: int = 250):
     os.makedirs(out_dir, exist_ok=True)
 
     log.write('Using image folder: ' + image_folder)
@@ -236,7 +237,18 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                                                                               include_oligo=True,
                                                                               include_neuron=False,
                                                                               include_nucleus=False,
-                                                                              dpi=dpi)
+                                                                              dpi=out_image_dpi)
+            data_renderer.render_attention_cytometry_prediction_distributions_partitioned(out_dir=out_dir_cytometry,
+                                                                                          X_metadatas=X_metadata,
+                                                                                          partitions=[2, 4],
+                                                                                          title_suffix=' (Oligodendrocytes)',
+                                                                                          y_preds=y_preds,
+                                                                                          all_attentions=all_attentions,
+                                                                                          filename_suffix='_oligo',
+                                                                                          include_oligo=True,
+                                                                                          include_neuron=False,
+                                                                                          include_nucleus=False,
+                                                                                          dpi=out_image_dpi)
         except Exception as e:
             pass
             # TODO save and display error
@@ -252,7 +264,18 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                                                                               include_oligo=False,
                                                                               include_neuron=True,
                                                                               include_nucleus=False,
-                                                                              dpi=dpi)
+                                                                              dpi=out_image_dpi)
+            data_renderer.render_attention_cytometry_prediction_distributions_partitioned(out_dir=out_dir_cytometry,
+                                                                                          X_metadatas=X_metadata,
+                                                                                          partitions=[2, 4],
+                                                                                          title_suffix=' (Neurons)',
+                                                                                          y_preds=y_preds,
+                                                                                          all_attentions=all_attentions,
+                                                                                          filename_suffix='_neurons',
+                                                                                          include_oligo=False,
+                                                                                          include_neuron=True,
+                                                                                          include_nucleus=False,
+                                                                                          dpi=out_image_dpi)
         except Exception as e:
             pass
             # TODO save and display error
@@ -268,7 +291,18 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                                                                               include_oligo=False,
                                                                               include_neuron=False,
                                                                               include_nucleus=True,
-                                                                              dpi=dpi)
+                                                                              dpi=out_image_dpi)
+            data_renderer.render_attention_cytometry_prediction_distributions_partitioned(out_dir=out_dir_cytometry,
+                                                                                          X_metadatas=X_metadata,
+                                                                                          partitions=[2, 4],
+                                                                                          title_suffix=' (Nuclei)',
+                                                                                          y_preds=y_preds,
+                                                                                          all_attentions=all_attentions,
+                                                                                          filename_suffix='_nuclei',
+                                                                                          include_oligo=False,
+                                                                                          include_neuron=False,
+                                                                                          include_nucleus=True,
+                                                                                          dpi=out_image_dpi)
         except Exception as e:
             pass
             # TODO save and display error
@@ -284,7 +318,18 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                                                                               include_oligo=True,
                                                                               include_neuron=True,
                                                                               include_nucleus=True,
-                                                                              dpi=dpi)
+                                                                              dpi=out_image_dpi)
+            data_renderer.render_attention_cytometry_prediction_distributions_partitioned(out_dir=out_dir_cytometry,
+                                                                                          X_metadatas=X_metadata,
+                                                                                          partitions=[2, 4],
+                                                                                          title_suffix=' (All)',
+                                                                                          y_preds=y_preds,
+                                                                                          all_attentions=all_attentions,
+                                                                                          filename_suffix='_all',
+                                                                                          include_oligo=True,
+                                                                                          include_neuron=True,
+                                                                                          include_nucleus=True,
+                                                                                          dpi=out_image_dpi)
         except Exception as e:
             pass
             # TODO save and display error
@@ -301,28 +346,28 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                                                           include_oligo=True,
                                                           include_neuron=False,
                                                           include_nucleus=False,
-                                                          dpi=dpi)
+                                                          dpi=out_image_dpi)
         data_renderer.render_attention_cell_distributions(out_dir=out_dir, distributions=distributions,
                                                           X_metadata=X_metadata, alpha=0.45,
                                                           title_suffix=' (Neurons)', filename_suffix='_neuron',
                                                           include_oligo=False,
                                                           include_neuron=True,
                                                           include_nucleus=False,
-                                                          dpi=dpi)
+                                                          dpi=out_image_dpi)
         data_renderer.render_attention_cell_distributions(out_dir=out_dir, distributions=distributions,
                                                           X_metadata=X_metadata, alpha=0.45,
                                                           title_suffix=' (Nuclei)', filename_suffix='_nucleus',
                                                           include_oligo=False,
                                                           include_neuron=False,
                                                           include_nucleus=True,
-                                                          dpi=dpi)
+                                                          dpi=out_image_dpi)
         data_renderer.render_attention_cell_distributions(out_dir=out_dir, distributions=distributions,
                                                           X_metadata=X_metadata,
                                                           title_suffix=None, filename_suffix='_all',
                                                           include_oligo=True,
                                                           include_neuron=True,
                                                           include_nucleus=True,
-                                                          dpi=dpi)
+                                                          dpi=out_image_dpi)
 
     #####################################################
     # RENDER ATTENTION HISTOGRAMS
@@ -332,7 +377,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                                               bins_list=attention_bins_list, otsu_index_list=attention_otsu_index_list,
                                               otsu_threshold_list=attention_otsu_threshold_list,
                                               entropy_attention_list=attention_entropy_attention_list,
-                                              entropy_hist_list=attention_entropy_hist_list, dpi=dpi * 2)
+                                              entropy_hist_list=attention_entropy_hist_list, dpi=out_image_dpi * 2)
 
     # Setting up result directories and file handles
     experiment_names_unique = list(dict.fromkeys(experiment_names))
@@ -388,7 +433,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                                              sigmoid_plot_fit_map=sigmoid_plot_data_map,
                                              sigmoid_score_detail_map=sigmoid_score_detail_map,
                                              sigmoid_bmc30_map=sigmoid_bmc30_map,
-                                             sigmoid_score_map=sigmoid_score_map, dpi=int(dpi * 1.337))
+                                             sigmoid_score_map=sigmoid_score_map, dpi=int(out_image_dpi * 1.337))
 
     # Rendering attention scores
     if render_attention_spheres_enabled:
@@ -675,6 +720,7 @@ def main():
             render_dose_response_curves_enabled=True,
             hist_bins_override=50,
             sigmoid_verbose=True,
+            out_image_dpi=300,
             render_attention_cytometry_prediction_distributions_enabled=True,
             out_dir='U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\debug_predictions-win\\bmc\\',
             gpu_enabled=False, normalize_enum=normalize_enum, max_workers=4)
@@ -693,6 +739,7 @@ def main():
                          image_folder=image_folder,
                          hist_bins_override=50,
                          sigmoid_verbose=True,
+                         out_image_dpi=300,
                          render_dose_response_curves_enabled=True,
                          render_attention_cytometry_prediction_distributions_enabled=True,
                          gpu_enabled=False, normalize_enum=normalize_enum, max_workers=6)
@@ -720,6 +767,7 @@ def main():
                              render_dose_response_curves_enabled=True,
                              render_attention_cytometry_prediction_distributions_enabled=True,
                              hist_bins_override=50,
+                             out_image_dpi=800,
                              sigmoid_verbose=False,
                              image_folder=image_folder,
                              tile_constraints=loader.default_tile_constraints_none,

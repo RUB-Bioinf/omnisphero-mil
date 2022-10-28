@@ -266,6 +266,7 @@ def line_print(text: str, max_width: int = None, cutoff_too_large_text: bool = T
                include_in_log: bool = True):
     text = str(text)
 
+    terminal_columns = None
     if max_width is None:
         if platform == "linux" or platform == "linux2":
             try:
@@ -274,6 +275,7 @@ def line_print(text: str, max_width: int = None, cutoff_too_large_text: bool = T
                 terminal_columns = int(terminal_columns)
                 # print('Did you know your terminal is ' + str(terminal_columns) + 'x' + str(terminal_rows) + ' characters big.')
             except Exception as e:
+                # TODO handle e
                 print(text)
                 return
         else:
