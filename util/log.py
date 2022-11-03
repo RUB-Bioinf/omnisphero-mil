@@ -1,5 +1,8 @@
 import os
 from pathlib import Path
+from typing import Union
+
+from util.utils import format_exception
 from util.utils import gct
 import torch
 
@@ -35,18 +38,56 @@ def set_file(filename: str):
     add_file(filename=filename)
 
 
-def write(output: str, print_to_console: bool = True, include_timestamp: bool = True, include_in_files: bool = True):
-    try:
-        if output is None:
-            output = '<none>'
+def write_exception(exception: Exception,
+                    include_timestamp: bool = True,
+                    print_to_console_message: bool = True,
+                    include_in_files_message: bool = True,
+                    print_to_console_stack_trace: bool = None,
+                    include_in_files_stack_trace: bool = None
+                    ):
+    assert print_to_console_message is not None
+    assert include_in_files_message is not None
+    if print_to_console_stack_trace is None:
+        print_to_console_stack_trace = print_to_console_message
+    if include_in_files_stack_trace is None:
+        include_in_files_stack_trace = include_in_files_message
 
+    description, stacktrace_lines = format_exception(exception)
+
+    write(output=description,
+          print_to_console=print_to_console_message,
+          include_timestamp=include_timestamp,
+          include_in_files=include_in_files_message)
+    for i in range(len(stacktrace_lines)):
+        line = '\t' + str(stacktrace_lines[i])
+        write(output=line,
+              print_to_console=print_to_console_stack_trace,
+              include_timestamp=False,
+              include_in_files=include_in_files_stack_trace)
+
+
+def write(output: Union[str, list],
+          print_to_console: bool = True,
+          include_timestamp: bool = True,
+          include_in_files: bool = True):
+    if output is None:
+        output = '<none>'
+
+    if type(output) == list:
+        for o in output:
+            write(output=o,
+                  print_to_console=print_to_console,
+                  include_timestamp=include_timestamp,
+                  include_in_files=include_in_files)
+        return
+
+    try:
         output = str(output)
         _write(output=output, print_to_console=print_to_console, include_timestamp=include_timestamp,
                include_in_files=include_in_files)
     except Exception as e:
         print('Failed to log: "' + str(output).strip() + '"!')
         print(str(e))
-        pass
         # TODO: Better log error
 
 

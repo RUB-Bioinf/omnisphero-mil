@@ -1403,6 +1403,7 @@ def write_protocol(out_dir: str, text: str, new_entry: bool = False):
             protocol_file_handle.close()
             del protocol_file_handle
         except Exception as e:
+            description, stacktrace_lines = utils.format_exception(e)
             pass
             # TODO handle exception
 

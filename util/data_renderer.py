@@ -1,5 +1,6 @@
 import math
 import os
+from typing import Union
 
 import matplotlib.pyplot as plt
 import mil_metrics
@@ -687,7 +688,7 @@ def rgb_to_gray(img: np.ndarray, weights_r=0.299, weights_g=0.587, weights_b=0.1
 
 def render_attention_cytometry_prediction_distributions_partitioned(out_dir: str,
                                                                     X_metadatas: [[TileMetadata]],
-                                                                    partitions: int,
+                                                                    partitions: Union[int, list],
                                                                     y_preds: [float],
                                                                     all_attentions: [np.ndarray],
                                                                     title_suffix: str = None,
@@ -804,15 +805,12 @@ def render_attention_cytometry_prediction_distributions_partitioned(out_dir: str
 
         # Rendering composite images
         out_dirs_images_detailed = read_and_composite_images(out_dirs_image_paths_detailed, light_mode=True)
-        # whole_plate_images_detailed = read_and_composite_images(whole_plate_image_path_detailed, light_mode=True)
-
         out_dir_base = out_dir_current + os.sep + experiment_name + os.sep
         os.makedirs(out_dir_base, exist_ok=True)
         out_name_base = out_dir_base + os.sep + 'cytometry_' + experiment_name + '-' + current_well + filename_suffix + '-partitioned'
 
         # Saving the images
         plt.imsave(out_name_base + '.png', out_dirs_images_detailed)
-        # plt.imsave(out_name_base + '-whole_plate.png', whole_plate_images_detailed)
 
 
 def read_and_composite_images(image_paths: [str], light_mode: bool = True):

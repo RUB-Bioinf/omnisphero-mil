@@ -2,6 +2,7 @@ import math
 import os
 import random
 import sys
+import traceback
 from datetime import datetime
 from sys import platform
 
@@ -552,6 +553,17 @@ def extract_experiments_from_bags(X, X_metadata, X_raw, y, y_tiles, bag_names, e
     assert len(X) == len(X_metadata)
 
     return X, X_metadata, X_raw, y, y_tiles, bag_names, X_extracted, X_metadata_extracted, X_raw_extracted, y_extracted, y_tiles_extracted, bag_names_extracted
+
+
+def format_exception(exception: Exception) -> [str, [str]]:
+    description = str(exception.__class__.__name__) + ': "' + str(exception) + '"'
+
+    stacktrace_lines = []
+    tb = traceback.TracebackException.from_exception(exception)
+    for line in tb.stack:
+        stacktrace_lines.append(str(line))
+
+    return description, stacktrace_lines
 
 
 if __name__ == "__main__":
