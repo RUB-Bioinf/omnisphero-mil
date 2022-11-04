@@ -1242,24 +1242,6 @@ def convert_bag_to_batch(bags: [np.ndarray], labels: [int] = None, y_tiles: [[in
         assert len(bags) == len(labels)
         assert len(bags) == len(y_tiles)
 
-    # for index in reversed(range(len(bags))):
-    #     batch_data = np.asarray(bags[index], dtype=dtype).copy()
-    #     batch_label = np.asarray(labels[index], dtype=dtype).copy()
-    #     batch_label_tiles = np.asarray(y_tiles[index], dtype=dtype).copy()
-    #     batch_original_index = np.asarray(index, dtype=dtype).copy()
-    #     dataset.append((batch_data, batch_label, batch_label_tiles, batch_original_index))
-    #
-    #     if delete_from_bag:
-    #         bags[index] = None
-    #         labels[index] = None
-    #         y_tiles[index] = None
-    #
-    #         del bags[index]
-    #         del labels[index]
-    #         del y_tiles[index]
-    #
-    #     input_dim = batch_data.shape[1:]
-
     for index, (bag, bag_label, tile_labels) in enumerate(zip(bags, labels, y_tiles)):
         batch_data = np.asarray(bag, dtype='float32').copy()
         batch_label = np.asarray(bag_label, dtype='float32').copy()

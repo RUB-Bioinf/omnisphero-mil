@@ -37,6 +37,9 @@ os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 import torch
 from torch.optim import Optimizer
 
+# Just for pytorch: Setting the print-options so pytorch tensors are displayed in more detail
+torch.set_printoptions(sci_mode=False, precision=8)
+
 # On Windows, if there's not enough RAM:
 # https://github.com/Spandan-Madan/Pytorch_fine_tuning_Tutorial/issues/10
 
