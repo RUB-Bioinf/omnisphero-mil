@@ -142,7 +142,7 @@ def main():
     log.diagnose()
 
     # Running the mover now
-    move_pattern = 'grb'
+    move_pattern = 'rbg'
     parent_dir = os.path.abspath(os.path.join(input_dir[0], os.pardir))
     output_dir = parent_dir + os.sep + 'channel-transformed-' + move_pattern
 

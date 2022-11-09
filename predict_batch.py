@@ -25,8 +25,6 @@ from util.utils import line_print
 from util.well_metadata import TileMetadata
 from util.well_metadata import extract_well_info
 
-model_debug_path = "U:\\bioinfdata\\work\\OmniSphero\\mil\\oligo-diff\\models\\production\\hnm-early_inverted-O1-adadelta-NoNeuron2-wells-normalize-6repack-0.55-BEST"
-
 
 def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], normalize_enum: int, out_dir: str,
                  max_workers: int, image_folder: str, channel_inclusions=loader.default_channel_inclusions_all,
@@ -37,6 +35,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  render_attention_cell_distributions: bool = False,
                  render_attention_histogram_enabled: bool = False,
                  render_attention_cytometry_prediction_distributions_enabled: bool = False,
+                 oligo_positive_z_score_scale: float = 1.0, oligo_z_score_max_kernel_size: int = 1,
                  data_loader_data_saver: bool = False,
                  clear_global_logs: bool = True,
                  out_image_dpi: int = 300,
@@ -122,6 +121,8 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
         constraints_1=tile_constraints,
         label_0_well_indices=loader.default_well_indices_all,
         label_1_well_indices=loader.default_well_indices_all,
+        positive_z_score_scale=oligo_positive_z_score_scale,
+        z_score_max_kernel_size=oligo_z_score_max_kernel_size,
         normalize_enum=normalize_enum)
     X = [np.einsum('bhwc->bchw', bag) for bag in X]
 
@@ -148,6 +149,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
         for i in range(len(errors)):
             e = errors[i]
             log.write('Error #' + str(i) + ': "' + str(e) + '".')
+            log.write_exception(e)
             del e
             del i
     del errors, loaded_files_list
@@ -718,6 +720,8 @@ def main():
             render_merged_predicted_tiles_activation_overlays=False,
             render_attention_histogram_enabled=False,
             render_dose_response_curves_enabled=True,
+            oligo_positive_z_score_scale=2.0,
+            oligo_z_score_max_kernel_size=10,
             hist_bins_override=50,
             sigmoid_verbose=True,
             out_image_dpi=300,
@@ -746,7 +750,13 @@ def main():
     else:
         print('Predicting linux batches')
 
+        ###########################################################
+        ############## SETTING THE INPUT PATH HERE ################
+        ###########################################################
         prediction_dirs_used = [paths.all_prediction_dirs_unix]
+        prediction_dirs_used = [paths.curated_overlapping_source_dirs_unix_channel_transformed_rbg]
+        ###########################################################
+
         if debug:
             prediction_dirs_used = [prediction_dirs_used[0][0:3]]
         if data_saver:
@@ -758,7 +768,7 @@ def main():
             log.write(str(i) + '/' + str(len(prediction_dirs_used)) + ' - Predicting: ' + str(prediction_dir))
             try:
                 predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path, bag_paths=prediction_dir,
-                             out_dir=paths.unix_predictions_out_dir,
+                             out_dir=paths.unix_predictions_out_dir_rbg,
                              global_log_dir=current_global_log_dir,
                              render_attention_spheres_enabled=render_attention_spheres_enabled,
                              render_merged_predicted_tiles_activation_overlays=False,

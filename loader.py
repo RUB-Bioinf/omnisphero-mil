@@ -100,6 +100,7 @@ plate_metadata_cache = {}
 def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: int, include_raw: bool = True,
                          channel_inclusions=None, constraints_0=None, constraints_1=None,
                          unrestricted_experiments_override: [str] = None,
+                         positive_z_score_scale: float = 1.0, z_score_max_kernel_size: int = 1,
                          force_balanced_batch: bool = True, label_0_well_indices=None, label_1_well_indices=None):
     if label_1_well_indices is None:
         label_1_well_indices = default_well_indices_none
@@ -168,6 +169,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
                 label_1_well_indices=label_1_well_indices,
                 constraints_0=constraints_0,
                 constraints_1=constraints_1,
+                positive_z_score_scale=positive_z_score_scale, z_score_max_kernel_size=z_score_max_kernel_size,
                 gp_max=len(batch_dirs),
                 unrestricted_experiments_override=unrestricted_experiments_override,
                 include_raw=include_raw)
@@ -247,6 +249,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
 def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label_0_well_indices: [int],
                    channel_inclusions: [bool], label_1_well_indices: [int], constraints_1: [int], constraints_0: [int],
                    force_balanced_batch: bool = True, unrestricted_experiments_override: [str] = None,
+                   positive_z_score_scale: float = 1.0, z_score_max_kernel_size: int = 1,
                    gp_current: int = 1, gp_max: int = 1, include_raw: bool = True):
     files = os.listdir(source_dir)
     log.write('[' + str(gp_current) + '/' + str(gp_max) + '] Loading from source: ' + source_dir)
@@ -283,6 +286,8 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
                                      constraints_1,
                                      channel_inclusions,
                                      unrestricted_experiments_override,
+                                     positive_z_score_scale,
+                                     z_score_max_kernel_size,
                                      include_raw
                                      )
             future_list.append(future)
@@ -303,6 +308,8 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
                                      constraints_1,
                                      channel_inclusions,
                                      unrestricted_experiments_override,
+                                     positive_z_score_scale,
+                                     z_score_max_kernel_size,
                                      include_raw
                                      )
             future_list.append(future)
@@ -499,7 +506,9 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
 
 def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_indices: [int],
                         label_1_well_indices: [int], constraints_0: [int], constraints_1: [int],
-                        channel_inclusions: [bool], unrestricted_experiments_override: [str], include_raw: bool = True):
+                        channel_inclusions: [bool], unrestricted_experiments_override: [str],
+                        positive_z_score_scale: float = 1.0, z_score_max_kernel_size: int = 1,
+                        include_raw: bool = True):
     if worker_verbose:
         log.write('Unzipping and reading json: ' + filepath)
     threading.current_thread().setName('Unzipping & Reading JSON: ' + filepath)
@@ -521,6 +530,8 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_i
                                                                                             channel_inclusions=channel_inclusions,
                                                                                             constraints_1=constraints_1,
                                                                                             constraints_0=constraints_0,
+                                                                                            z_score_max_kernel_size=z_score_max_kernel_size,
+                                                                                            positive_z_score_scale=positive_z_score_scale,
                                                                                             unrestricted_experiments_override=unrestricted_experiments_override,
                                                                                             include_raw=include_raw)
 
@@ -536,7 +547,9 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_i
 
 def read_JSON_file(filepath: str, worker_verbose: bool, normalize_enum: int, label_0_well_indices: [int],
                    label_1_well_indices: [int], constraints_0: [int], constraints_1: [int],
-                   channel_inclusions: [bool], unrestricted_experiments_override: [str], include_raw: bool = True):
+                   channel_inclusions: [bool], unrestricted_experiments_override: [str],
+                   positive_z_score_scale: float = 1.0, z_score_max_kernel_size: int = 1,
+                   include_raw: bool = True):
     if worker_verbose:
         log.write('Reading json: ' + filepath)
 
@@ -550,6 +563,7 @@ def read_JSON_file(filepath: str, worker_verbose: bool, normalize_enum: int, lab
                       normalize_enum=normalize_enum, label_0_well_indices=label_0_well_indices,
                       label_1_well_indices=label_1_well_indices, include_raw=include_raw,
                       channel_inclusions=channel_inclusions, json_data=data,
+                      positive_z_score_scale=positive_z_score_scale, z_score_max_kernel_size=z_score_max_kernel_size,
                       unrestricted_experiments_override=unrestricted_experiments_override,
                       constraints_1=constraints_1, constraints_0=constraints_0)
 
@@ -557,10 +571,16 @@ def read_JSON_file(filepath: str, worker_verbose: bool, normalize_enum: int, lab
 ####
 
 
-def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: bool, normalize_enum: int,
-               label_0_well_indices: [int], label_1_well_indices: [int], constraints_1: [int], constraints_0: [int],
-               unrestricted_experiments_override: [str],
-               channel_inclusions: [bool], include_raw: bool = True) -> (np.ndarray, int, [int], np.ndarray, str):
+def parse_JSON(filepath: str, zipped_data_name: str, json_data: dict, worker_verbose: bool, normalize_enum: int,
+               # What well indices should be label 0 or label 1
+               label_0_well_indices: [int], label_1_well_indices: [int],
+               # Constraints
+               constraints_1: [int], constraints_0: [int],
+               unrestricted_experiments_override: [str], channel_inclusions: [bool],
+               # Validation params for oligo morphology
+               positive_z_score_scale: float = 1.0, z_score_max_kernel_size: int = 1,
+               # misc params
+               include_raw: bool = True) -> (np.ndarray, int, [int], np.ndarray, str):
     # Setting up arrays
     X = []
     X_raw = []
@@ -577,6 +597,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
         unrestricted_experiments_override = []
 
     # Renaming the thread, so profilers can keep up
+    preview_out_folder_name_suffix = ''
     threading.current_thread().setName('Parsing JSON: ' + zipped_data_name)
 
     assert len(channel_inclusions) == 3
@@ -850,6 +871,15 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
     # 7 = z-score every cell individually with every color channel independent using all samples in the bag
     # 8 = z-score every cell individually with every color channel using the mean / std of all three from all samples in the bag
     if normalize_enum == 4 or normalize_enum == 7 or normalize_enum == 8 or normalize_enum == 9 or normalize_enum == 10:
+        bag_mean_r = float('NaN')
+        bag_mean_g = float('NaN')
+        bag_mean_b = float('NaN')
+        bag_std_r = float('NaN')
+        bag_std_g = float('NaN')
+        bag_std_b = float('NaN')
+        bag_mean = float('NaN')
+        bag_std = float('NaN')
+
         if normalize_enum == 7:
             bag_mean_r, bag_std_r = get_bag_mean(X, axis=0)
             bag_mean_g, bag_std_g = get_bag_mean(X, axis=1)
@@ -903,6 +933,36 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
             del current_b
 
             X[i] = current_rgb
+
+        del bag_mean_r, bag_mean_g, bag_mean_b, bag_std_r, bag_std_g, bag_std_b, bag_mean, bag_std
+
+    # Postprocessing z-scored oligo channel
+    # Done to validate morphology
+    positive_z_score_scale = float(positive_z_score_scale)
+    z_score_max_kernel_size = int(z_score_max_kernel_size)
+    assert positive_z_score_scale > 0.0
+    assert z_score_max_kernel_size >= 1
+    if 4 < normalize_enum < 11:
+        if not positive_z_score_scale == 1.0:
+            preview_out_folder_name_suffix = preview_out_folder_name_suffix + '-z_scale_' + str(positive_z_score_scale)
+        if not z_score_max_kernel_size == 1:
+            preview_out_folder_name_suffix = preview_out_folder_name_suffix + '-z_max_kernel_' + str(
+                z_score_max_kernel_size)
+
+        # only for z-scored samples
+        for i in range(len(X)):
+            current_x = X[i].copy()
+            current_x = np.copy(current_x)
+            current_g = current_x[:, :, 1]
+
+            if not positive_z_score_scale == 1.0:
+                current_g = run_positive_z_score_scale(x=current_g, scale=positive_z_score_scale)
+            if not z_score_max_kernel_size == 1:
+                current_g = run_z_score_max_kernel(x=current_g, kernel_size=z_score_max_kernel_size)
+
+            current_x[:, :, 1] = current_g
+            X[i] = current_x
+            del i, current_x, current_g
 
     # Checking the well inclusions and setting all unwanted channels to 0
     if inclusions_count > 1:
@@ -970,15 +1030,19 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data, worker_verbose: 
 
         # Saving preview (if it exists)
         if used_constraints is not None:
+            if sys.platform == 'win32':
+                log.write('Saving bag previews with suffix: "' + preview_out_folder_name_suffix + '".')
+
             try:
                 save_save_bag_preview(X=X, out_dir_base=filepath,
                                       normalize_enum=normalize_enum, preview_constraints=used_constraints,
                                       channel_inclusions=channel_inclusions,
                                       X_metadata=X_metadata,
+                                      out_folder_name_suffix=preview_out_folder_name_suffix,
                                       bit_depth=bit_depth, X_raw=X_raw, verbose=worker_verbose)
             except Exception as e:
                 # TODO handle this better
-                pass
+                log.write_exception(e)
 
         # Checking the 'tegredy of the bag and its samples
         if include_raw:
@@ -996,6 +1060,7 @@ def save_save_bag_preview(X: np.ndarray, X_metadata: [TileMetadata], out_dir_bas
                           preview_constraints: [int, int, int], normalize_enum: int, bit_depth: int,
                           channel_inclusions: [bool], X_raw: np.ndarray, dpi: int = (1337 * 1.5),
                           colormap_name: str = 'jet', v_min: float = -3.0, v_max=3.0, outline: int = 2,
+                          out_folder_name_suffix: str = None,
                           verbose: bool = False):
     width = None
     height = None
@@ -1003,6 +1068,10 @@ def save_save_bag_preview(X: np.ndarray, X_metadata: [TileMetadata], out_dir_bas
     dpi = int(dpi)
     assert X.shape[0] == len(X_metadata)
     assert X.shape[0] == X_raw.shape[0]
+
+    if out_folder_name_suffix is None:
+        out_folder_name_suffix = ''
+    out_folder_name_suffix = str(out_folder_name_suffix)
 
     metadata: TileMetadata = X_metadata[0]
     experiment_name = metadata.experiment_name
@@ -1023,9 +1092,15 @@ def save_save_bag_preview(X: np.ndarray, X_metadata: [TileMetadata], out_dir_bas
         ' ', '')
 
     out_dir = os.path.dirname(out_dir_base)
-    out_dir = out_dir + os.sep + 'bag_previews' + os.sep + 'normalize-' + str(
+    del out_dir_base
+
+    out_dir = out_dir + os.sep + 'bag_previews' + out_folder_name_suffix
+    out_dir = out_dir + os.sep + 'normalize-' + str(
         normalize_enum) + os.sep + 'channels-' + channel_inclusions_label + os.sep + 'constraints-' + preview_constraints_label + os.sep + experiment_name + os.sep
     os.makedirs(out_dir, exist_ok=True)
+    if sys.platform == 'win32':
+        log.write('Saving bag previews to: ' + out_dir)
+
     bit_max = pow(2, bit_depth) - 1
 
     out_file_name = out_dir + experiment_name + '-' + well + '.png'
@@ -1651,6 +1726,59 @@ def get_experiment_metadata(metadata_path: str, experiment_name: str, out_dir: s
 
 
 ####
+
+
+def run_positive_z_score_scale(x: np.ndarray, scale: float = 1.0) -> np.ndarray:
+    x = x.copy()
+    x = np.copy(x)
+
+    s = x.shape
+    x = x.reshape(x.size)
+
+    log.write('x maximum before scaling: ' + str(x.max()), print_to_console=False, include_in_files=False)
+    for i in range(x.size):
+        z = x[i]
+
+        if z > 0:
+            z = z * scale
+
+        x[i] = z
+    log.write('x maximum after scaling: ' + str(x.max()), print_to_console=False, include_in_files=False)
+
+    x = x.reshape(s)
+    return x
+
+
+def run_z_score_max_kernel(x: np.ndarray, kernel_size: int) -> np.ndarray:
+    x = x.copy()
+    image = np.copy(x)
+    del x
+
+    image_height, image_width = image.shape
+    new_image = np.copy(image)
+    assert image_height - kernel_size > 0
+    assert image_width - kernel_size > 0
+
+    for y in range(0, image_height):
+        for x in range(0, image_width):
+            # log.write('x: ' + str(x) + '. y: ' + str(y))
+            value = image[y, x]
+
+            try:
+                image_excerpt = image[y - int(kernel_size / 2):y + int(kernel_size / 2),
+                                x - int(kernel_size / 2):x + int(kernel_size / 2)]
+                value = image_excerpt.max()
+            except Exception as e:
+                # Just let it fail, kernel does not fit
+                # No time to optimize this piece of code
+                # TODO optimize
+                log.write_exception(e, include_in_files_stack_trace=False, include_in_files_message=False)
+
+            new_image[y][x] = value
+            del image_excerpt, value
+        del x, y
+
+    return new_image
 
 
 def get_most_valuable_bag_index(X_metadata: [[TileMetadata]], max_tile_count: int, max_oligo_count: int,
