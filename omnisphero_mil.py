@@ -1406,9 +1406,7 @@ def write_protocol(out_dir: str, text: str, new_entry: bool = False):
             protocol_file_handle.close()
             del protocol_file_handle
         except Exception as e:
-            description, stacktrace_lines = utils.format_exception(e)
-            pass
-            # TODO handle exception
+            log.write_exception(e)
 
     try:
         protocol_file_handle = open(protocol_file_name, 'a')
@@ -1416,8 +1414,7 @@ def write_protocol(out_dir: str, text: str, new_entry: bool = False):
         protocol_file_handle.close()
         del protocol_file_handle
     except Exception as e:
-        pass
-        # TODO handle exception
+        log.write_exception(e)
 
     log.write('[PROTOCOL] ' + text.strip())
 

@@ -147,6 +147,7 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
             log.write(' == Failed to estimate BMC30 ==')
             # TODO check on these errors later!
             log.write(str(e))
+            log.write_exception(e)
 
     # Checking if final score is nan, so the plot data is set to None
     if math.isnan(final_score):

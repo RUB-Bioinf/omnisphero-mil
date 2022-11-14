@@ -68,6 +68,10 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
     log.write('Prediction device: ' + str(device))
     time.sleep(2)
 
+    log.write('z-score max kernel size: ' + str(oligo_z_score_max_kernel_size))
+    log.write('z-score positive scale: ' + str(oligo_positive_z_score_scale))
+    time.sleep(5)
+
     # Loading model
     log.write('Loading model: ' + model_save_path)
     log.write('Assumed model state dict: ' + model_state_dict_file)
@@ -219,7 +223,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
     log.write(" === START ERROR LIST ===")
     for error in error_list:
         log.write("ERROR WHILE PREDICTING: " + str(error))
-        # TODO handle errors better
+        log.write_exception(error)
     log.write(" === END ERROR LIST ===")
 
     #####################################################
@@ -252,8 +256,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                                                                                           include_nucleus=False,
                                                                                           dpi=out_image_dpi)
         except Exception as e:
-            pass
-            # TODO save and display error
+            log.write_exception(e)
 
         # Neurons
         try:
@@ -279,8 +282,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                                                                                           include_nucleus=False,
                                                                                           dpi=out_image_dpi)
         except Exception as e:
-            pass
-            # TODO save and display error
+            log.write_exception(e)
 
         # Nuclei
         try:
@@ -306,8 +308,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                                                                                           include_nucleus=True,
                                                                                           dpi=out_image_dpi)
         except Exception as e:
-            pass
-            # TODO save and display error
+            log.write_exception(e)
 
         # All
         try:
@@ -333,8 +334,7 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
                                                                                           include_nucleus=True,
                                                                                           dpi=out_image_dpi)
         except Exception as e:
-            pass
-            # TODO save and display error
+            log.write_exception(e)
 
     #####################################################
     # RENDERING ATTENTION CELL DISTRIBUTIONS
@@ -755,41 +755,64 @@ def main():
         ###########################################################
         prediction_dirs_used = [paths.all_prediction_dirs_unix]
         prediction_dirs_used = [paths.curated_overlapping_source_dirs_unix_channel_transformed_rbg]
+        prediction_dirs_used = [paths.default_sigmoid_validation_dirs_unix]
         ###########################################################
 
         if debug:
             prediction_dirs_used = [prediction_dirs_used[0][0:3]]
         if data_saver:
             prediction_dirs_used = [[d] for d in prediction_dirs_used[0]]
-
         prediction_dirs_used.sort()
+
+        time.sleep(2)
+        log.write('Number of plates to be predicted: ' + str(len(prediction_dirs_used)))
         for i in range(len(prediction_dirs_used)):
             prediction_dir = prediction_dirs_used[i]
-            log.write(str(i) + '/' + str(len(prediction_dirs_used)) + ' - Predicting: ' + str(prediction_dir))
-            try:
-                predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path, bag_paths=prediction_dir,
-                             out_dir=paths.unix_predictions_out_dir_rbg,
-                             global_log_dir=current_global_log_dir,
-                             render_attention_spheres_enabled=render_attention_spheres_enabled,
-                             render_merged_predicted_tiles_activation_overlays=False,
-                             render_attention_histogram_enabled=True,
-                             render_attention_cell_distributions=False,
-                             render_dose_response_curves_enabled=True,
-                             render_attention_cytometry_prediction_distributions_enabled=True,
-                             hist_bins_override=50,
-                             out_image_dpi=800,
-                             sigmoid_verbose=False,
-                             image_folder=image_folder,
-                             tile_constraints=loader.default_tile_constraints_none,
-                             # tile_constraints=loader.default_tile_constraints_nuclei,
-                             channel_inclusions=loader.default_channel_inclusions_no_neurites,
-                             gpu_enabled=False, normalize_enum=normalize_enum, max_workers=20)
-            except Exception as e:
-                # TODO handle this exception better
-                log.write('\n\n============================================================')
-                log.write('Fatal error during HT predictions: "' + str(e) + '"!')
-                log.write(str(e.__class__.__name__) + ': "' + str(e) + '"')
-                raise e
+            log.write('#' + str(i + 1) + ': ' + str(prediction_dir))
+            del prediction_dir
+            time.sleep(0.69)
+        time.sleep(3)
+
+        for k in [1, 3, 5, 7]:
+            for s in [1.0, 1.15, 1.25, 1.5, 2.0]:
+                for i in range(len(prediction_dirs_used)):
+                    prediction_dir = prediction_dirs_used[i]
+                    log.write(
+                        str(i + 1) + '/' + str(len(prediction_dirs_used)) + ' - Predicting: ' + str(prediction_dir))
+                    if not type(prediction_dir) == list:
+                        prediction_dir = [prediction_dir]
+
+                    try:
+                        out_dir_used = '/mil/oligo-diff/models/production/predictions/paper_candidate_2-scale' + str(
+                            s) + '-kernel+' + str(k) + '/'
+                        os.makedirs(out_dir_used, exist_ok=True)
+
+                        predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path,
+                                     bag_paths=prediction_dir,
+                                     out_dir=out_dir_used,
+                                     global_log_dir=current_global_log_dir,
+                                     render_attention_spheres_enabled=render_attention_spheres_enabled,
+                                     render_merged_predicted_tiles_activation_overlays=False,
+                                     render_attention_histogram_enabled=True,
+                                     render_attention_cell_distributions=False,
+                                     render_dose_response_curves_enabled=True,
+                                     render_attention_cytometry_prediction_distributions_enabled=False,
+                                     hist_bins_override=50,
+                                     out_image_dpi=800,
+                                     sigmoid_verbose=False,
+                                     oligo_positive_z_score_scale=s,
+                                     oligo_z_score_max_kernel_size=k,
+                                     image_folder=image_folder,
+                                     tile_constraints=loader.default_tile_constraints_none,
+                                     # tile_constraints=loader.default_tile_constraints_nuclei,
+                                     channel_inclusions=loader.default_channel_inclusions_no_neurites,
+                                     gpu_enabled=False, normalize_enum=normalize_enum, max_workers=20)
+                    except Exception as e:
+                        log.write('\n\n============================================================')
+                        log.write('Fatal error during HT predictions: "' + str(e) + '"!')
+                        log.write(str(e.__class__.__name__) + ': "' + str(e) + '"')
+                        log.write_exception(e)
+                        return
 
     # Finishing up the logging process
     log.write('Finished predicting & Dose-Response for all bags.')
