@@ -1317,12 +1317,12 @@ def main(debug: bool = False):
         # '/mil/oligo-diff/models/linux/hnm-early_inverted-O3-adam-NoNeuron2-wells-normalize-7repack-0.65/'
         c = 0
         for r in range(5):  # replicates
-            for l in ['mean_square_error', 'binary_cross_entropy']:
-                for o in ['adadelta', 'adam']:  # ['adam', 'adadelta']:
+            for l in ['mean_square_error']:  # , 'binary_cross_entropy']:
+                for o in ['adadelta']:  # , 'adam']:  # ['adam', 'adadelta']:
                     # best: adadelta
                     for p in [0.0]:  # [0.3, 0.35, 0.6]:  # [0.10, 0.20, 0.3, 0.05, 0.15, 0.25, 0.3, 0.35]:
                         # best: 0.65 or 0.3
-                        for i in [4, 7]:  # normalisation enum
+                        for i in [4, 5, 6, 7]:  # normalisation enum
                             for s in sigmoid_compounds_used:  # , [True, False], [False, True]]:
                                 used_sigmoid_labels = s[0]
                                 used_sigmoid_compounds = s[1]
@@ -1330,7 +1330,7 @@ def main(debug: bool = False):
                                 print('Used sigmoid compounds: ' + str(used_sigmoid_compounds))
 
                                 training_label = 'ep-overlap-' + o + '-n-' + str(i) + '-rp-' + str(
-                                    p) + '-l-' + l + '-test_compound-' + used_sigmoid_labels + 'replicate' + str(r)
+                                    p) + '-l-' + l + '-test_compound-' + used_sigmoid_labels + 'replicate' + str(r)+'all-channels'
 
                                 log.write('Training label: ' + training_label)
                                 if os.path.exists(current_out_dir + os.sep + training_label) and not debug:
@@ -1365,7 +1365,7 @@ def main(debug: bool = False):
                                             loss_function=l,
                                             repack_percentage=p,
                                             optimizer=o,
-                                            channel_inclusions=loader.default_channel_inclusions_no_neurites,
+                                            channel_inclusions=loader.default_channel_inclusions_all,
                                             augment_validation=True,
                                             augment_train=True,
                                             model_use_max=False,

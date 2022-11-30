@@ -408,7 +408,7 @@ def render_response_curves(X_metadata: [TileMetadata], y_pred: [np.ndarray], sig
 
         # Writing the errors to CSV
         f = open(out_csv, 'a')
-        f.write('\nSDM Error;')
+        f.write('\nSDM Error;;;')
         [f.write(str(i) + ';') for i in y_error]
         f.close()
         del f, out_csv

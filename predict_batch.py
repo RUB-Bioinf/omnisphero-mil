@@ -805,7 +805,7 @@ def main():
                                      image_folder=image_folder,
                                      tile_constraints=loader.default_tile_constraints_none,
                                      # tile_constraints=loader.default_tile_constraints_nuclei,
-                                     channel_inclusions=loader.default_channel_inclusions_no_neurites,
+                                     channel_inclusions=loader.default_channel_inclusions_all,
                                      gpu_enabled=False, normalize_enum=normalize_enum, max_workers=20)
                     except Exception as e:
                         log.write('\n\n============================================================')
