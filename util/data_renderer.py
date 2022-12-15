@@ -832,6 +832,101 @@ def read_and_composite_images(image_paths: [str], light_mode: bool = True):
     return fused_images
 
 
+def render_attention_instance_range(out_dir: str, X_metadata: [[TileMetadata]],
+                                    y_preds: [float],
+                                    all_attentions: [np.ndarray],
+                                    X_raw,
+                                    render_attention_instance_range_min: float,
+                                    render_attention_instance_range_max: float,
+                                    dpi: int = 400):
+    render_attention_instance_range_min = float(render_attention_instance_range_min)
+    render_attention_instance_range_max = float(render_attention_instance_range_max)
+    assert render_attention_instance_range_min <= render_attention_instance_range_max
+    os.makedirs(out_dir, exist_ok=True)
+
+    assert len(y_preds) == len(all_attentions)
+    assert len(y_preds) == len(X_raw)
+    assert len(y_preds) == len(X_metadata)
+
+    for i in range(len(y_preds)):
+        all_attentions_current = all_attentions[i]
+        X_raw_current = X_raw[i]
+        X_metadata_current = X_metadata[i]
+        y_preds_current = y_preds[i]
+        assert len(X_raw_current) == len(all_attentions_current)
+        assert len(X_raw_current) == len(X_metadata_current)
+
+        metadata = X_metadata_current[0]
+        current_experiment_name = metadata.experiment_name
+        current_well = metadata.get_formatted_well()
+        out_dir_current = out_dir + current_experiment_name + os.sep
+        out_dir_current_detail = out_dir_current + 'detail' + os.sep
+        os.makedirs(out_dir_current, exist_ok=True)
+        os.makedirs(out_dir_current_detail, exist_ok=True)
+        log.write(str(i + 1) + '/' + str(
+            len(y_preds)) + ': Rendering attentions for ' + current_experiment_name + ' - ' + current_well)
+
+        # extracting the samples that are within normalized attention range
+        matching_samples = []
+        out_image_localized_raw = np.zeros((metadata.well_image_height, metadata.well_image_width, 3), dtype=np.uint8)
+        for j in range(len(X_raw_current)):
+            attention_sample = all_attentions_current[j]
+            X_metadata_sample = X_metadata_current[j]
+            X_raw_sample = X_raw_current[j]
+
+            attention_sample_normalized = (attention_sample - all_attentions_current.min()) / (
+                    all_attentions_current.max() - all_attentions_current.min())
+            attention_sample_normalized = float(attention_sample_normalized)
+
+            if render_attention_instance_range_min <= attention_sample_normalized <= render_attention_instance_range_max:
+                X_raw_sample = np.copy(X_raw_sample)
+                X_raw_sample = X_raw_sample.copy()
+                matching_samples.append(X_raw_sample)
+
+                width, height, _ = X_raw_sample.shape
+                pos_x: int = int(X_metadata_sample.pos_x)
+                pos_y: int = int(X_metadata_sample.pos_y)
+                out_image_localized_raw[pos_y:pos_y + height, pos_x:pos_x + width] = X_raw_sample
+
+            del attention_sample, X_metadata_sample, X_raw_sample, attention_sample_normalized
+            del j
+
+        # Rendering the matching samples, if they exist
+        if len(matching_samples) > 0:
+            for j in range(len(matching_samples)):
+                sample = matching_samples[j]
+                detail_image_name = out_dir_current_detail + os.sep + current_experiment_name + '-' + current_well + '-' + str(
+                    j) + '.png'
+                plt.imsave(detail_image_name, sample)
+                matching_samples[j] = mil_metrics.outline_rgb_array(sample, None, None, bright_mode=True,
+                                                                    override_colormap=[255, 255, 255])
+
+            matching_samples_fused = mil_metrics.fuse_image_tiles(images=matching_samples, light_mode=False)
+            fused_image_name = out_dir_current + os.sep + current_experiment_name + '-' + current_well + '_fused.png'
+            fused_image_name_detail = out_dir_current + os.sep + current_experiment_name + '-' + current_well + '_fused-detail'
+            plt.imsave(fused_image_name, matching_samples_fused)
+
+            localized_image_name = out_dir_current + os.sep + current_experiment_name + '-' + current_well + '_localized.png'
+            plt.imsave(localized_image_name, out_image_localized_raw)
+
+            plt.clf()
+            plt.imshow(out_image_localized_raw)
+            plt.title(current_experiment_name + ' - ' + current_well + '\nNormalized Attention Samples: ' + str(
+                render_attention_instance_range_min) + ' - ' + str(render_attention_instance_range_max))
+            plt.xticks([])
+            plt.yticks([])
+            plt.tight_layout()
+            plt.autoscale()
+            plt.savefig(fused_image_name_detail + '.png', dpi=dpi)
+            plt.savefig(fused_image_name_detail + '.svg', dpi=dpi, transparent=True)
+            plt.savefig(fused_image_name_detail + '.pdf', dpi=dpi)
+
+        # cleanup
+        del matching_samples
+        del i
+        del all_attentions_current, X_raw_current, X_metadata_current, y_preds_current
+
+
 def render_attention_cytometry_prediction_distributions(out_dir: str, X_metadata: [[TileMetadata]],
                                                         y_preds: [float],
                                                         all_attentions: [np.ndarray],

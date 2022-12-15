@@ -92,6 +92,32 @@ class PlateMetadata:
             doses=doses, responses=responses, out_image_filename='Test.png')
         bmc_out_text_content = ''
 
+        #############
+        # Writing all them BMCs
+        well_curve = fitted_plot[0]
+        dose_curve = fitted_plot[1]
+        f = open(out_name + '-all-bmcs.csv', 'w')
+        f.write('BMC;Well Number;Concentration\n')
+        log.write('Writing all BMCs to: '+str(f.name))
+        for i in range(101):
+            # Calculating BMCs in single steps
+            try:
+                current_bmc_well = r.calculate_bmc(well_curve=well_curve, dose_curve=dose_curve, bmc=i)
+                current_bmc_concentration = self.interpolate_well_index_to_concentration(current_bmc_well)
+            except Exception as e:
+                current_bmc_well = float('NaN')
+                current_bmc_concentration = float('NaN')
+                log.write_exception(e)
+                del e
+
+            # Writing to file
+            f.write(str(i) + ';' + str(current_bmc_well) + ';' + str(current_bmc_concentration) + '\n')
+            del current_bmc_well, current_bmc_concentration, i
+        f.close()
+        del well_curve, dose_curve, f
+
+        ####################
+        # Plotting the dose response curve
         plt.clf()
         plt.plot(doses, responses, linestyle='-', marker='o', color='blue')
         plt.plot(fitted_plot[0], fitted_plot[1], color='lightblue')

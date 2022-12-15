@@ -3,6 +3,7 @@ import shutil
 import sys
 import time
 from datetime import datetime
+from typing import Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -29,7 +30,10 @@ from util.well_metadata import extract_well_info
 def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], normalize_enum: int, out_dir: str,
                  max_workers: int, image_folder: str, channel_inclusions=loader.default_channel_inclusions_all,
                  tile_constraints=loader.default_tile_constraints_nuclei, global_log_dir: str = None,
-                 sigmoid_verbose: bool = False, render_attention_spheres_enabled: bool = True,
+                 sigmoid_verbose: bool = False,
+                 render_attention_spheres_enabled: bool = True,
+                 render_attention_instance_range_min: float = None,
+                 render_attention_instance_range_max: float = None,
                  render_dose_response_curves_enabled: bool = True, hist_bins_override=None,
                  render_merged_predicted_tiles_activation_overlays: bool = False, gpu_enabled: bool = False,
                  render_attention_cell_distributions: bool = False,
@@ -169,6 +173,8 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  render_attention_spheres_enabled=render_attention_spheres_enabled,
                  render_dose_response_curves_enabled=render_dose_response_curves_enabled,
                  render_attention_cell_distributions=render_attention_cell_distributions,
+                 render_attention_instance_range_min=render_attention_instance_range_min,
+                 render_attention_instance_range_max=render_attention_instance_range_max,
                  render_attention_cytometry_prediction_distributions_enabled=render_attention_cytometry_prediction_distributions_enabled,
                  well_names=well_names, out_dir=out_dir)
 
@@ -184,17 +190,26 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
         log.clear_files()
 
 
-def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X_raw: [np.ndarray],
+def predict_data(model: models.BaselineMIL, data_loader: Union[OmniSpheroDataLoader, DataLoader], X_raw: [np.ndarray],
                  X_metadata: [TileMetadata], experiment_names: [str], well_names: [str], image_folder: str,
                  input_dim: (int), out_dir: str, sparse_hist: bool = True, hist_bins_override=None,
                  normalized_attention: bool = True, save_sigmoid_plot: bool = True, sigmoid_verbose: bool = False,
                  render_dose_response_curves_enabled: bool = True, histogram_bootstrap_replications: int = 1000,
                  histogram_resample_size: int = 100, attention_normalized_metrics: bool = True,
                  render_attention_spheres_enabled: bool = False, render_attention_histogram_enabled: bool = False,
-                 render_attention_cytometry_prediction_distributions_enabled: bool = True,
+                 render_attention_cytometry_prediction_distributions_enabled: bool = False,
+                 render_attention_instance_range_min: float = None,
+                 render_attention_instance_range_max: float = None,
                  render_merged_predicted_tiles_activation_overlays: bool = False, clear_old_data: bool = False,
                  render_attention_cell_distributions: bool = False, out_image_dpi: int = 250):
     os.makedirs(out_dir, exist_ok=True)
+
+    if not type(render_attention_instance_range_min) == type(render_attention_instance_range_max):
+        if not (type(render_attention_instance_range_min) == type(None) or type(
+                render_attention_instance_range_min) == type(float) or type(
+            render_attention_instance_range_max) == type(None) or type(render_attention_instance_range_max) == type(
+            float)):
+            assert False
 
     log.write('Using image folder: ' + image_folder)
     log.write('Exists image folder: ' + str(os.path.exists(image_folder)))
@@ -225,6 +240,27 @@ def predict_data(model: models.BaselineMIL, data_loader: OmniSpheroDataLoader, X
         log.write("ERROR WHILE PREDICTING: " + str(error))
         log.write_exception(error)
     log.write(" === END ERROR LIST ===")
+
+    #####################################################
+    # RENDERING SAMPLES IN A GIVEN ATTENTION INTERVAL
+    #####################################################
+    if render_attention_instance_range_min is not None and render_attention_instance_range_max is not None:
+        render_attention_instance_range_min = float(render_attention_instance_range_min)
+        render_attention_instance_range_max = float(render_attention_instance_range_max)
+        assert render_attention_instance_range_min <= render_attention_instance_range_max
+
+        out_dir_attention_range = out_dir + os.sep + 'significant-attentions-' + str(
+            render_attention_instance_range_min) + '-' + str(render_attention_instance_range_max) + os.sep
+        os.makedirs(out_dir_attention_range, exist_ok=True)
+        data_renderer.render_attention_instance_range(out_dir=out_dir_attention_range,
+                                                      X_metadata=X_metadata,
+                                                      y_preds=y_preds,
+                                                      all_attentions=all_attentions,
+                                                      X_raw=X_raw,
+                                                      render_attention_instance_range_min=render_attention_instance_range_min,
+                                                      render_attention_instance_range_max=render_attention_instance_range_max
+                                                      )
+        del out_dir_attention_range
 
     #####################################################
     # RENDERING CYTOMETRY PAPER PREDICTIONS PER SAMPLE
@@ -720,8 +756,10 @@ def main():
             render_merged_predicted_tiles_activation_overlays=False,
             render_attention_histogram_enabled=False,
             render_dose_response_curves_enabled=True,
-            oligo_positive_z_score_scale=2.0,
-            oligo_z_score_max_kernel_size=10,
+            # oligo_positive_z_score_scale=2.0,
+            # oligo_z_score_max_kernel_size=10,
+            render_attention_instance_range_min=0.8,
+            render_attention_instance_range_max=1.0,
             hist_bins_override=50,
             sigmoid_verbose=True,
             out_image_dpi=300,
@@ -744,6 +782,8 @@ def main():
                          hist_bins_override=50,
                          sigmoid_verbose=True,
                          out_image_dpi=300,
+                         render_attention_instance_range_min=0.8,
+                         render_attention_instance_range_max=1.0,
                          render_dose_response_curves_enabled=True,
                          render_attention_cytometry_prediction_distributions_enabled=True,
                          gpu_enabled=False, normalize_enum=normalize_enum, max_workers=6)
@@ -773,46 +813,41 @@ def main():
             time.sleep(0.69)
         time.sleep(3)
 
-        for k in [1, 3, 5, 7]:
-            for s in [1.0, 1.15, 1.25, 1.5, 2.0]:
-                for i in range(len(prediction_dirs_used)):
-                    prediction_dir = prediction_dirs_used[i]
-                    log.write(
-                        str(i + 1) + '/' + str(len(prediction_dirs_used)) + ' - Predicting: ' + str(prediction_dir))
-                    if not type(prediction_dir) == list:
-                        prediction_dir = [prediction_dir]
-
-                    try:
-                        out_dir_used = '/mil/oligo-diff/models/production/predictions/paper_candidate_2-scale' + str(
-                            s) + '-kernel+' + str(k) + '/'
-                        os.makedirs(out_dir_used, exist_ok=True)
-
-                        predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path,
-                                     bag_paths=prediction_dir,
-                                     out_dir=out_dir_used,
-                                     global_log_dir=current_global_log_dir,
-                                     render_attention_spheres_enabled=render_attention_spheres_enabled,
-                                     render_merged_predicted_tiles_activation_overlays=False,
-                                     render_attention_histogram_enabled=True,
-                                     render_attention_cell_distributions=False,
-                                     render_dose_response_curves_enabled=True,
-                                     render_attention_cytometry_prediction_distributions_enabled=False,
-                                     hist_bins_override=50,
-                                     out_image_dpi=800,
-                                     sigmoid_verbose=False,
-                                     oligo_positive_z_score_scale=s,
-                                     oligo_z_score_max_kernel_size=k,
-                                     image_folder=image_folder,
-                                     tile_constraints=loader.default_tile_constraints_none,
-                                     # tile_constraints=loader.default_tile_constraints_nuclei,
-                                     channel_inclusions=loader.default_channel_inclusions_all,
-                                     gpu_enabled=False, normalize_enum=normalize_enum, max_workers=20)
-                    except Exception as e:
-                        log.write('\n\n============================================================')
-                        log.write('Fatal error during HT predictions: "' + str(e) + '"!')
-                        log.write(str(e.__class__.__name__) + ': "' + str(e) + '"')
-                        log.write_exception(e)
-                        return
+        for i in range(len(prediction_dirs_used)):
+            prediction_dir = prediction_dirs_used[i]
+            log.write(
+                str(i + 1) + '/' + str(len(prediction_dirs_used)) + ' - Predicting: ' + str(prediction_dir))
+            if not type(prediction_dir) == list:
+                prediction_dir = [prediction_dir]
+            try:
+                out_dir_used = '/mil/oligo-diff/models/production/predictions/paper_candidate_2-validation-plates'
+                os.makedirs(out_dir_used, exist_ok=True)
+                predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path,
+                             bag_paths=prediction_dir,
+                             out_dir=out_dir_used,
+                             global_log_dir=current_global_log_dir,
+                             render_attention_spheres_enabled=render_attention_spheres_enabled,
+                             render_merged_predicted_tiles_activation_overlays=False,
+                             render_attention_histogram_enabled=True,
+                             render_attention_cell_distributions=False,
+                             render_dose_response_curves_enabled=True,
+                             render_attention_cytometry_prediction_distributions_enabled=False,
+                             hist_bins_override=50,
+                             out_image_dpi=800,
+                             sigmoid_verbose=False,
+                             render_attention_instance_range_min=0.9,
+                             render_attention_instance_range_max=1.0,
+                             image_folder=image_folder,
+                             tile_constraints=loader.default_tile_constraints_none,
+                             # tile_constraints=loader.default_tile_constraints_nuclei,
+                             channel_inclusions=loader.default_channel_inclusions_all,
+                             gpu_enabled=False, normalize_enum=normalize_enum, max_workers=20)
+            except Exception as e:
+                log.write('\n\n============================================================')
+                log.write('Fatal error during HT predictions: "' + str(e) + '"!')
+                log.write(str(e.__class__.__name__) + ': "' + str(e) + '"')
+                log.write_exception(e)
+                return
 
     # Finishing up the logging process
     log.write('Finished predicting & Dose-Response for all bags.')

@@ -1022,10 +1022,12 @@ def train_model(
 
                 # deciding what to render:
                 render_merged_predicted_tiles_activation_overlays=False,
-                render_attention_histogram_enabled=True,
+                render_attention_histogram_enabled=False,
                 render_attention_cell_distributions=False,
                 render_dose_response_curves_enabled=True,
-                render_attention_cytometry_prediction_distributions_enabled=True,
+                render_attention_instance_range_min=0.8,
+                render_attention_instance_range_max=1.0,
+                render_attention_cytometry_prediction_distributions_enabled=False,
 
                 # misc settings
                 out_image_dpi=600,
@@ -1330,7 +1332,8 @@ def main(debug: bool = False):
                                 print('Used sigmoid compounds: ' + str(used_sigmoid_compounds))
 
                                 training_label = 'ep-overlap-' + o + '-n-' + str(i) + '-rp-' + str(
-                                    p) + '-l-' + l + '-test_compound-' + used_sigmoid_labels + 'replicate' + str(r)+'all-channels'
+                                    p) + '-l-' + l + '-test_compound-' + used_sigmoid_labels + 'replicate' + str(
+                                    r) + 'all-channels'
 
                                 log.write('Training label: ' + training_label)
                                 if os.path.exists(current_out_dir + os.sep + training_label) and not debug:

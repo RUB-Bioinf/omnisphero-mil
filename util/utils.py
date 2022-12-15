@@ -15,7 +15,7 @@ from util import log
 # UTIL CONSTANTS
 # ###############################
 
-# unicode for the greek character 'mu'. To be used in plots and prints.
+# unicode for the character 'mu'. To be used in plots and prints.
 mu = '\u03BC'
 
 

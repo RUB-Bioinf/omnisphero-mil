@@ -13,6 +13,7 @@ from functools import cmp_to_key
 from sys import platform
 from typing import Union
 from zipfile import ZipFile
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -153,24 +154,26 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
     assert all_paths_exist
 
     # Now that we know that these paths do all exist, we can load them
+    loading_time_durations = []
     for i in range(len(batch_dirs)):
         current_dir = batch_dirs[i]
         log.write('Considering source directory: ' + current_dir)
 
         if os.path.isdir(current_dir):
+            load_start_time = datetime.now()
             X, y, y_tiles, X_raw, X_metadata, bag_names, experiment_names, well_names, errors, loaded_files_list = load_bags_json(
                 source_dir=current_dir,
                 max_workers=max_workers,
                 normalize_enum=normalize_enum,
                 force_balanced_batch=force_balanced_batch,
                 gp_current=i + 1,
+                gp_max=len(batch_dirs),
                 channel_inclusions=channel_inclusions,
                 label_0_well_indices=label_0_well_indices,
                 label_1_well_indices=label_1_well_indices,
                 constraints_0=constraints_0,
                 constraints_1=constraints_1,
                 positive_z_score_scale=positive_z_score_scale, z_score_max_kernel_size=z_score_max_kernel_size,
-                gp_max=len(batch_dirs),
                 unrestricted_experiments_override=unrestricted_experiments_override,
                 include_raw=include_raw)
 
@@ -219,6 +222,21 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
             log.write("y-size in memory (after " + str(i + 1) + " batches): " + str(y_s_full))
             log.write("X-size (raw) in memory (after " + str(i + 1) + " batches): " + str(X_s_raw_full))
             del X_s_full, y_s_full, X_s_raw_full
+
+            load_end_time = datetime.now()
+            load_time_diff = load_end_time - load_start_time
+            loading_time_durations.append(load_time_diff)
+            log.write('Loading finished in ' + str(load_time_diff.seconds) + ' seconds (' + str(
+                int(load_time_diff.seconds / 60)) + ' min.).')
+            del load_start_time, load_end_time, load_time_diff
+
+        if len(loading_time_durations) > 0:
+            mean_loading_time = np.mean(loading_time_durations)
+            current_time = datetime.now()
+            eta_time = current_time + (mean_loading_time * (len(batch_dirs) - (i + 1)))
+
+            log.write('Loading finished ETA: ' + str(eta_time.strftime("%d/%m/%Y, %H:%M:%S")))
+            del mean_loading_time, current_time, eta_time
 
     if X_full is None:
         log.write('No files were loaded!')
@@ -1715,6 +1733,7 @@ def get_experiment_metadata(metadata_path: str, experiment_name: str, out_dir: s
                 except Exception as e:
                     log.write('Failed to bake plate BMC30 for compound: ' + compound_name)
                     log.write(str(e), print_to_console=verbose)
+                    log.write_exception(e)
                 thread_lock.release()
 
             log.write('Comparing experiments: ' + experiment_name + ' VS ' + experiment_id, print_to_console=verbose)
@@ -1767,7 +1786,8 @@ def run_z_score_max_kernel(x: np.ndarray, kernel_size: int) -> np.ndarray:
             try:
                 image_excerpt = image[y - int(kernel_size / 2):y + int(kernel_size / 2),
                                 x - int(kernel_size / 2):x + int(kernel_size / 2)]
-                value = image_excerpt.max()
+                if len(image_excerpt) > 0:
+                    value = image_excerpt.max()
             except Exception as e:
                 # Just let it fail, kernel does not fit
                 # No time to optimize this piece of code

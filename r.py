@@ -126,22 +126,9 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
         try:
             well_curve = fitted_plot[0]
             dose_curve = fitted_plot[1]
+            bmc_30 = calculate_bmc_30(well_curve=well_curve, dose_curve=dose_curve)
 
-            if global_bmc_30:
-                # When trying to find BMC30 at a 'global' scale, aka at 30% inhibitation
-                bmc_point = 0.7
-            else:
-                # When trying to find BMC30 at a 'local' scale, based on normalized curve points
-                bmc_point = (dose_curve.min() + dose_curve.max()) / 2
-
-            mid_point_value = min(dose_curve, key=lambda x: abs(x - bmc_point))
-            mid_point_index = np.where(dose_curve == mid_point_value)[0]
-            bmc_30 = float(well_curve[mid_point_index])
-
-            # Checking if the BMC is equal to min or max of the curve.
-            # If so, that means, the BMC is actually NOT on the curve
-            if not well_curve.min() < bmc_30 < well_curve.max():
-                bmc_30 = float('NaN')
+            del well_curve, dose_curve
         except Exception as e:
             bmc_30 = float('NaN')
             log.write(' == Failed to estimate BMC30 ==')
@@ -169,6 +156,29 @@ def pooled_sigmoid_evaluation(doses: [float], responses: [float], out_image_file
 
     instructions = [dose_instruction, resp_instruction]
     return final_score, score_data, estimate_plot, fitted_plot, instructions, bmc_30
+
+
+def calculate_bmc_30(well_curve: np.ndarray, dose_curve: np.ndarray) -> float:
+    return calculate_bmc(well_curve=well_curve,
+                         dose_curve=dose_curve,
+                         bmc=30)
+
+
+def calculate_bmc(well_curve: np.ndarray, dose_curve: np.ndarray, bmc: int) -> float:
+    bmc = int(bmc)
+    assert 0 < bmc < 100
+
+    bmc_point = 1 - float(bmc) / 100
+    mid_point_value = min(dose_curve, key=lambda x: abs(x - bmc_point))
+    mid_point_index = np.where(dose_curve == mid_point_value)[0]
+    bmc_value = float(well_curve[mid_point_index])
+
+    # Checking if the BMC is equal to min or max of the curve.
+    # If so, that means, the BMC is actually NOT on the curve
+    if not well_curve.min() < bmc_value < well_curve.max():
+        bmc_value = float('NaN')
+
+    return bmc_value
 
 
 def prediction_sigmoid_evaluation(X_metadata, y_pred: [np.ndarray], out_dir: str,
