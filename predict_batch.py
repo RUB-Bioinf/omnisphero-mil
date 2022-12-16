@@ -25,6 +25,7 @@ from util.paths import default_out_dir_unix_base
 from util.utils import line_print
 from util.well_metadata import TileMetadata
 from util.well_metadata import extract_well_info
+from PIL import Image
 
 
 def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], normalize_enum: int, out_dir: str,
@@ -40,6 +41,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  render_attention_histogram_enabled: bool = False,
                  render_attention_cytometry_prediction_distributions_enabled: bool = False,
                  oligo_positive_z_score_scale: float = 1.0, oligo_z_score_max_kernel_size: int = 1,
+                 predict_samples_as_bags: bool = False,
                  data_loader_data_saver: bool = False,
                  clear_global_logs: bool = True,
                  out_image_dpi: int = 300,
@@ -175,6 +177,8 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  render_attention_cell_distributions=render_attention_cell_distributions,
                  render_attention_instance_range_min=render_attention_instance_range_min,
                  render_attention_instance_range_max=render_attention_instance_range_max,
+                 predict_samples_as_bags=predict_samples_as_bags,
+                 num_workers=max_workers,
                  render_attention_cytometry_prediction_distributions_enabled=render_attention_cytometry_prediction_distributions_enabled,
                  well_names=well_names, out_dir=out_dir)
 
@@ -190,8 +194,180 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
         log.clear_files()
 
 
+def _predict_samples_as_bags(model, data_loader, X_raw: [np.ndarray], num_workers: int,
+                             X_metadata: [TileMetadata], experiment_names: [str], well_names: [str], image_folder: str,
+                             input_dim: (int), out_dir: str, dpi: 500):
+    # TODO update arguments
+    data_set = data_loader.dataset
+
+    # Making sure all's well that predicts well
+    assert len(X_raw) == len(X_metadata)
+    assert len(experiment_names) == len(X_metadata)
+    assert len(well_names) == len(X_metadata)
+    assert len(well_names) == len(data_set)
+
+    log.write('Predicting the samples of very bag as a bag.')
+    for i in range(len(X_metadata)):
+        dataset_current = data_set[i]
+        X_metadata_current = X_metadata[i]
+        X_raw_current = X_raw[i]
+        experiment_name_current = experiment_names[i]
+        well_name_current = well_names[i]
+
+        sample_count = X_raw_current.shape[0]
+        assert len(X_metadata_current) == sample_count
+        assert len(X_metadata_current) == dataset_current[0].shape[0]
+        metadata = X_metadata_current[0]
+        log.write('[' + str(i + 1) + '/' + str(
+            len(X_metadata)) + '] Predicting sample as bag for: ' + experiment_name_current + ' - ' + well_name_current)
+
+        # iterating over every sample
+        y_hat_samples = []
+        out_image_localized_positive_raw = np.zeros((metadata.well_image_height, metadata.well_image_width, 3),
+                                                    dtype=np.uint8)
+        out_image_localized_overlay = np.zeros((metadata.well_image_height, metadata.well_image_width, 3),
+                                               dtype=np.uint8)
+        out_image_localized_overlay_map_r = np.ones((metadata.well_image_height, metadata.well_image_width),
+                                                    dtype=np.uint8)
+        out_image_localized_overlay_map_g = np.ones((metadata.well_image_height, metadata.well_image_width),
+                                                    dtype=np.uint8)
+        out_image_localized_overlay_map_b = np.ones((metadata.well_image_height, metadata.well_image_width),
+                                                    dtype=np.uint8)
+        out_image_localized_overlay_map_mask = np.zeros((metadata.well_image_height, metadata.well_image_width),
+                                                        dtype=np.uint8)
+        positive_samples = []
+        positive_sample_count = 0
+        task_time_durations = []
+        for j in range(sample_count):
+            task_start_time = datetime.now()
+            log.write('[' + str(i + 1) + '/' + str(
+                len(X_metadata)) + '] Predicting sample as bag for: ' + experiment_name_current + ' - ' + well_name_current + ': ' + str(
+                j + 1) + '/' + str(sample_count), include_in_files=False)
+
+            X_raw_sample = X_raw_current[j]
+            X_metadata_sample = X_metadata_current[j]
+            X_sample = dataset_current[0][j]
+
+            # Expanding sample so it can be used for predictions
+            X_sample = X_sample.copy()
+            X_sample = np.copy(X_sample)
+            X_sample = np.expand_dims(X_sample, axis=0)
+
+            data_set_sample, _ = loader.convert_bag_to_batch(bags=[X_sample], labels=None, y_tiles=None)
+            data_loader = DataLoader(data_set_sample, batch_size=1, shuffle=False,
+                                     pin_memory=False,
+                                     num_workers=num_workers)
+
+            y_hats, y_preds, _, _, y_samples_pred, _, all_attentions, original_bag_indices = models.get_predictions(
+                model, data_loader)
+            y_pred = bool(y_preds[0])
+            del y_hats, y_samples_pred, all_attentions, original_bag_indices, y_preds
+
+            # Saving the results
+            y_hat_samples.append(y_pred)
+            X_raw_sample = np.copy(X_raw_sample)
+            X_raw_sample = X_raw_sample.copy()
+            width, height, _ = X_raw_sample.shape
+            pos_x: int = int(X_metadata_sample.pos_x)
+            pos_y: int = int(X_metadata_sample.pos_y)
+            out_image_localized_overlay[pos_y:pos_y + height, pos_x:pos_x + width] = X_raw_sample
+            if y_pred:
+                positive_sample_count = positive_sample_count + 1
+                positive_samples.append(X_raw_sample)
+
+                out_image_localized_positive_raw[pos_y:pos_y + height, pos_x:pos_x + width] = X_raw_sample
+                out_image_localized_overlay_map_r[pos_y:pos_y + height, pos_x:pos_x + width] = 1
+                out_image_localized_overlay_map_r[pos_y:pos_y + height, pos_x:pos_x + width] = 0
+                out_image_localized_overlay_map_r[pos_y:pos_y + height, pos_x:pos_x + width] = 0
+                out_image_localized_overlay_map_mask[pos_y:pos_y + height, pos_x:pos_x + width] = 1
+
+                out_image_localized_overlay_rgb = out_image_localized_overlay[pos_y:pos_y + height, pos_x:pos_x + width]
+                out_image_localized_overlay_r = out_image_localized_overlay_rgb[:, :, 0] * 1.25
+                out_image_localized_overlay_g = out_image_localized_overlay_rgb[:, :, 1] * 0.75
+                out_image_localized_overlay_b = out_image_localized_overlay_rgb[:, :, 2] * 0.75
+
+                out_image_localized_overlay_r = out_image_localized_overlay_r * 1.0
+                out_image_localized_overlay_r = out_image_localized_overlay_r.astype(np.uint8)
+                out_image_localized_overlay_g = out_image_localized_overlay_g.astype(np.uint8)
+                out_image_localized_overlay_b = out_image_localized_overlay_b.astype(np.uint8)
+
+                out_image_localized_overlay_rgb = np.dstack(
+                    (out_image_localized_overlay_r, out_image_localized_overlay_g, out_image_localized_overlay_b))
+                out_image_localized_overlay_rgb = out_image_localized_overlay_rgb.astype('uint8')
+
+            task_end_time = datetime.now()
+            task_time_diff = task_end_time - task_start_time
+            task_time_durations.append(task_time_diff)
+            mean_task_time = np.mean(task_time_durations)
+            current_time = datetime.now()
+            eta_time = current_time + (mean_task_time * (sample_count - (j + 1)))
+            log.write('Task finished ETA: ' + str(eta_time.strftime("%d/%m/%Y, %H:%M:%S")), include_in_files=False,
+                      include_timestamp=False)
+
+        log.write('FINISHED ALL SAMPLES FOR THIS BAG!')
+        log.write('Number of positive bags: ' + str(positive_sample_count))
+        out_dir_current = out_dir + os.sep + experiment_name_current + os.sep + well_name_current + os.sep
+        os.makedirs(out_dir_current, exist_ok=True)
+        log.write('Saving to: ' + out_dir_current)
+
+        # Updating the masks
+        out_image_localized_overlay_map_r = out_image_localized_overlay_map_r * 255
+        out_image_localized_overlay_map_g = out_image_localized_overlay_map_g * 255
+        out_image_localized_overlay_map_b = out_image_localized_overlay_map_b * 255
+        out_image_localized_overlay_r = out_image_localized_overlay[:, :, 0]
+        out_image_localized_overlay_g = out_image_localized_overlay[:, :, 1]
+        out_image_localized_overlay_b = out_image_localized_overlay[:, :, 2]
+
+        out_image_localized_overlay_r = out_image_localized_overlay_map_r * 0.5 + out_image_localized_overlay_r * 0.5
+        out_image_localized_overlay_g = out_image_localized_overlay_map_g * 0.5 + out_image_localized_overlay_g * 0.5
+        out_image_localized_overlay_b = out_image_localized_overlay_map_b * 0.5 + out_image_localized_overlay_b * 0.5
+        out_image_localized_overlay_map_mask = out_image_localized_overlay_map_mask.astype(np.bool)
+        out_image_localized_overlay[:, :, 0][out_image_localized_overlay_map_mask] = out_image_localized_overlay_r[
+            out_image_localized_overlay_map_mask]
+        out_image_localized_overlay[:, :, 1][out_image_localized_overlay_map_mask] = out_image_localized_overlay_g[
+            out_image_localized_overlay_map_mask]
+        out_image_localized_overlay[:, :, 2][out_image_localized_overlay_map_mask] = out_image_localized_overlay_b[
+            out_image_localized_overlay_map_mask]
+
+        # TODO move all this rendering to the data renderer file
+        # Rendering the data
+        if positive_sample_count > 0:
+            for j in range(len(positive_samples)):
+                sample = positive_samples[j]
+                # detail_image_name = out_dir_current_detail + os.sep + current_experiment_name + '-' + current_well + '-' + str(
+                #     j) + '.png'
+                # plt.imsave(detail_image_name, sample)
+                positive_samples[j] = mil_metrics.outline_rgb_array(sample, None, None, bright_mode=True,
+                                                                    override_colormap=[255, 255, 255])
+
+            matching_samples_fused = mil_metrics.fuse_image_tiles(images=positive_samples, light_mode=False)
+            fused_image_name = out_dir_current + os.sep + experiment_name_current + '-' + well_name_current + '_fused.png'
+            fused_image_name_detail = out_dir_current + os.sep + experiment_name_current + '-' + well_name_current + '_fused-detail.png'
+            plt.imsave(fused_image_name, matching_samples_fused)
+
+            localized_image_name = out_dir_current + os.sep + experiment_name_current + '-' + well_name_current + '_localized.png'
+            localized_image_name_overlay = out_dir_current + os.sep + experiment_name_current + '-' + well_name_current + '_localized-overlay.png'
+            plt.imsave(localized_image_name, out_image_localized_positive_raw)
+            plt.imsave(localized_image_name_overlay, out_image_localized_overlay)
+
+            plt.clf()
+            plt.imshow(out_image_localized_overlay)
+            plt.title(experiment_name_current + ' - ' + well_name_current + '\nPositive Samples: ' + str(
+                positive_sample_count) + '/' + str(sample_count))
+            plt.xticks([])
+            plt.yticks([])
+            plt.tight_layout()
+            plt.autoscale()
+            plt.savefig(fused_image_name_detail + '.png', dpi=dpi)
+            plt.savefig(fused_image_name_detail + '.svg', dpi=dpi, transparent=True)
+            plt.savefig(fused_image_name_detail + '.pdf', dpi=dpi)
+
+    log.write('Done: Predicting the samples of very bag as a bag.')
+
+
 def predict_data(model: models.BaselineMIL, data_loader: Union[OmniSpheroDataLoader, DataLoader], X_raw: [np.ndarray],
                  X_metadata: [TileMetadata], experiment_names: [str], well_names: [str], image_folder: str,
+                 num_workers: int,
                  input_dim: (int), out_dir: str, sparse_hist: bool = True, hist_bins_override=None,
                  normalized_attention: bool = True, save_sigmoid_plot: bool = True, sigmoid_verbose: bool = False,
                  render_dose_response_curves_enabled: bool = True, histogram_bootstrap_replications: int = 1000,
@@ -200,6 +376,7 @@ def predict_data(model: models.BaselineMIL, data_loader: Union[OmniSpheroDataLoa
                  render_attention_cytometry_prediction_distributions_enabled: bool = False,
                  render_attention_instance_range_min: float = None,
                  render_attention_instance_range_max: float = None,
+                 predict_samples_as_bags: bool = False,
                  render_merged_predicted_tiles_activation_overlays: bool = False, clear_old_data: bool = False,
                  render_attention_cell_distributions: bool = False, out_image_dpi: int = 250):
     os.makedirs(out_dir, exist_ok=True)
@@ -221,12 +398,23 @@ def predict_data(model: models.BaselineMIL, data_loader: Union[OmniSpheroDataLoa
         model, data_loader)
     assert len(X_metadata) == len(all_attentions)
     assert len(X_metadata) == len(X_raw)
-    del data_loader, model
 
+    #####################################################
+    # PREDICTING SAMPLES AS IF THEY WERE BAGS
+    #####################################################
+    if predict_samples_as_bags:
+        out_dir_samples_as_bags = out_dir + os.sep + 'sample_predictions'
+        os.makedirs(out_dir_samples_as_bags, exist_ok=True)
+        _predict_samples_as_bags(model=model, data_loader=data_loader, X_raw=X_raw, X_metadata=X_metadata,
+                                 experiment_names=experiment_names, well_names=well_names, image_folder=image_folder,
+                                 num_workers=num_workers, input_dim=input_dim, dpi=out_image_dpi,
+                                 out_dir=out_dir_samples_as_bags)
+        del out_dir_samples_as_bags
+
+    del data_loader, model
     #####################################################
     # APPLYING THE MODEL, DOING THE PREDICTIONS
     #####################################################
-
     # Evaluating attention metrics (histogram, entropy, etc.)
     attention_metadata_list, attention_n_list, attention_bins_list, attention_otsu_index_list, attention_otsu_threshold_list, attention_entropy_attention_list, attention_entropy_hist_list, error_list = mil_metrics.attention_metrics_batch(
         all_attentions=all_attentions,
@@ -531,38 +719,6 @@ def predict_data(model: models.BaselineMIL, data_loader: Union[OmniSpheroDataLoa
 
         # Saving histogram
         plt.clf()
-        # if render_attention_histogram_enabled:
-        #    plt.clf()
-        #    if sparse_hist:
-        #        n, bins = utils.sparse_hist(a=all_attentions_used)
-        #        plt.bar(bins, n, width=(float(len(n)) / bars_width_mod), align='center', color='blue',
-        #                edgecolor='white')
-        #        threshold_index = utils.lecture_otsu(n=np.array(n))
-        #        threshold = bins[threshold_index]
-        #    else:
-        #        n, bins, _ = plt.hist(x=all_attentions_used, bins=len(all_attentions_used), color='blue')
-        #        plt.clf()
-        #        n = list(n)
-        #        bins = list(bins[:-1])
-        #        plt.bar(bins, n, width=(float(len(n)) / bars_width_mod), align='center', color='blue',
-        #                edgecolor='white')
-        #        threshold_index = utils.lecture_otsu(n=np.array(n))
-        #        threshold = bins[threshold_index]
-        #
-        #    plt.axvline(x=threshold, color='orange')
-        #    plt.ylabel('Count (' + str(len(all_attentions_used)) + ' tiles total)')
-        #    plt.xlabel('Attention Scores (Normalized)')
-        #    plt.title(
-        #        'Histogram of Normalized Attention Scores of: ' + experiment_names_current + ' - ' + well_names_current +
-        #        '\nPrediction: ' + str(y_hat_current) + ' -> ' + str(y_pred_current))
-        #    plt.legend(['Otsu Threshold: ' + str(int(threshold * 1000) / 1000)])
-        #    plt.xlim([0, max(bins) * 1.05])
-        #    plt.ylim([0, max(n) * 1.05])
-        #    plt.grid(True)
-        #    plt.autoscale()
-        #    plt.savefig(current_out_dir + 'attention_hist.png', dpi=int(dpi * 1.337), bbox_inches='tight')
-        #    plt.savefig(current_out_dir + 'attention_hist.svg', dpi=int(dpi * 1.337), bbox_inches='tight')
-        #    plt.savefig(current_out_dir + 'attention_hist.pdf', dpi=int(dpi * 1.337), bbox_inches='tight')
 
         # Saving raw data as CSV
         f = open(current_out_dir + experiment_names_current + '-' + well_names_current + '-attention.csv', 'w')
@@ -573,22 +729,6 @@ def predict_data(model: models.BaselineMIL, data_loader: Union[OmniSpheroDataLoa
             f.write('\n')
         f.write('Sum;' + str(sum(all_attentions_current)) + ';' + str(sum(all_attentions_used)))
         f.close()
-
-        # Saving histogram
-        # if render_attention_histogram_enabled:
-        #    f = open(current_out_dir + experiment_names_current + '-' + well_names_current + '-histogram.csv', 'w')
-        #    f.write('Index;n;bin\n')
-        #    for j in range(len(n)):
-        #        f.write(str(j) + ';')
-        #        f.write(str(n[j]) + ';' + str(bins[j]))
-        #        f.write('\n')
-        #    f.close()
-        #    current_well_handle['n'] = n
-        #    current_well_handle['bins'] = bins
-        #    current_well_handle['otsu'] = threshold
-        #    current_well_handle['y_hat'] = y_hat_current
-        #    current_well_handle['y_pred'] = y_pred_current
-        #    del n, bins, threshold, y_hat_current, y_pred_current
 
         # writing the current handles back
         current_exp_handle[well_names_current] = current_well_handle
@@ -601,71 +741,6 @@ def predict_data(model: models.BaselineMIL, data_loader: Union[OmniSpheroDataLoa
     well_letters_unique.sort()
     well_numbers_unique.sort()
     del well_letters_unique_candidates, well_numbers_unique_candidates
-
-    # if render_attention_histogram_enabled:
-    #    print('\n')  # new line so linux systems can write a single line
-    #    for e in range(len(experiment_names_unique)):
-    #        exp = experiment_names_unique[e]
-    #        line_print('[' + str(e + 1) + '/' + str(
-    #            len(experiment_names_unique)) + '] Writing pooled histogram results for experiment: ' + exp,
-    #                   include_in_log=True)
-    #
-    #        current_handle = handles[exp]
-    #        current_out_dir = out_dir + os.sep + exp + os.sep
-    #
-    #        plt.clf()
-    #        plt.title('Attention Comparisons: ' + exp)
-    #        f, ax = plt.subplots(nrows=len(well_letters_unique), ncols=len(well_numbers_unique), figsize=(30, 30))
-    #        for j in range(len(well_letters_unique)):
-    #            well_letter = well_letters_unique[j]
-    #            for i in range(len(well_numbers_unique)):
-    #                well_number = well_numbers_unique[i]
-    #                well_key = well_letter + '0' + str(well_number)
-    #
-    #                # subplot_index = str(len(well_letters_unique)) + str(len(well_numbers_unique)) + str(i + 1)
-    #                axis_found = True
-    #                try:
-    #                    a = ax[j, i]
-    #                except Exception as e:
-    #                    log.write(' = WARNING = Failed to locate axis at ' + str(j) + ',' + str(i) + '!')
-    #                    axis_found = False
-    #                    continue
-    #
-    #                if well_key in current_handle.keys() and axis_found:
-    #                    a = ax[j, i]
-    #                    current_well_handle = current_handle[well_key]
-    #                    threshold = current_well_handle['otsu']
-    #                    bins = current_well_handle['bins']
-    #                    n = current_well_handle['n']
-    #                    attention = current_well_handle['attention']
-    #                    y_hat = current_well_handle['y_hat']
-    #                    y_pred = current_well_handle['y_pred']
-    #                    attention_normalized = attention / max(attention)
-    #
-    #                    # a.hist(x=attention_normalized, bins=len(attention_normalized), color='blue')
-    #                    # a.bar(bins, n, width=(float(len(n)) / 1000), color='blue', edgecolor='white')
-    #                    a.bar(bins, n, width=(float(len(n)) / bars_width_mod), color='blue', edgecolor='white')
-    #                    # a.plot([bins])
-    #                    a.grid(True)
-    #                    a.autoscale()
-    #                    a.set_xlim([0, max(bins) * 1.05])
-    #                    a.set_ylim([0, max(n) * 1.05])
-    #                    a.axvline(x=threshold, color='orange')
-    #                    a.legend(['Histogram - Bag Tiles: ' + str(len(attention_normalized)),
-    #                              'Otsu Threshold: ' + str(int(threshold * 1000) / 1000)])
-    #                    a.title.set_text(exp + ' - ' + well_key + '\nPrediction: ' + str(y_hat) + ' -> ' + str(y_pred))
-    #                else:
-    #                    ax[j, i].remove()  # remove Axes from fig
-    #                    ax[j, i] = None  # make sure that there are no 'dangling' references.
-    #
-    #        plt.tight_layout()
-    #        plt.autoscale()
-    #        plt.savefig(current_out_dir + exp + '-hist.png', dpi=dpi, bbox_inches='tight')
-    #        plt.savefig(current_out_dir + exp + '-hist.pdf', dpi=dpi, bbox_inches='tight')
-    #        plt.savefig(current_out_dir + exp + '-hist.svg', dpi=dpi, bbox_inches='tight')
-    #    log.write('All pooled results saved.')
-    #    del y_hats, y_preds, y_samples_pred, _, all_attentions, original_bag_indices
-
     log.write('Finished predictions. Your results are here: ' + out_dir)
 
 
@@ -756,6 +831,7 @@ def main():
             render_merged_predicted_tiles_activation_overlays=False,
             render_attention_histogram_enabled=False,
             render_dose_response_curves_enabled=True,
+            predict_samples_as_bags=True,
             # oligo_positive_z_score_scale=2.0,
             # oligo_z_score_max_kernel_size=10,
             render_attention_instance_range_min=0.8,
@@ -785,6 +861,7 @@ def main():
                          render_attention_instance_range_min=0.8,
                          render_attention_instance_range_max=1.0,
                          render_dose_response_curves_enabled=True,
+                         predict_samples_as_bags=True,
                          render_attention_cytometry_prediction_distributions_enabled=True,
                          gpu_enabled=False, normalize_enum=normalize_enum, max_workers=6)
     else:
@@ -793,9 +870,11 @@ def main():
         ###########################################################
         ############## SETTING THE INPUT PATH HERE ################
         ###########################################################
+
         prediction_dirs_used = [paths.all_prediction_dirs_unix]
-        prediction_dirs_used = [paths.curated_overlapping_source_dirs_unix_channel_transformed_rbg]
-        prediction_dirs_used = [paths.default_sigmoid_validation_dirs_unix]
+        # prediction_dirs_used = [paths.curated_overlapping_source_dirs_unix_channel_transformed_rbg]
+        # prediction_dirs_used = [paths.default_sigmoid_validation_dirs_unix]
+
         ###########################################################
 
         if debug:
@@ -820,7 +899,7 @@ def main():
             if not type(prediction_dir) == list:
                 prediction_dir = [prediction_dir]
             try:
-                out_dir_used = '/mil/oligo-diff/models/production/predictions/paper_candidate_2-validation-plates'
+                out_dir_used = '/mil/oligo-diff/models/production/predictions/paper_candidate_2-samplesAsBags'
                 os.makedirs(out_dir_used, exist_ok=True)
                 predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path,
                              bag_paths=prediction_dir,
@@ -831,6 +910,7 @@ def main():
                              render_attention_histogram_enabled=True,
                              render_attention_cell_distributions=False,
                              render_dose_response_curves_enabled=True,
+                             predict_samples_as_bags=True,
                              render_attention_cytometry_prediction_distributions_enabled=False,
                              hist_bins_override=50,
                              out_image_dpi=800,

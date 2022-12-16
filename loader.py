@@ -1130,7 +1130,7 @@ def save_save_bag_preview(X: np.ndarray, X_metadata: [TileMetadata], out_dir_bas
               print_to_console=force_log or verbose)
     if os.path.exists(out_file_name):
         # Preview already exists. Nothing to do.
-        if verbose or out_file_name:
+        if verbose:
             log.write('Preview file already exists. Skipping: ' + out_file_name)
         return
 

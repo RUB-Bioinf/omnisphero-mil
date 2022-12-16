@@ -1028,6 +1028,7 @@ def train_model(
                 render_attention_instance_range_min=0.8,
                 render_attention_instance_range_max=1.0,
                 render_attention_cytometry_prediction_distributions_enabled=False,
+                predict_samples_as_bags=False,
 
                 # misc settings
                 out_image_dpi=600,
