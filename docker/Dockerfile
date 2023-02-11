@@ -1,5 +1,5 @@
 # the provided base image:
-FROM 		nvidia/cuda:11.0-base
+FROM nvidia/cuda:11.0-base
 # Maintainer
 MAINTAINER	sven.kreienbrock@ruhr-uni-bochum.de
 
@@ -36,7 +36,7 @@ WORKDIR	/opt
 # COPY	py38.condaenv /opt/py38.yml
 RUN curl -o /opt/py38.yml http://git.prodi.ruhr-uni-bochum.de/bioinf/public/raw/branch/master/dockerfiles/bioinfbo/py38gpuR/py38.condaenv
 RUN	conda init bash 
-RUN 	conda env create -f py38.yml
+RUN conda env create -f py38.yml
 
 # clean up the system installation
 RUN	apt-get -y autoremove && apt-get clean
@@ -55,6 +55,6 @@ RUN	groupadd -g 1000 biox
 RUN	useradd -m -u 1000 -g biox localuser
 RUN	mkdir /opt/notebooks && chown localuser.biox /opt/notebooks
 # set the user that later runs the software:
-USER	localuser
+USER localuser
 RUN	conda init && echo "conda activate py38" >>/home/localuser/.bashrc
 WORKDIR	/home/localuser

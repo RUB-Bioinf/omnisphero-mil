@@ -88,6 +88,15 @@ def write(output: Union[str, list],
 
 
 def _write(output, print_to_console: bool = True, include_timestamp: bool = True, include_in_files: bool = True):
+    """
+    This function takes in an 'output' of type string and several optional parameters: 'print_to_console' of type bool, 'include_timestamp' of type bool and 'include_in_files' of type bool.
+    If 'include_timestamp' is set to True, the current timestamp is added to the 'output' before printing or writing to file.
+    If 'print_to_console' is set to True, the output is printed to the console.
+    If 'include_in_files' is set to True, the output is written to one or more files specified in the global variable '_log_files'.
+    If the specified file does not exist, it creates the parent directory before creating the file.
+    If there is an error while trying to write to the file, it prints an error message.
+    No return value.
+    """
     global _log_files
     output = str(output)
 

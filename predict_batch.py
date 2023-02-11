@@ -25,7 +25,6 @@ from util.paths import default_out_dir_unix_base
 from util.utils import line_print
 from util.well_metadata import TileMetadata
 from util.well_metadata import extract_well_info
-from PIL import Image
 
 
 def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], normalize_enum: int, out_dir: str,
@@ -43,12 +42,20 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  oligo_positive_z_score_scale: float = 1.0, oligo_z_score_max_kernel_size: int = 1,
                  predict_samples_as_bags: bool = False,
                  data_loader_data_saver: bool = False,
+                 used_tile_quartiles=None,
                  clear_global_logs: bool = True,
                  out_image_dpi: int = 300,
                  ):
     start_time = datetime.now()
     log_label = str(start_time.strftime("%d-%m-%Y-%H-%M-%S"))
     print(out_dir)
+
+    if used_tile_quartiles is None:
+        used_tile_quartiles = loader.default_used_tile_quartiles.copy()
+    used_tile_quartiles_enum = utils.boolean_to_integer(used_tile_quartiles[0],
+                                                        used_tile_quartiles[1],
+                                                        used_tile_quartiles[2],
+                                                        used_tile_quartiles[3])
 
     # Setting up log
     global_log_filename = None
@@ -119,6 +126,12 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
 
     # Updating the model device
     model.device = device
+    time.sleep(0.69)
+
+    # Notifying about the quartiles to be predicted
+    log.write('Using neurosphere tile quartiles: ' + str(used_tile_quartiles_enum) + ' (Enum)')
+    log.write('Using neurosphere tile quartiles: ' + str(used_tile_quartiles))
+    time.sleep(1)
 
     # Loading the data
     X, y, y_tiles, X_raw, X_metadata, bag_names, experiment_names, _, well_names, errors, loaded_files_list = loader.load_bags_json_batch(
@@ -127,6 +140,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
         include_raw=True,
         force_balanced_batch=False,
         channel_inclusions=channel_inclusions,
+        used_tile_quartiles=used_tile_quartiles,
         constraints_0=tile_constraints,
         constraints_1=tile_constraints,
         label_0_well_indices=loader.default_well_indices_all,
@@ -277,8 +291,8 @@ def _predict_samples_as_bags(model, data_loader, X_raw: [np.ndarray], num_worker
 
                 out_image_localized_positive_raw[pos_y:pos_y + height, pos_x:pos_x + width] = X_raw_sample
                 out_image_localized_overlay_map_r[pos_y:pos_y + height, pos_x:pos_x + width] = 1
-                out_image_localized_overlay_map_r[pos_y:pos_y + height, pos_x:pos_x + width] = 0
-                out_image_localized_overlay_map_r[pos_y:pos_y + height, pos_x:pos_x + width] = 0
+                out_image_localized_overlay_map_b[pos_y:pos_y + height, pos_x:pos_x + width] = 0
+                out_image_localized_overlay_map_g[pos_y:pos_y + height, pos_x:pos_x + width] = 0
                 out_image_localized_overlay_map_mask[pos_y:pos_y + height, pos_x:pos_x + width] = 1
 
                 out_image_localized_overlay_rgb = out_image_localized_overlay[pos_y:pos_y + height, pos_x:pos_x + width]
@@ -832,6 +846,7 @@ def main():
             render_attention_histogram_enabled=False,
             render_dose_response_curves_enabled=True,
             predict_samples_as_bags=True,
+            used_tile_quartiles=None,
             # oligo_positive_z_score_scale=2.0,
             # oligo_z_score_max_kernel_size=10,
             render_attention_instance_range_min=0.8,
@@ -857,11 +872,12 @@ def main():
                          image_folder=image_folder,
                          hist_bins_override=50,
                          sigmoid_verbose=True,
+                         used_tile_quartiles=None,
                          out_image_dpi=300,
                          render_attention_instance_range_min=0.8,
                          render_attention_instance_range_max=1.0,
                          render_dose_response_curves_enabled=True,
-                         predict_samples_as_bags=True,
+                         predict_samples_as_bags=False,
                          render_attention_cytometry_prediction_distributions_enabled=True,
                          gpu_enabled=False, normalize_enum=normalize_enum, max_workers=6)
     else:
@@ -874,7 +890,16 @@ def main():
         prediction_dirs_used = [paths.all_prediction_dirs_unix]
         # prediction_dirs_used = [paths.curated_overlapping_source_dirs_unix_channel_transformed_rbg]
         # prediction_dirs_used = [paths.default_sigmoid_validation_dirs_unix]
+        ###########################################################
 
+        ###########################################################
+        # Setting the quartiles to be used
+        tile_quartiles = [[True, False, False, False],
+                          [False, True, False, False],
+                          [False, False, True, False],
+                          [False, False, False, True]
+                          ]
+        # tile_quartiles = [loader.default_used_tile_quartiles]
         ###########################################################
 
         if debug:
@@ -892,46 +917,54 @@ def main():
             time.sleep(0.69)
         time.sleep(3)
 
-        for i in range(len(prediction_dirs_used)):
-            prediction_dir = prediction_dirs_used[i]
-            log.write(
-                str(i + 1) + '/' + str(len(prediction_dirs_used)) + ' - Predicting: ' + str(prediction_dir))
-            if not type(prediction_dir) == list:
-                prediction_dir = [prediction_dir]
-            try:
-                out_dir_used = '/mil/oligo-diff/models/production/predictions/paper_candidate_2-samplesAsBags'
-                os.makedirs(out_dir_used, exist_ok=True)
-                predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path,
-                             bag_paths=prediction_dir,
-                             out_dir=out_dir_used,
-                             global_log_dir=current_global_log_dir,
-                             render_attention_spheres_enabled=render_attention_spheres_enabled,
-                             render_merged_predicted_tiles_activation_overlays=False,
-                             render_attention_histogram_enabled=True,
-                             render_attention_cell_distributions=False,
-                             render_dose_response_curves_enabled=True,
-                             predict_samples_as_bags=True,
-                             render_attention_cytometry_prediction_distributions_enabled=False,
-                             hist_bins_override=50,
-                             out_image_dpi=800,
-                             sigmoid_verbose=False,
-                             render_attention_instance_range_min=0.9,
-                             render_attention_instance_range_max=1.0,
-                             image_folder=image_folder,
-                             tile_constraints=loader.default_tile_constraints_none,
-                             # tile_constraints=loader.default_tile_constraints_nuclei,
-                             channel_inclusions=loader.default_channel_inclusions_all,
-                             gpu_enabled=False, normalize_enum=normalize_enum, max_workers=20)
-            except Exception as e:
-                log.write('\n\n============================================================')
-                log.write('Fatal error during HT predictions: "' + str(e) + '"!')
-                log.write(str(e.__class__.__name__) + ': "' + str(e) + '"')
-                log.write_exception(e)
-                return
+        for used_tile_quartiles in tile_quartiles:
+            used_tile_quartiles_enum = utils.boolean_to_integer(used_tile_quartiles[0],
+                                                                used_tile_quartiles[1],
+                                                                used_tile_quartiles[2],
+                                                                used_tile_quartiles[3])
 
-    # Finishing up the logging process
-    log.write('Finished predicting & Dose-Response for all bags.')
+            for i in range(len(prediction_dirs_used)):
+                prediction_dir = prediction_dirs_used[i]
+                log.write(
+                    str(i + 1) + '/' + str(len(prediction_dirs_used)) + ' - Predicting: ' + str(prediction_dir))
+                if not type(prediction_dir) == list:
+                    prediction_dir = [prediction_dir]
+                try:
+                    out_dir_used = '/mil/oligo-diff/models/production/predictions/paper_candidate_2-quartile-' + str(
+                        used_tile_quartiles_enum)
+                    os.makedirs(out_dir_used, exist_ok=True)
+                    predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path,
+                                 bag_paths=prediction_dir,
+                                 out_dir=out_dir_used,
+                                 global_log_dir=current_global_log_dir,
+                                 render_attention_spheres_enabled=render_attention_spheres_enabled,
+                                 render_merged_predicted_tiles_activation_overlays=False,
+                                 render_attention_histogram_enabled=True,
+                                 render_attention_cell_distributions=False,
+                                 render_dose_response_curves_enabled=True,
+                                 predict_samples_as_bags=False,
+                                 used_tile_quartiles=used_tile_quartiles,
+                                 render_attention_cytometry_prediction_distributions_enabled=False,
+                                 hist_bins_override=50,
+                                 out_image_dpi=800,
+                                 sigmoid_verbose=False,
+                                 render_attention_instance_range_min=0.9,
+                                 render_attention_instance_range_max=1.0,
+                                 image_folder=image_folder,
+                                 tile_constraints=loader.default_tile_constraints_none,
+                                 # tile_constraints=loader.default_tile_constraints_nuclei,
+                                 channel_inclusions=loader.default_channel_inclusions_all,
+                                 gpu_enabled=False, normalize_enum=normalize_enum, max_workers=20)
+                except Exception as e:
+                    log.write('\n\n============================================================')
+                    log.write('Fatal error during HT predictions: "' + str(e) + '"!')
+                    log.write(str(e.__class__.__name__) + ': "' + str(e) + '"')
+                    log.write_exception(e)
+                    return
 
+
+# Finishing up the logging process
+log.write('Finished predicting & Dose-Response for all bags.')
 
 if __name__ == '__main__':
     main()

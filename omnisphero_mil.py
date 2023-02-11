@@ -107,6 +107,8 @@ def train_model(
         reserve_compound_train=None,
         reserve_compound_test=None,
         reserve_compound_validation=None,
+        # Limit the loading of neurospheres to specific quartiles for training data (Does not affect sigmoid data)
+        used_tile_quartiles=None,
         # After training, should the model be run on input experiments again?
         predict_training_data_afterwards: bool = False,
         predict_sigmoid_data_afterwards: bool = False
@@ -128,6 +130,13 @@ def train_model(
         reserve_compound_test = []
     if reserve_compound_validation is None:
         reserve_compound_validation = []
+    if used_tile_quartiles is None:
+        used_tile_quartiles = loader.default_used_tile_quartiles.copy()
+
+    used_tile_quartiles_enum = utils.boolean_to_integer(used_tile_quartiles[0],
+                                                        used_tile_quartiles[1],
+                                                        used_tile_quartiles[2],
+                                                        used_tile_quartiles[3])
 
     # This param is unused and should not be "True"!
     if type(label_0_well_indices) == list and type(label_1_well_indices) == list:
@@ -192,7 +201,9 @@ def train_model(
     write_protocol(out_dir=out_dir, text='\nTile constraints explained: Minimum number of x [Nuclei, Oligos, Neurons]')
     write_protocol(out_dir=out_dir, text='\nTile Constraints label 0: ' + str(tile_constraints_0))
     write_protocol(out_dir=out_dir, text='\nTile Constraints label 1: ' + str(tile_constraints_1))
-    write_protocol(out_dir=out_dir, text='\nChannel_inclusions: ' + str(channel_inclusions))
+    write_protocol(out_dir=out_dir, text='\nChannel Inclusions: ' + str(channel_inclusions))
+    write_protocol(out_dir=out_dir, text='\nUsed Tile Quartiles: ' + str(used_tile_quartiles))
+    write_protocol(out_dir=out_dir, text='\nUsed Tile Quartiles: ' + str(used_tile_quartiles_enum) + ' (Enum)')
 
     write_protocol(out_dir=out_dir, text='\n\n == Data splitting Params: ==')
     write_protocol(out_dir=out_dir,
@@ -257,6 +268,7 @@ def train_model(
             channel_inclusions=channel_inclusions,
             constraints_0=tile_constraints_0,
             constraints_1=tile_constraints_1,
+            used_tile_quartiles=loader.default_used_tile_quartiles,
             label_0_well_indices=loader.default_well_indices_all,
             label_1_well_indices=loader.default_well_indices_all,
             normalize_enum=normalize_enum)
@@ -303,6 +315,7 @@ def train_model(
         constraints_1=tile_constraints_1,
         label_0_well_indices=label_0_well_indices,
         label_1_well_indices=label_1_well_indices,
+        used_tile_quartiles=used_tile_quartiles,
         unrestricted_experiments_override=unrestricted_experiments_override,
         normalize_enum=normalize_enum)
     X = [np.einsum('bhwc->bchw', bag) for bag in X]
@@ -1031,6 +1044,7 @@ def train_model(
                 predict_samples_as_bags=False,
 
                 # misc settings
+                used_tile_quartiles=loader.default_used_tile_quartiles.copy(),
                 out_image_dpi=600,
                 sigmoid_verbose=False,
                 clear_global_logs=False

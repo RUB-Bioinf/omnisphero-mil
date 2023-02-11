@@ -5,11 +5,13 @@ import sys
 import traceback
 from datetime import datetime
 from sys import platform
+import matplotlib.patches as patches
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 from util import log
+from util.well_metadata import TileMetadata
 
 # ###############################
 # UTIL CONSTANTS
@@ -329,6 +331,102 @@ def get_experiment_names_for_compound(X_metadata, compound_names: [str]) -> [str
                     experiment_names.append(metadata.experiment_name)
 
     return experiment_names
+
+
+def find_neurosphere_bounding_box(X_metadata: [TileMetadata]):
+    all_y = []
+    all_x = []
+
+    for metadata in X_metadata:
+        all_x.append(metadata.pos_x)
+        all_y.append(metadata.pos_y)
+        del metadata
+
+    x = min(all_x)
+    y = min(all_y)
+    h = max(all_y) - min(all_y)
+    w = max(all_x) - min(all_x)
+    br = (max(all_x), min(all_y))
+    bl = (min(all_x), min(all_y))
+    tl = (min(all_x), max(all_y))
+    tr = (max(all_x), max(all_y))
+    center = (x + int(w / 2), y + int(h / 2))
+
+    return x, y, h, w, br, bl, tl, tr, center
+
+
+# function created by chatGPT
+def span_rectangle(p1: (int, int), p2: (int, int)) -> (int, int, int, int):
+    """
+    Calculates the x, y coordinates and width and height of a rectangle spanned by two points.
+
+    Parameters:
+    p1 (tuple): The first point, represented as a tuple of x and y coordinates.
+    p2 (tuple): The second point, represented as a tuple of x and y coordinates.
+
+    Returns:
+    tuple: A tuple containing the x and y coordinates, and width and height of the rectangle.
+
+    Example:
+    >>> span_rectangle((0, 0), (5, 10))
+    (0, 0, 5, 10)
+    """
+    x1, y1 = p1
+    x2, y2 = p2
+
+    # Calculate x coordinate as the minimum of x1 and x2
+    x = min(x1, x2)
+
+    # Calculate y coordinate as the minimum of y1 and y2
+    y = min(y1, y2)
+
+    # Calculate width as the absolute difference between x1 and x2
+    width = abs(x1 - x2)
+
+    # Calculate height as the absolute difference between y1 and y2
+    height = abs(y1 - y2)
+
+    return x, y, width, height
+
+
+def is_point_in_rect(p: (int, int), rect1: (int, int), rect2: (int, int), tolerance: int = 0) -> (
+        bool, int, int, int, int):
+    px, py = p
+    r1x, r1y = rect1
+    r2x, r2y = rect2
+
+    if r1y > r2y:
+        # Swap the variables
+        r1y, r2y = r2y, r1y
+    if r1x > r2x:
+        # Swap the variables
+        r1x, r2x = r2x, r1x
+
+    in_quartile = r1x - tolerance <= px <= r2x + tolerance and r1y - tolerance <= py <= r2y + tolerance
+    x, y, width, height = span_rectangle(p1=rect1, p2=rect2)
+    return in_quartile, x, y, width, height
+
+
+# function created by chatGPT
+def boolean_to_integer(a: bool, b: bool, c: bool, d: bool) -> int:
+    """
+    Converts four booleans to an integer representation where the last 4 bits equal the booleans respectively.
+
+    Args:
+    a (bool): The first boolean to be converted.
+    b (bool): The second boolean to be converted.
+    c (bool): The third boolean to be converted.
+    d (bool): The fourth boolean to be converted.
+
+    Returns:
+    int: An integer where the last 4 bits are equal to the input booleans respectively.
+
+    Example:
+    >>> boolean_to_integer(True, False, True, False)
+    10
+    """
+    # Shift each boolean and add them to create the integer representation
+    return (a << 3) + (b << 2) + (c << 1) + d
 
 
 # shuffle data and split into training and validation set

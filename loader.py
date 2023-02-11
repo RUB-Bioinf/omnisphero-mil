@@ -17,6 +17,7 @@ from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import patches
 
 import mil_metrics
 import r
@@ -84,6 +85,13 @@ default_well_bmc_threshold_effect = 0.3
 default_channel_inclusions_all = [True, True, True]
 default_channel_inclusions_no_neurites = [True, True, False]
 
+# Default tile quartiles to be used.
+# ##################################
+# If you want to limit the data to be loaded to specific quartiles, a 4-element-list of booleans is used.
+# Each boolean represents a quartile and can be toggled on or off, depending on if that specific quartile should be ommited from loading.
+# Default: ALL TRUE
+default_used_tile_quartiles = [True, True, True, True]
+
 # Comparison parameters
 compare_bag_value_weight_oligo = 0.0
 compare_bag_value_weight_tile_count = 1.0
@@ -102,6 +110,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
                          channel_inclusions=None, constraints_0=None, constraints_1=None,
                          unrestricted_experiments_override: [str] = None,
                          positive_z_score_scale: float = 1.0, z_score_max_kernel_size: int = 1,
+                         used_tile_quartiles=None,
                          force_balanced_batch: bool = True, label_0_well_indices=None, label_1_well_indices=None):
     if label_1_well_indices is None:
         label_1_well_indices = default_well_indices_none
@@ -113,18 +122,31 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
         constraints_0 = default_tile_constraints_none
     if channel_inclusions is None:
         channel_inclusions = default_channel_inclusions_all
+    if used_tile_quartiles is None:
+        used_tile_quartiles = default_used_tile_quartiles.copy()
+
+    used_tile_quartiles_enum = utils.boolean_to_integer(used_tile_quartiles[0],
+                                                        used_tile_quartiles[1],
+                                                        used_tile_quartiles[2],
+                                                        used_tile_quartiles[3])
 
     log.write('Looking for multiple source dirs to load json data from.')
     log.write('Batch dir: ' + str(batch_dirs))
     log.write('Normalization Protocol: ' + str(normalize_enum))
+    time.sleep(0.5)
 
     log.write('Well indices label 0: ' + str(label_0_well_indices))
     log.write('Well indices label 1: ' + str(label_1_well_indices))
+    time.sleep(0.5)
 
     log.write('Tile constraints explained: Minimum number of x [Nuclei, Oligos, Neurons]')
     log.write('Tile Constraints label 0: ' + str(constraints_0))
     log.write('Tile Constraints label 1: ' + str(constraints_1))
     log.write('Channel Inclusions: ' + str(channel_inclusions))
+
+    time.sleep(0.5)
+    log.write('Used Tile-Quartiles: ' + str(used_tile_quartiles_enum) + ' (Enum)')
+    log.write('Used Tile-Quartiles: ' + str(used_tile_quartiles))
 
     if unrestricted_experiments_override is None:
         unrestricted_experiments_override = []
@@ -173,6 +195,7 @@ def load_bags_json_batch(batch_dirs: [str], max_workers: int, normalize_enum: in
                 label_1_well_indices=label_1_well_indices,
                 constraints_0=constraints_0,
                 constraints_1=constraints_1,
+                used_tile_quartiles=used_tile_quartiles,
                 positive_z_score_scale=positive_z_score_scale, z_score_max_kernel_size=z_score_max_kernel_size,
                 unrestricted_experiments_override=unrestricted_experiments_override,
                 include_raw=include_raw)
@@ -268,7 +291,10 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
                    channel_inclusions: [bool], label_1_well_indices: [int], constraints_1: [int], constraints_0: [int],
                    force_balanced_batch: bool = True, unrestricted_experiments_override: [str] = None,
                    positive_z_score_scale: float = 1.0, z_score_max_kernel_size: int = 1,
+                   used_tile_quartiles=None,
                    gp_current: int = 1, gp_max: int = 1, include_raw: bool = True):
+    if used_tile_quartiles is None:
+        used_tile_quartiles = default_used_tile_quartiles.copy()
     files = os.listdir(source_dir)
     log.write('[' + str(gp_current) + '/' + str(gp_max) + '] Loading from source: ' + source_dir)
     loaded_files_list = []
@@ -282,6 +308,12 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
             terminal_rows, terminal_columns = os.popen('stty size', 'r').read().split()
             terminal_columns = int(terminal_columns)
         except Exception as e:
+            log.write_exception(e, print_to_console_message=True,
+                                include_in_files_message=True,
+                                print_to_console_stack_trace=False,
+                                include_in_files_stack_trace=True)
+            log.write('Cannot display refreshing lines in this console. :(')
+            time.sleep(1)
             terminal_columns = None
 
     executor = ThreadPoolExecutor(max_workers=max_workers)
@@ -306,6 +338,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
                                      unrestricted_experiments_override,
                                      positive_z_score_scale,
                                      z_score_max_kernel_size,
+                                     used_tile_quartiles,
                                      include_raw
                                      )
             future_list.append(future)
@@ -328,6 +361,7 @@ def load_bags_json(source_dir: str, max_workers: int, normalize_enum: int, label
                                      unrestricted_experiments_override,
                                      positive_z_score_scale,
                                      z_score_max_kernel_size,
+                                     used_tile_quartiles,
                                      include_raw
                                      )
             future_list.append(future)
@@ -526,7 +560,10 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_i
                         label_1_well_indices: [int], constraints_0: [int], constraints_1: [int],
                         channel_inclusions: [bool], unrestricted_experiments_override: [str],
                         positive_z_score_scale: float = 1.0, z_score_max_kernel_size: int = 1,
+                        used_tile_quartiles=None,
                         include_raw: bool = True):
+    if used_tile_quartiles is None:
+        used_tile_quartiles = default_used_tile_quartiles.copy()
     if worker_verbose:
         log.write('Unzipping and reading json: ' + filepath)
     threading.current_thread().setName('Unzipping & Reading JSON: ' + filepath)
@@ -550,6 +587,7 @@ def unzip_and_read_JSON(filepath, worker_verbose, normalize_enum, label_0_well_i
                                                                                             constraints_0=constraints_0,
                                                                                             z_score_max_kernel_size=z_score_max_kernel_size,
                                                                                             positive_z_score_scale=positive_z_score_scale,
+                                                                                            used_tile_quartiles=used_tile_quartiles,
                                                                                             unrestricted_experiments_override=unrestricted_experiments_override,
                                                                                             include_raw=include_raw)
 
@@ -567,7 +605,10 @@ def read_JSON_file(filepath: str, worker_verbose: bool, normalize_enum: int, lab
                    label_1_well_indices: [int], constraints_0: [int], constraints_1: [int],
                    channel_inclusions: [bool], unrestricted_experiments_override: [str],
                    positive_z_score_scale: float = 1.0, z_score_max_kernel_size: int = 1,
+                   used_tile_quartiles=None,
                    include_raw: bool = True):
+    if used_tile_quartiles is None:
+        used_tile_quartiles = default_used_tile_quartiles.copy()
     if worker_verbose:
         log.write('Reading json: ' + filepath)
 
@@ -583,6 +624,7 @@ def read_JSON_file(filepath: str, worker_verbose: bool, normalize_enum: int, lab
                       channel_inclusions=channel_inclusions, json_data=data,
                       positive_z_score_scale=positive_z_score_scale, z_score_max_kernel_size=z_score_max_kernel_size,
                       unrestricted_experiments_override=unrestricted_experiments_override,
+                      used_tile_quartiles=used_tile_quartiles,
                       constraints_1=constraints_1, constraints_0=constraints_0)
 
 
@@ -597,9 +639,13 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data: dict, worker_ver
                unrestricted_experiments_override: [str], channel_inclusions: [bool],
                # Validation params for oligo morphology
                positive_z_score_scale: float = 1.0, z_score_max_kernel_size: int = 1,
+               # Restricting the tiles used to specific quartiles
+               used_tile_quartiles: [bool, bool, bool, bool] = None,
                # misc params
                include_raw: bool = True) -> (np.ndarray, int, [int], np.ndarray, str):
-    # Setting up arrays
+    # Setting up arrays and params
+    if used_tile_quartiles is None:
+        used_tile_quartiles = default_used_tile_quartiles.copy()
     X = []
     X_raw = []
     X_metadata = []
@@ -1005,7 +1051,7 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data: dict, worker_ver
             X[i] = current_rgb
             del current_x, current_r, current_g, current_rgb
 
-    # Placing sample tiles in a list
+    # Creating label vector
     y_tiles = []
     for i in range(len(X)):
         # Actually writing bag labels
@@ -1068,6 +1114,56 @@ def parse_JSON(filepath: str, zipped_data_name: str, json_data: dict, worker_ver
 
         assert len(X) == len(y_tiles)
         assert (label == 0 or label == 1)
+
+    # Removing unused quartiles
+    plt_quartiles = False
+    x, y, h, w, br, bl, tl, tr, center = utils.find_neurosphere_bounding_box(X_metadata)
+    quartiles_corners = [br, bl, tl, tr]
+    tile_indices_in_quartiles = []  # list(range(len(X)))
+    for (quartile_enabled, quartile_corner) in zip(used_tile_quartiles, quartiles_corners):
+        for i in range(len(X)):
+            current_metadata = X_metadata[i]
+            p = (current_metadata.pos_x, current_metadata.pos_y)
+            in_quartile, quartile_x, quartile_y, quartile_w, quartile_h = utils.is_point_in_rect(p=p, tolerance=0,
+                                                                                                 rect2=center,
+                                                                                                 rect1=quartile_corner)
+            in_quartile = in_quartile and quartile_enabled
+
+            # debug renders
+            if plt_quartiles:
+                plt.clf()
+                rect_bounding_box = patches.Rectangle((x, y), w, h, linewidth=2, edgecolor='black', facecolor='none')
+                rect_quartile = patches.Rectangle((quartile_x, quartile_y), quartile_w, quartile_h, linewidth=1,
+                                                  edgecolor='red', facecolor='none')
+                plt.gca().add_patch(rect_bounding_box)
+                plt.gca().add_patch(rect_quartile)
+                plt.scatter(x=[current_metadata.pos_x], y=[current_metadata.pos_y], c='blue')
+                plt.xticks(
+                    [0, quartile_x, quartile_x + quartile_w, current_metadata.well_image_width, current_metadata.pos_x,
+                     x, x + w])
+                plt.yticks(
+                    [0, quartile_y, quartile_y + quartile_h, current_metadata.well_image_height, current_metadata.pos_y,
+                     y, y + h])
+                plt.title('Quartile Corner: ' + str(quartile_corner) + '. Tile index: ' + str(i) + '. Inside: ' + str(
+                    in_quartile))
+                plt.autoscale()
+                plt.show()
+
+            # marking tile index as safe in the list
+            if in_quartile:
+                if i not in tile_indices_in_quartiles:
+                    tile_indices_in_quartiles.append(i)
+    log.write('Tiles inside quartiles: ' + str(len(tile_indices_in_quartiles)) + '/' + str(len(X)),
+              print_to_console=worker_verbose)
+
+    # Keeping only elements that are inside specified quartiles (the variable 'tile_indices_in_quartiles'):
+    X = np.array([X[i, :, :, :] for i in tile_indices_in_quartiles if i < len(X)])
+    X_raw = np.array([X_raw[i, :, :, :] for i in tile_indices_in_quartiles if i < len(X_raw)])
+    y_tiles = [y_tiles[i] for i in tile_indices_in_quartiles if i < len(y_tiles)]
+    X_metadata = [X_metadata[i] for i in tile_indices_in_quartiles if i < len(X_metadata)]
+
+    # One last check if everything is loaded as intended
+    # TODO do
 
     # All good. Returning.
     label = int(label)
