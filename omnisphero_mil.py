@@ -1022,6 +1022,7 @@ def train_model(
                 bag_paths=[path],
                 out_dir=prediction_out_path,
                 gpu_enabled=False,  # Force setting it to 'false'
+                skip_already_predicted=False,
                 channel_inclusions=channel_inclusions,
 
                 # (Re-) using the same normalization settings and other directories. Now used for predictions.

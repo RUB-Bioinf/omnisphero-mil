@@ -848,6 +848,7 @@ def render_attention_instance_range(out_dir: str, X_metadata: [[TileMetadata]],
     assert len(y_preds) == len(X_raw)
     assert len(y_preds) == len(X_metadata)
 
+    print('')
     for i in range(len(y_preds)):
         all_attentions_current = all_attentions[i]
         X_raw_current = X_raw[i]
@@ -863,7 +864,7 @@ def render_attention_instance_range(out_dir: str, X_metadata: [[TileMetadata]],
         out_dir_current_detail = out_dir_current + 'detail' + os.sep
         os.makedirs(out_dir_current, exist_ok=True)
         os.makedirs(out_dir_current_detail, exist_ok=True)
-        log.write(str(i + 1) + '/' + str(
+        line_print(str(i + 1) + '/' + str(
             len(y_preds)) + ': Rendering attentions for ' + current_experiment_name + ' - ' + current_well)
 
         # extracting the samples that are within normalized attention range

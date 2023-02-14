@@ -997,8 +997,8 @@ def attention_metrics_batch(all_attentions: [np.ndarray], X_metadata: [[TileMeta
     log.write('Calculating metrics for ' + str(len(all_attentions)) + ' attentions.')
     print('')
     for (attention, metadata) in zip(all_attentions, X_metadata):
-        print('Len attention: ' + str(len(attention)))
-        print('Len metadata: ' + str(len(metadata)))
+        log.write('Len attention: ' + str(len(attention)), print_to_console=False)
+        log.write('Len metadata: ' + str(len(metadata)), print_to_console=False)
 
         if not len(attention) == len(metadata):
             error_list.append(metadata[0])

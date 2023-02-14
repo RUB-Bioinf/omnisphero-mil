@@ -31,6 +31,7 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  max_workers: int, image_folder: str, channel_inclusions=loader.default_channel_inclusions_all,
                  tile_constraints=loader.default_tile_constraints_nuclei, global_log_dir: str = None,
                  sigmoid_verbose: bool = False,
+                 skip_already_predicted: bool = False,
                  render_attention_spheres_enabled: bool = True,
                  render_attention_instance_range_min: float = None,
                  render_attention_instance_range_max: float = None,
@@ -48,7 +49,6 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
                  ):
     start_time = datetime.now()
     log_label = str(start_time.strftime("%d-%m-%Y-%H-%M-%S"))
-    print(out_dir)
 
     if used_tile_quartiles is None:
         used_tile_quartiles = loader.default_used_tile_quartiles.copy()
@@ -67,6 +67,24 @@ def predict_path(model_save_path: str, checkpoint_file: str, bag_paths: [str], n
         os.makedirs(global_log_dir, exist_ok=True)
         log.add_file(global_log_filename)
     log.diagnose()
+
+    # Checking if already exists!
+    log.write('Saving predictions here: ' + out_dir)
+    out_dir_exists = os.path.exists(out_dir)
+    log.write('Does this path already exist? -> ' + str(out_dir_exists))
+    log.write('Skipping already predicted enabled? -> ' + str(skip_already_predicted))
+    if out_dir_exists and skip_already_predicted:
+        log.write('That path already exists and existing predictions should be skipped.')
+        time.sleep(0.42)
+        log.write('#################')
+        log.write('### Skipping! ###')
+        log.write('#################')
+        print('\n')
+        time.sleep(1.1337)
+        return
+    else:
+        log.write('Overwriting existing predictions (if there are any!)')
+        time.sleep(2)
 
     # Setting up dirs & paths
     log.write('Predicting from paths: ' + str(bag_paths))
@@ -835,6 +853,7 @@ def main():
     if debug and sys.platform == 'win32':
         predict_path(
             model_save_path=model_path,
+            skip_already_predicted=False,
             global_log_dir=current_global_log_dir,
             checkpoint_file=checkpoint_file,
             bag_paths=debug_prediction_dirs_win,
@@ -862,6 +881,7 @@ def main():
         for prediction_dir in paths.all_prediction_dirs_win:
             predict_path(model_save_path=model_path,
                          global_log_dir=current_global_log_dir,
+                         skip_already_predicted=False,
                          render_attention_spheres_enabled=render_attention_spheres_enabled,
                          render_attention_histogram_enabled=False,
                          render_merged_predicted_tiles_activation_overlays=False,
@@ -894,11 +914,12 @@ def main():
 
         ###########################################################
         # Setting the quartiles to be used
-        tile_quartiles = [[True, False, False, False],
-                          [False, True, False, False],
-                          [False, False, True, False],
-                          [False, False, False, True]
-                          ]
+        tile_quartiles = [
+            # [True, False, False, False],
+            # [False, True, False, False],
+            [False, False, True, False],
+            [False, False, False, True]
+        ]
         # tile_quartiles = [loader.default_used_tile_quartiles]
         ###########################################################
 
@@ -927,6 +948,8 @@ def main():
                 prediction_dir = prediction_dirs_used[i]
                 log.write(
                     str(i + 1) + '/' + str(len(prediction_dirs_used)) + ' - Predicting: ' + str(prediction_dir))
+                log.clear_files()
+
                 if not type(prediction_dir) == list:
                     prediction_dir = [prediction_dir]
                 try:
@@ -935,6 +958,7 @@ def main():
                     os.makedirs(out_dir_used, exist_ok=True)
                     predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path,
                                  bag_paths=prediction_dir,
+                                 skip_already_predicted=False,
                                  out_dir=out_dir_used,
                                  global_log_dir=current_global_log_dir,
                                  render_attention_spheres_enabled=render_attention_spheres_enabled,
@@ -961,6 +985,11 @@ def main():
                     log.write(str(e.__class__.__name__) + ': "' + str(e) + '"')
                     log.write_exception(e)
                     return
+
+        print('\n######################')
+        log.write('All Predictions done.')
+        log.write('Have a nice day. :)')
+        print('######################')
 
 
 # Finishing up the logging process
