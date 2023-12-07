@@ -1,6 +1,14 @@
 # Project specifig ingores
 
-joshnet-src/
+joshnet-src
+util/tmp.py
+util/video_render/out/frame-*.png
+
+# video render
+*.avi
+*.gif
+*.pdf
+*.aux
 
 #################
 # GENERAL IGNORES

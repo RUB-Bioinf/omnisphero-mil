@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from util import log
-from util.well_metadata import TileMetadata
 
 # ###############################
 # UTIL CONSTANTS
@@ -333,7 +332,7 @@ def get_experiment_names_for_compound(X_metadata, compound_names: [str]) -> [str
     return experiment_names
 
 
-def find_neurosphere_bounding_box(X_metadata: [TileMetadata]):
+def find_neurosphere_bounding_box(X_metadata):
     all_y = []
     all_x = []
 

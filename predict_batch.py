@@ -907,20 +907,20 @@ def main():
         ############## SETTING THE INPUT PATH HERE ################
         ###########################################################
 
-        prediction_dirs_used = [paths.all_prediction_dirs_unix]
+        # prediction_dirs_used = [paths.all_prediction_dirs_unix]
         # prediction_dirs_used = [paths.curated_overlapping_source_dirs_unix_channel_transformed_rbg]
-        # prediction_dirs_used = [paths.default_sigmoid_validation_dirs_unix]
+        prediction_dirs_used = [paths.default_sigmoid_validation_dirs_unix]
         ###########################################################
 
         ###########################################################
         # Setting the quartiles to be used
         tile_quartiles = [
-            # [True, False, False, False],
-            # [False, True, False, False],
-            [False, False, True, False],
-            [False, False, False, True]
+            # [True, False, False, False]
+            # [False, True, False, False]
+            # [False, False, True, False]
+            # [False, False, False, True]
         ]
-        # tile_quartiles = [loader.default_used_tile_quartiles]
+        tile_quartiles = [loader.default_used_tile_quartiles]
         ###########################################################
 
         if debug:
@@ -953,8 +953,7 @@ def main():
                 if not type(prediction_dir) == list:
                     prediction_dir = [prediction_dir]
                 try:
-                    out_dir_used = '/mil/oligo-diff/models/production/predictions/paper_candidate_2-quartile-' + str(
-                        used_tile_quartiles_enum)
+                    out_dir_used = '/mil/oligo-diff/models/production/predictions/paper_candidate_2-quartile-AsBags'
                     os.makedirs(out_dir_used, exist_ok=True)
                     predict_path(checkpoint_file=checkpoint_file, model_save_path=model_path,
                                  bag_paths=prediction_dir,
@@ -966,7 +965,7 @@ def main():
                                  render_attention_histogram_enabled=True,
                                  render_attention_cell_distributions=False,
                                  render_dose_response_curves_enabled=True,
-                                 predict_samples_as_bags=False,
+                                 predict_samples_as_bags=True,
                                  used_tile_quartiles=used_tile_quartiles,
                                  render_attention_cytometry_prediction_distributions_enabled=False,
                                  hist_bins_override=50,
@@ -977,7 +976,7 @@ def main():
                                  image_folder=image_folder,
                                  tile_constraints=loader.default_tile_constraints_none,
                                  # tile_constraints=loader.default_tile_constraints_nuclei,
-                                 channel_inclusions=loader.default_channel_inclusions_all,
+                                 channel_inclusions=loader.default_channel_inclusions_no_neurites,
                                  gpu_enabled=False, normalize_enum=normalize_enum, max_workers=20)
                 except Exception as e:
                     log.write('\n\n============================================================')

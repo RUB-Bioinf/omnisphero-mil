@@ -2,6 +2,7 @@ import os
 import re
 import subprocess
 import sys
+from typing import Union
 
 from util import log
 from util import paths
@@ -54,7 +55,7 @@ def render_image_dir_to_video(image_path: str, out_dir: str, file_formats: [str]
 
 
 def render_images_to_video_multiple(image_paths: [str], out_dir: str, override_out_name: str = None,
-                                    fps: int = default_fps, verbose: bool = True) -> (str, str, str):
+                                    fps: Union[int, float] = default_fps, verbose: bool = True) -> (str, str, str):
     assert all([os.path.exists(p) for p in image_paths])
     os.makedirs(out_dir, exist_ok=True)
 

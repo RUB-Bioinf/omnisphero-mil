@@ -1,0 +1,83 @@
+% PGF style template to be used in the ktikz program
+\documentclass[a4paper,twoside,11pt]{book}
+\usepackage{amsmath}
+%\usepackage[charter]{mathdesign}
+\usepackage{textcomp}
+\DeclareFontFamily{OMS}{mdbch}{\skewchar\font=48}
+\DeclareFontShape{OMS}{mdbch}{m}{n}{<->s*[0.96] mdbchr7y}{}
+\DeclareFontShape{OMS}{mdbch}{m}{it}{<->ssub * mdbch/m/n}{}
+\DeclareFontShape{OMS}{mdbch}{b}{n}{<->s*[0.96] mdbchb7y}{}
+\DeclareFontShape{OMS}{mdbch}{bx}{n}{<->ssub * mdbch/b/n}{}
+\usepackage{tikz}
+\usepackage[active,pdftex,tightpage]{preview}
+\PreviewEnvironment[]{tikzpicture}
+\PreviewEnvironment[]{pgfpicture}
+
+\usepackage{mathptmx}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage[active,pdftex,tightpage]{preview}
+\PreviewEnvironment[]{tikzpicture}
+\PreviewEnvironment[]{pgfpicture}
+\DeclareSymbolFont{symbolsb}{OMS}{cmsy}{m}{n}
+\SetSymbolFont{symbolsb}{bold}{OMS}{cmsy}{b}{n}
+\DeclareSymbolFontAlphabet{\mathcal}{symbolsb}
+
+\begin{document}
+
+
+\begin{center}
+	\begin{tikzpicture}[scale=1.0]
+    \begin{scope}[xshift=-0cm,scale=1.0]
+	\definecolor{color1bg}{RGB}{0,0,0}
+	\begin{axis}[title={},xlabel={Model Training Epoch},xtick distance=25.0,ytick distance=0.1,xmin=2.0,xmax=280.0,ymin=0.0,ymax=0.3,major grid style={line width=.2pt,draw=gray!50},grid=both,height=5.5cm,width=12.5cm, legend pos=north east,
+ylabel style={align=center}, ylabel=Metric,
+%axis y discontinuity=parallel,
+ytickmax=0.35,
+legend style={nodes={scale=1.0, transform shape}}, legend image post style={},
+xticklabel style={rotate=0}
+]
+		\addplot[color=red,solid] coordinates {
+			<#validation_loss#>
+		};
+		\addlegendentry{Validation Loss}
+			
+		\addplot[color=blue, solid] coordinates {
+			<#training_loss#>
+		};
+		\addlegendentry{Training Loss}
+	\end{axis}
+	\end{scope}
+
+
+    \begin{scope}[xshift=0cm,yshift=5.5cm,scale=1.0]
+	\begin{axis}[title={Test Plate Predictions: Epoch <#epoch#>},xlabel={Compound Concentration (\textmu M)},xtick distance=1.0,ytick distance=0.2,xmin=2.0,xmax=8.0,ymin=0.0,ymax=1.0,major grid style={line width=.2pt,draw=gray!50},grid=both,height=5.5cm,width=12.5cm, legend pos=north east,
+ylabel style={align=center}, ylabel=Predictions,
+legend style={nodes={scale=1.0, transform shape}}, legend image post style={},
+xticklabels={0,0,
+0.0,
+0.03,
+0.08,
+0.25,
+0.74,
+2.22,
+6.67},
+xticklabel style={rotate=0}
+]
+
+		\addplot[color=gray,very thick,dashed] coordinates {
+			<#curve_fit#>
+		};
+		\addlegendentry{Curve fit}
+		
+	\addplot[color=black,very thick,solid,mark=*,mark size=3] coordinates {
+		<#mean_predictions#>
+    	};
+	\addlegendentry{Mean Predictions}
+	\end{axis}
+	\end{scope}
+
+\end{tikzpicture}
+\end{center}
+
+\end{document}
